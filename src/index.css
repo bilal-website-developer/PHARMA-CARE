@@ -139,6 +139,51 @@
   .border-warning { border-color: var(--warning); }
 }
 
+aside[data-collapsed="true"] .sidebar-brand-label,
+aside[data-collapsed="true"] .sidebar-user-details,
+aside[data-collapsed="true"] .space-y-1 > div:first-child {
+  display: none;
+}
+
+aside[data-collapsed="true"] .space-y-1 > button {
+  justify-content: center;
+  padding-inline: 0.5rem;
+}
+
+aside[data-collapsed="true"] .space-y-1 > button > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+aside[data-collapsed="true"] .sidebar-collapse-control {
+  display: none;
+}
+
+aside[data-collapsed="true"] .sidebar-logout-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+aside[data-collapsed="true"] > div:last-child > button {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
 button,
 input,
 select,

@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:fefo": "tsx --test src/utils/fefo.test.ts",
-    "test:receipt": "tsx --test src/utils/receipt.test.ts"
+    "test:receipt": "tsx --test src/utils/receipt.test.ts",
+    "test:report": "tsx --test src/utils/salesReport.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

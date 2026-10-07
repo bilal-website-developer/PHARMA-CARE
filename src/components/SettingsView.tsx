@@ -15,8 +15,13 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { BillingTemplate } from '../utils/receipt';
+import { CompletedSale, UserRole } from '../types/pharmacy';
+import { PrintSalesReport } from './PrintSalesReport';
 
 interface SettingsViewProps {
+  sales: CompletedSale[];
+  currentRole: UserRole;
+  currentUserName: string;
   activeTemplate: BillingTemplate;
   canEditBilling: boolean;
   onTemplateChange: (template: BillingTemplate) => void;
@@ -24,14 +29,17 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
+  sales,
+  currentRole,
+  currentUserName,
   activeTemplate,
   canEditBilling,
   onTemplateChange,
   onOpenTemplatePreview,
 }) => {
-  const [shopName, setShopName] = useState('Demo Store');
-  const [phone, setPhone] = useState('03011234567');
-  const [city, setCity] = useState('Bahawalpur');
+  const [shopName, setShopName] = useState('PharmaCare');
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
   const [urduFooter, setUrduFooter] = useState('شکریہ! دوبارہ تشریف لائیں');
   const [debtTemplate, setDebtTemplate] = useState(
     'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!'
@@ -198,6 +206,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           ))}
         </div>
       </div>
+
+      <PrintSalesReport
+        sales={sales}
+        storeName={shopName}
+        address={city}
+        phone={phone}
+        generatedBy={currentUserName}
+      />
 
       {/* ── WhatsApp Messaging Templates (Matching Screenshot 51 & 52) ────── */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">

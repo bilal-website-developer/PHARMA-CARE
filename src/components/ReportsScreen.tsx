@@ -17,19 +17,20 @@ interface ReportsScreenProps {
 }
 
 export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole }) => {
-  const isCashier = currentRole === UserRole.CASHIER;
+  const canSeeProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.ACCOUNTANT;
 
   const totalRevenuePaisa = sales.reduce((sum, s) => sum + s.totalPaisa, 0);
-  const totalCostPaisa = sales.reduce((sum, s) => {
+  const totalCostPaisa = canSeeProfit ? sales.reduce((sum, s) => {
     return (
       sum +
       s.items.reduce((itemSum, item) => itemSum + item.costPaisaPerUnit * item.quantityInUnit, 0)
     );
-  }, 0);
+  }, 0) : 0;
 
   const grossProfitPaisa = totalRevenuePaisa - totalCostPaisa;
   const grossMarginPercent =
     totalRevenuePaisa > 0 ? ((grossProfitPaisa / totalRevenuePaisa) * 100).toFixed(1) : '0.0';
+  const isCashier = currentRole === UserRole.CASHIER;
 
   return (
     <div className="space-y-6">
@@ -40,7 +41,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
           <div>
             <span className="font-bold">Strict Role-Based Access Control (RBAC):</span>
             <p className="mt-0.5">
-              Cashiers are restricted from viewing procurement cost prices, supplier margins, and gross profit data. Only gross revenue and transaction counters are displayed.
+              Cost and profit reporting is restricted for this role. Only gross revenue and transaction counters are displayed.
             </p>
           </div>
         </div>
@@ -62,7 +63,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
           <span className="text-[11px] text-emerald-600">Sequential receipt numbers</span>
         </div>
 
-        {!isCashier ? (
+        {canSeeProfit ? (
           <>
             <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
               <span className="text-xs font-semibold text-emerald-700">Gross Profit (Paisa)</span>
@@ -82,7 +83,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
           </>
         ) : (
           <div className="sm:col-span-2 bg-slate-50 p-5 rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-500 gap-2">
-            <EyeOff className="w-4 h-4" /> Financial margins redacted for Cashier role.
+            <EyeOff className="w-4 h-4" /> Financial reporting is restricted for this role.
           </div>
         )}
       </div>

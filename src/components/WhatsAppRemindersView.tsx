@@ -22,7 +22,7 @@ export const WhatsAppRemindersView: React.FC<WhatsAppRemindersViewProps> = ({ cu
 
     const message = encodeURIComponent(
       `Assalam-o-Alaikum ${c.name},\n\n` +
-      `This is a gentle reminder from Demo Store / PharmaCare.\n` +
+      `This is a gentle reminder from your pharmacy.\n` +
       `Your outstanding ledger balance is *Rs. ${duePKR}*.\n\n` +
       `Kindly clear the dues at your earliest convenience.\n` +
       `JazakAllah Khair!`

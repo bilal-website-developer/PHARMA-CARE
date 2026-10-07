@@ -220,7 +220,15 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     const sale: CompletedSale = {
       id: `sale-${Date.now()}`,
       invoiceNumber: `INV-${Math.floor(1000000 + Math.random() * 9000000)}`,
-      timestamp: new Date().toLocaleString(),
+      timestamp: new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }).format(new Date()),
       cashierName: currentUserName,
       customerName: customer ? customer.name : walkInName,
       customerPhone: customer?.phone || '0300-1234567',

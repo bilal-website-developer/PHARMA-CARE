@@ -162,7 +162,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-card bg-primary text-white">
             <Pill aria-hidden="true" />
           </div>
-          <h1 className="text-lg font-bold">Demo Store</h1>
+          <h1 className="text-lg font-bold">PharmaCare</h1>
           <p className="text-xs text-muted">Sign in to PharmaCare</p>
         </header>
 

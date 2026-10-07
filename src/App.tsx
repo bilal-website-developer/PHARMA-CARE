@@ -214,8 +214,8 @@ function PharmacyApp({
       invoiceNumber: 'INV-87654321',
       timestamp: '06/10/2026, 11:54:23 pm',
       cashierName: 'Bilal Cashier (POS 1)',
-      customerName: 'Ahmed Tariq',
-      customerPhone: '0300-1234567',
+      customerName: 'Walk-in Customer',
+      customerPhone: '',
       items: [
         {
           productId: 'prod-1',
@@ -498,7 +498,6 @@ function PharmacyApp({
           currentRole={currentRole}
           currentUserName={currentUserName}
           activeTitle={getPageTitle(activeItem)}
-          onOpenCloseDay={() => setShowCloseDayModal(true)}
         />
 
         {demoMode && (
@@ -600,6 +599,9 @@ function PharmacyApp({
 
           {activeItem === 'settings' && (
             <SettingsView
+              sales={completedSales}
+              currentRole={currentRole}
+              currentUserName={currentUserName}
               activeTemplate={billingPreferences.template}
               canEditBilling={currentRole === UserRole.ADMIN}
               onTemplateChange={(template: BillingTemplate) =>
@@ -633,15 +635,13 @@ function PharmacyApp({
 
           {activeItem === 'help-support' && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs max-w-xl mx-auto space-y-4">
-              <h3 className="text-base font-black text-slate-900">🎧 Help & Direct Support</h3>
-              <p className="text-xs text-slate-600">
-                Ticket submit karein ya direct WhatsApp / Call par helpline se rabta karein.
+              <h3 className="text-base font-black text-text">Help & Support</h3>
+              <p
+                className="rounded-control border border-border bg-surface p-4 text-xs text-muted"
+                role="status"
+              >
+                Support contact details are not configured. Please contact your store administrator.
               </p>
-              <div className="p-4 bg-blue-600 text-white rounded-xl space-y-1 shadow-md">
-                <div className="text-[10px] uppercase font-bold text-blue-200">URGENT / DIRECT SUPPORT</div>
-                <div className="text-lg font-black font-mono">Babar Joya: 0301-2616367</div>
-                <div className="text-[11px] text-blue-100">Zabardast mushkil ho to seedha call karein.</div>
-              </div>
             </div>
           )}
 
@@ -670,30 +670,12 @@ function PharmacyApp({
               <div className="flex items-center justify-between pb-3 border-b">
                 <div>
                   <h3 className="font-black text-base text-slate-900">Manage Users</h3>
-                  <p className="text-xs text-slate-500">Shop Limit: 2 / 99 users</p>
+                  <p className="text-xs text-slate-500">User management needs the unavailable server API.</p>
                 </div>
               </div>
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="p-2.5">USER INFO</th>
-                    <th className="p-2.5">ROLE</th>
-                    <th className="p-2.5">STATUS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  <tr>
-                    <td className="p-2.5 font-bold">bilal (You)</td>
-                    <td className="p-2.5 font-mono text-blue-600 font-bold">admin</td>
-                    <td className="p-2.5 font-semibold text-emerald-600">Active</td>
-                  </tr>
-                  <tr>
-                    <td className="p-2.5 font-bold">cashier1</td>
-                    <td className="p-2.5 font-mono text-purple-600 font-bold">cashier</td>
-                    <td className="p-2.5 font-semibold text-emerald-600">Active</td>
-                  </tr>
-                </tbody>
-              </table>
+              <p className="rounded-control border border-border bg-surface p-4 text-xs text-muted" role="status">
+                No account records are available in this frontend-only preview.
+              </p>
             </div>
           )}
         </main>

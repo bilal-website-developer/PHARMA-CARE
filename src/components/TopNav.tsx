@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, Moon, Type } from 'lucide-react';
+import { Bell, Type } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
 
 interface TopNavProps {
   currentRole: UserRole;
   currentUserName: string;
   activeTitle: string;
-  onOpenCloseDay: () => void;
 }
 
 const largeUiKey = (userName: string) => `pharmacare.largeUi.${userName}`;
@@ -23,7 +22,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
   currentUserName,
   activeTitle,
-  onOpenCloseDay,
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(currentUserName));
   const [online, setOnline] = useState(navigator.onLine);
@@ -40,8 +38,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   useEffect(() => {
     const checkApi = async () => {
       try {
-        await fetch('/api/auth/config', { cache: 'no-store' });
-        setOnline(navigator.onLine);
+        const response = await fetch('/api/auth/config', { cache: 'no-store' });
+        setOnline(navigator.onLine && response.ok);
       } catch {
         setOnline(false);
       }
@@ -57,8 +55,6 @@ export const TopNav: React.FC<TopNavProps> = ({
     };
   }, []);
 
-  const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.PHARMACIST;
-
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-2.5 shadow-xs sm:px-6">
       <div className="min-w-0">
@@ -69,16 +65,6 @@ export const TopNav: React.FC<TopNavProps> = ({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {canCloseDay && (
-          <button
-            onClick={onOpenCloseDay}
-            className="flex items-center gap-1.5 rounded-control bg-primary px-2.5 py-2 text-xs font-bold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Moon className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Close Day</span>
-          </button>
-        )}
-
         <div className="flex items-center rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
           <button
             type="button"

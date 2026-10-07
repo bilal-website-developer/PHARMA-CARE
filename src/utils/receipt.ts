@@ -9,18 +9,39 @@ export interface BillingPreferences {
 
 const BILLING_PREFERENCES_KEY = 'pharmacare.billingPreferences';
 
+function getStorage(): Storage | undefined {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+      return undefined;
+    }
+    return storage;
+  } catch {
+    return undefined;
+  }
+}
+
+const normalizeString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return fallback;
+  return String(value);
+};
+
 export function readBillingPreferences(): BillingPreferences {
   const defaults: BillingPreferences = { template: 'classic', format: 'thermal80' };
+  const storage = getStorage();
+  if (!storage) return defaults;
+
   try {
-    const stored = localStorage.getItem(BILLING_PREFERENCES_KEY);
+    const stored = storage.getItem(BILLING_PREFERENCES_KEY);
     if (!stored) return defaults;
     const value: unknown = JSON.parse(stored);
     if (typeof value !== 'object' || value === null) return defaults;
     const record = value as Record<string, unknown>;
-    const template = ['simple', 'classic', 'professional', 'modern'].includes(String(record.template))
+    const template = ['simple', 'classic', 'professional', 'modern'].includes(normalizeString(record.template))
       ? (record.template as BillingTemplate)
       : defaults.template;
-    const format = ['thermal58', 'thermal80', 'a4'].includes(String(record.format))
+    const format = ['thermal58', 'thermal80', 'a4'].includes(normalizeString(record.format))
       ? (record.format as ReceiptFormat)
       : defaults.format;
     return { template, format };
@@ -30,8 +51,11 @@ export function readBillingPreferences(): BillingPreferences {
 }
 
 export function saveBillingPreferences(preferences: BillingPreferences): boolean {
+  const storage = getStorage();
+  if (!storage) return false;
+
   try {
-    localStorage.setItem(BILLING_PREFERENCES_KEY, JSON.stringify(preferences));
+    storage.setItem(BILLING_PREFERENCES_KEY, JSON.stringify(preferences));
     return true;
   } catch {
     return false;
@@ -70,8 +94,9 @@ export interface ReceiptData {
   footerUrdu: string;
 }
 
-const escapeHtml = (value: string): string =>
-  value.replace(/[&<>"']/g, (character) => {
+const escapeHtml = (value: unknown): string => {
+  const text = value === null || value === undefined ? '' : String(value);
+  return text.replace(/[&<>"']/g, (character) => {
     const entities: Record<string, string> = {
       '&': '&amp;',
       '<': '&lt;',
@@ -81,9 +106,12 @@ const escapeHtml = (value: string): string =>
     };
     return entities[character];
   });
+};
 
-const money = (paisa: number): string =>
-  `Rs ${new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(Math.round(paisa / 100))}`;
+const money = (paisa: number): string => {
+  const normalized = Number.isFinite(paisa) ? paisa : 0;
+  return `Rs ${new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(Math.round(normalized / 100))}`;
+};
 
 export function receiptDataFromSale(
   sale: CompletedSale,

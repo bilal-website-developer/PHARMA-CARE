@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CompletedSale, DrugClass, PaymentMethod } from '../types/pharmacy';
-import { BillingTemplate, ReceiptFormat, receiptDataFromSale, renderReceipt } from './receipt';
+import { BillingTemplate, ReceiptFormat, readBillingPreferences, receiptDataFromSale, renderReceipt, saveBillingPreferences } from './receipt';
 
 const sale = {
   id: 'sample-sale',
@@ -61,4 +61,24 @@ test('escapes user-provided receipt fields', () => {
   const html = renderReceipt('modern', 'a4', data);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+test('gracefully handles missing browser storage', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+
+  try {
+    assert.deepEqual(readBillingPreferences(), { template: 'classic', format: 'thermal80' });
+    assert.equal(saveBillingPreferences({ template: 'simple', format: 'a4' }), false);
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', descriptor ?? {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+  }
 });
