@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-surface: var(--surface);
+  --color-white: var(--white);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --font-inter: "Inter", Arial, sans-serif;
+  --font-urdu: "Noto Nastaliq Urdu", serif;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --color-blue-50: var(--surface);
+  --color-blue-100: var(--surface);
+  --color-blue-200: var(--border);
+  --color-blue-300: var(--border);
+  --color-blue-400: var(--primary);
+  --color-blue-500: var(--primary);
+  --color-blue-600: var(--primary);
+  --color-blue-700: var(--primary);
+  --color-blue-800: var(--primary);
+  --color-blue-900: var(--text);
+  --color-blue-950: var(--text);
+  --color-emerald-50: var(--surface);
+  --color-emerald-100: var(--accent);
+  --color-emerald-200: var(--border);
+  --color-emerald-300: var(--border);
+  --color-emerald-400: var(--primary);
+  --color-emerald-500: var(--primary);
+  --color-emerald-600: var(--primary);
+  --color-emerald-700: var(--primary);
+  --color-emerald-800: var(--text);
+  --color-emerald-900: var(--text);
+  --color-emerald-950: var(--text);
+  --color-purple-100: var(--surface);
+  --color-purple-300: var(--border);
+  --color-purple-600: var(--primary);
+  --color-purple-700: var(--primary);
+  --color-purple-800: var(--text);
+  --color-red-50: color-mix(in srgb, var(--danger) 8%, var(--white));
+  --color-red-100: color-mix(in srgb, var(--danger) 12%, var(--white));
+  --color-red-200: color-mix(in srgb, var(--danger) 22%, var(--white));
+  --color-red-300: color-mix(in srgb, var(--danger) 35%, var(--white));
+  --color-red-500: var(--danger);
+  --color-red-600: var(--danger);
+  --color-red-700: var(--danger);
+  --color-red-800: var(--text);
+  --color-red-900: var(--text);
+  --color-red-950: var(--text);
+  --color-teal-50: var(--surface);
+  --color-teal-200: var(--border);
+  --color-teal-500: var(--primary);
+  --color-teal-600: var(--primary);
+  --color-teal-700: var(--primary);
+  --color-teal-800: var(--text);
+  --color-amber-50: color-mix(in srgb, var(--warning) 8%, var(--white));
+  --color-amber-100: var(--warning);
+  --color-amber-200: color-mix(in srgb, var(--warning) 28%, var(--white));
+  --color-amber-300: color-mix(in srgb, var(--warning) 45%, var(--white));
+  --color-amber-400: var(--warning);
+  --color-amber-500: var(--warning);
+  --color-amber-600: var(--primary);
+  --color-amber-700: var(--primary);
+  --color-amber-800: var(--text);
+  --color-amber-900: var(--text);
+  --color-amber-950: var(--text);
+  --color-slate-50: var(--surface);
+  --color-slate-100: var(--surface);
+  --color-slate-200: var(--border);
+  --color-slate-300: var(--border);
+  --color-slate-400: var(--muted);
+  --color-slate-500: var(--muted);
+  --color-slate-600: var(--muted);
+  --color-slate-700: var(--text);
+  --color-slate-750: var(--text);
+  --color-slate-800: var(--text);
+  --color-slate-900: var(--text);
+  --color-slate-950: var(--text);
+}
+
+@layer base {
+  :root {
+    --primary: #15803d;
+    --accent: #22c55e;
+    --surface: #f0fdf4;
+    --white: #ffffff;
+    --text: #14532d;
+    --muted: #6b8f7b;
+    --danger: #dc2626;
+    --warning: #f59e0b;
+    --border: #d1e7d8;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  [lang="ur"],
+  [dir="rtl"] {
+    font-family: "Noto Nastaliq Urdu", serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    border-radius: var(--radius-control);
+  }
+}
+
+@layer utilities {
+  .bg-primary { background-color: var(--primary); }
+  .bg-accent { background-color: var(--accent); }
+  .bg-surface { background-color: var(--surface); }
+  .bg-white { background-color: var(--white); }
+  .bg-text { background-color: var(--text); }
+  .bg-muted { background-color: var(--muted); }
+  .bg-danger { background-color: var(--danger); }
+  .bg-warning { background-color: var(--warning); }
+  .text-primary { color: var(--primary); }
+  .text-accent { color: var(--accent); }
+  .text-text { color: var(--text); }
+  .text-muted { color: var(--muted); }
+  .text-danger { color: var(--danger); }
+  .text-warning { color: var(--warning); }
+  .border-primary { border-color: var(--primary); }
+  .border-border { border-color: var(--border); }
+  .border-danger { border-color: var(--danger); }
+  .border-warning { border-color: var(--warning); }
+}
+
+button,
+input,
+select,
+textarea {
+  border-radius: var(--radius-control) !important;
+}
+
+.rounded-2xl,
+.rounded-3xl {
+  border-radius: var(--radius-card) !important;
+}
+
+@media print {
+  body {
+    background-color: var(--white) !important;
+    color: black !important;
+  }
+  @page {
+    margin: 8mm;
+  }
+  .no-print {
+    display: none !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-document,
+  .print-document * {
+    visibility: visible !important;
+  }
+
+  .print-document {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  .print-document * {
+    color: black !important;
+    background-color: transparent !important;
+    border-color: black !important;
+  }
+
+  .print-document-58mm {
+    page: receipt-58mm;
+    width: 58mm !important;
+  }
+
+  .print-document-80mm {
+    page: receipt-80mm;
+    width: 80mm !important;
+  }
+
+  .print-document-a4 {
+    page: invoice-a4;
+    width: 194mm !important;
+  }
+}
+
+@page receipt-58mm {
+  size: 58mm 200mm;
+  margin: 2mm;
+}
+
+@page receipt-80mm {
+  size: 80mm 200mm;
+  margin: 2mm;
+}
+
+@page invoice-a4 {
+  size: A4 portrait;
+  margin: 8mm;
+}

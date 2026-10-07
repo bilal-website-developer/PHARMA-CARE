@@ -1,0 +1,6 @@
+{
+  "name": "PharmaCare - Pharmacy Management System",
+  "description": "Enterprise pharmacy management system with POS, FEFO batch tracking, drug scheduling compliance, khata ledgers, and financial accounting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
