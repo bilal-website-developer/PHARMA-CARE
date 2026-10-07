@@ -1,25 +1,23 @@
 # Redesign Progress
 
-## Login: safe demo option
+## Safe demo login
 
-### Completed in this workspace
+### Implemented
 
-- Updated the login UI with the two requested tabs, five role cards, demo-only warning banner, and demo user codes.
-- The demo option remains hidden unless `GET /api/auth/config` explicitly returns `{ "demoMode": true }`.
-- Demo card clicks call `POST /api/auth/demo-login`; the frontend does not mint or simulate an authenticated session.
-- Added `DEMO_MODE=false` to `.env.example` as an API-only setting.
+- The login page has demo and manual tabs, five role cards, role-code pills, named demo users, loading/error states, and an alert banner shown only when demo mode is enabled.
+- The demo tab is fail-closed: it appears only if `GET /api/auth/config` returns `{ "demoMode": true }`. The client submits a lowercase role to `POST /api/auth/demo-login`; it does not create a session locally.
+- `.env.example` documents `DEMO_MODE=false`.
+- The app's in-session demo alert is also controlled by the server-provided demo-mode flag.
 
 ### Assumptions
 
-- `DEMO_MODE` is controlled by the API and is never exposed as a Vite client environment variable.
-- Demo cards send the lowercase role value (`admin`, `pharmacist`, `cashier`, `inventory`, or `accountant`); the API must map that value to its fixed demo account and return the usual authenticated user response.
-- The login warning is shown only when the API confirms demo mode is enabled. The existing in-app warning is likewise gated by that config.
-- No backend, database, or user records were created or modified because none of those project components are present in this workspace.
+- Only the API may decide whether demo mode is enabled. The browser must not infer the flag from a client-side environment variable.
+- The API maps `admin`, `pharmacist`, `cashier`, `inventory`, and `accountant` to fixed demo accounts and responds with the same `user` session shape used by normal login.
+- “Role code” is shown separately from the fixed account username so the cards communicate both permission role and demo account identity.
+- Without an API implementation and data boundary in this workspace, no demo authentication/session is simulated in the frontend.
 
-### Blockers and validation
+### Blockers and checks
 
-- This workspace contains only the Vite frontend: no API source, auth middleware, database schema, migration/seed infrastructure, or API tests are available. The rate-limited demo endpoint, random-password accounts, sample database data, audit logging, and server-enforced cashier/admin permissions therefore remain unimplemented and unverified.
-- There is no `.git` repository in this workspace. No commit was created; creating a new repository here would incorrectly treat the entire pre-existing project as new content.
-- `npm run build`, `npm run lint`, and `npm run test:fefo` pass (8 tests).
-- Browser smoke check with a mocked enabled config found all five cards and the warning at both 1366x768 and 1920x1080. API-backed authentication and the API test cases were not available to run.
-- The Vite build emits the existing warning about `__dirname` in `vite.config.ts`; this unrelated configuration was not changed.
+- This repository currently contains a Vite/React frontend only. There is no API source, auth middleware, database/schema, migration or seed system, or API test suite. The rate-limited login endpoint, isolated demo database/records, password generation, audit trail, and server-side cost/profit/admin authorization cannot be added or verified here without introducing an unrelated backend and inventing the app's authentication and data model.
+- `npm run build`, `npm run lint`, and `npm run test:fefo` pass (8 FEFO tests). Browser smoke checks confirmed five cards and the banner in demo mode at 1366x768 and 1920x1080; when disabled there are no tabs or banner and the manual form remains visible.
+- The Vite build reports an existing `__dirname` config-loader warning; it is unrelated and unchanged.

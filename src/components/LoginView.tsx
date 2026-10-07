@@ -36,30 +36,35 @@ const DEMO_ROLES = [
   {
     role: UserRole.ADMIN,
     title: 'Admin',
+    roleCode: 'ADMIN',
     username: 'demo_admin',
     description: 'System Administrator',
   },
   {
     role: UserRole.PHARMACIST,
     title: 'Pharmacist / Manager',
+    roleCode: 'PHARMACIST',
     username: 'demo_pharmacist',
     description: 'Dr. Tariq Khan (Pharmacist)',
   },
   {
     role: UserRole.CASHIER,
     title: 'Cashier',
+    roleCode: 'CASHIER',
     username: 'demo_cashier',
     description: 'Bilal Cashier (POS 1)',
   },
   {
     role: UserRole.INVENTORY,
     title: 'Inventory / Purchase',
+    roleCode: 'INVENTORY',
     username: 'demo_inventory',
     description: 'Kamran (Inventory Manager)',
   },
   {
     role: UserRole.ACCOUNTANT,
     title: 'Accountant',
+    roleCode: 'ACCOUNTANT',
     username: 'demo_accountant',
     description: 'Sajid (Head Accountant)',
   },
@@ -224,11 +229,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
                             <span className="flex flex-wrap items-center gap-2">
                               <span className="font-bold text-primary">{demoRole.title}</span>
                               <span className="rounded-full border border-border bg-white px-2 py-0.5 text-[11px] font-semibold text-muted">
-                                {demoRole.username}
+                                {demoRole.roleCode}
                               </span>
                             </span>
                             <span className="mt-1 block text-sm text-muted">
                               {demoRole.description}
+                            </span>
+                            <span className="mt-1 block text-xs text-muted">
+                              Demo user: {demoRole.username}
                             </span>
                           </span>
                           <span className="shrink-0 text-sm font-semibold text-primary">
