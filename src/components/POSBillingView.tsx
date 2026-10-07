@@ -51,6 +51,7 @@ interface POSBillingViewProps {
   customers: Customer[];
   currentRole: UserRole;
   currentUserName: string;
+  companyName: string;
   billingTemplate: BillingTemplate;
   receiptFormat: ReceiptFormat;
   onSaleComplete: (sale: CompletedSale) => void;
@@ -62,6 +63,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   customers,
   currentRole,
   currentUserName,
+  companyName,
   billingTemplate,
   receiptFormat,
   onSaleComplete,
@@ -841,7 +843,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     renderReceipt(
                       billingTemplate,
                       receiptFormat,
-                      receiptDataFromSale(saleCompleteModal)
+                      receiptDataFromSale(saleCompleteModal, { storeName: companyName })
                     )
                   );
                   setSaleCompleteModal(null);

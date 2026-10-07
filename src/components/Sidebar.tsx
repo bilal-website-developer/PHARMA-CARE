@@ -7,7 +7,6 @@ import {
   ShoppingCart,
   Package,
   Layers,
-  Boxes,
   Users,
   FileText,
   MessageSquare,
@@ -49,6 +48,7 @@ interface SidebarProps {
   onSelectItem: (key: NavItemKey) => void;
   currentRole: UserRole;
   currentUserName: string;
+  companyName: string;
   onLogout: () => void;
 }
 
@@ -57,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectItem,
   currentRole,
   currentUserName,
+  companyName,
   onLogout,
 }) => {
   const isCashier = currentRole === UserRole.CASHIER;
@@ -92,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <div className="sidebar-brand-label min-w-0">
           <div className="text-sm font-black text-white tracking-wide uppercase">
-            PharmaCare
+            {companyName}
           </div>
           <div className="text-[10px] text-white/60 font-semibold tracking-wider uppercase">
             Control Panel
@@ -190,19 +191,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Layers className="w-4 h-4" />
               <span>Master Data</span>
             </button>
-            <button
-              onClick={() => onSelectItem('stock-inventory')}
-              title="Stock Inventory"
-              aria-label="Stock Inventory"
-              className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
-                activeItem === 'stock-inventory'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 font-bold'
-                  : 'hover:bg-slate-800/60 text-slate-300'
-              }`}
-            >
-              <Boxes className="w-4 h-4" />
-              <span>Stock Inventory</span>
-            </button>
           </div>
         )}
 
@@ -211,19 +199,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="px-3 text-[10px] font-bold text-slate-400 tracking-wider uppercase">
             Sales & Customers
           </div>
-          <button
-            onClick={() => onSelectItem('customers')}
-            title="Customers"
-            aria-label="Customers"
-            className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
-              activeItem === 'customers'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 font-bold'
-                : 'hover:bg-slate-800/60 text-slate-300'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Customers</span>
-          </button>
           {!isCashier && <button
             onClick={() => onSelectItem('customer-ledger')}
             title="Customer Ledger"

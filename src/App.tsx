@@ -30,6 +30,7 @@ import { ControlledDrugScreen } from './components/ControlledDrugScreen';
 import { CashBookScreen } from './components/CashBookScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
+import { SuppliersView } from './components/SuppliersView';
 import { RepositoryReviewView } from './components/RepositoryReviewView';
 import { AuthSession, isAuthSession, LoginView } from './components/LoginView';
 import {
@@ -39,6 +40,7 @@ import {
   readBillingPreferences,
   saveBillingPreferences,
 } from './utils/receipt';
+import { readCompanyName, saveCompanyName } from './utils/storeSettings';
 
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -201,6 +203,7 @@ function PharmacyApp({
   const [previewTemplate, setPreviewTemplate] = useState<BillingTemplate>(
     billingPreferences.template
   );
+  const [companyName, setCompanyName] = useState(readCompanyName);
 
   // Main Datasets
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -284,6 +287,12 @@ function PharmacyApp({
     if (!saveBillingPreferences(preferences)) {
       window.alert('Template preference could not be saved in this browser.');
     }
+  };
+
+  const updateCompanyName = (name: string): boolean => {
+    if (!saveCompanyName(name)) return false;
+    setCompanyName(name.trim());
+    return true;
   };
 
   const openTemplatePreview = (template: BillingTemplate) => {
@@ -488,6 +497,7 @@ function PharmacyApp({
         onSelectItem={(item) => setActiveItem(item)}
         currentRole={currentRole}
         currentUserName={currentUserName}
+        companyName={companyName}
         onLogout={onLogout}
       />
 
@@ -498,6 +508,7 @@ function PharmacyApp({
           currentRole={currentRole}
           currentUserName={currentUserName}
           activeTitle={getPageTitle(activeItem)}
+          companyName={companyName}
         />
 
         {demoMode && (
@@ -529,6 +540,7 @@ function PharmacyApp({
               customers={customers}
               currentRole={currentRole}
               currentUserName={currentUserName}
+              companyName={companyName}
               billingTemplate={billingPreferences.template}
               receiptFormat={billingPreferences.format}
               onSaleComplete={handleSaleComplete}
@@ -607,17 +619,13 @@ function PharmacyApp({
               onTemplateChange={(template: BillingTemplate) =>
                 updateBillingPreferences({ ...billingPreferences, template })
               }
+              companyName={companyName}
+              onSaveCompanyName={updateCompanyName}
               onOpenTemplatePreview={openTemplatePreview}
             />
           )}
 
-          {activeItem === 'suppliers' && (
-            <EmptyModulePage
-              title="Suppliers"
-              message="No suppliers yet. Add your first supplier."
-              detail="Supplier management needs the server API and database, which are not included in this frontend-only project."
-            />
-          )}
+          {activeItem === 'suppliers' && <SuppliersView />}
           {activeItem === 'purchases' && (
             <EmptyModulePage
               title="Purchase Entry"
@@ -684,6 +692,7 @@ function PharmacyApp({
       {/* ── Global Template Preview Modal (Screenshots 1-4, 68-80) ─────────── */}
       {showTemplatePreview && (
         <TemplatePreviewModal
+          companyName={companyName}
           initialTemplate={previewTemplate}
           initialFormat={billingPreferences.format}
           canApply={currentRole === UserRole.ADMIN}

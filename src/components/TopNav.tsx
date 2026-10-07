@@ -6,6 +6,7 @@ interface TopNavProps {
   currentRole: UserRole;
   currentUserName: string;
   activeTitle: string;
+  companyName: string;
 }
 
 const largeUiKey = (userName: string) => `pharmacare.largeUi.${userName}`;
@@ -22,6 +23,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
   currentUserName,
   activeTitle,
+  companyName,
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(currentUserName));
   const [online, setOnline] = useState(navigator.onLine);
@@ -58,7 +60,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-2.5 shadow-xs sm:px-6">
       <div className="min-w-0">
-        <div className="truncate text-sm font-bold text-text">PharmaCare</div>
+        <div className="truncate text-sm font-bold text-text">{companyName}</div>
         <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
           {activeTitle}
         </div>

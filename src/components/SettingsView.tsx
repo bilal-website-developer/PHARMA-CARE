@@ -22,6 +22,8 @@ interface SettingsViewProps {
   sales: CompletedSale[];
   currentRole: UserRole;
   currentUserName: string;
+  companyName: string;
+  onSaveCompanyName: (companyName: string) => boolean;
   activeTemplate: BillingTemplate;
   canEditBilling: boolean;
   onTemplateChange: (template: BillingTemplate) => void;
@@ -32,12 +34,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   sales,
   currentRole,
   currentUserName,
+  companyName,
+  onSaveCompanyName,
   activeTemplate,
   canEditBilling,
   onTemplateChange,
   onOpenTemplatePreview,
 }) => {
-  const [shopName, setShopName] = useState('PharmaCare');
+  const [shopName, setShopName] = useState(companyName);
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [urduFooter, setUrduFooter] = useState('شکریہ! دوبارہ تشریف لائیں');
@@ -48,6 +52,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!onSaveCompanyName(shopName)) {
+      window.alert('Company name could not be saved. Check browser storage and try again.');
+      return;
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };

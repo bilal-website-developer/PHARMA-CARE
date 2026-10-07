@@ -9,6 +9,7 @@ import {
 } from '../utils/receipt';
 
 interface TemplatePreviewModalProps {
+  companyName: string;
   initialTemplate: BillingTemplate;
   initialFormat: ReceiptFormat;
   canApply: boolean;
@@ -93,6 +94,7 @@ const FORMATS: Array<{ id: ReceiptFormat; label: string }> = [
 ];
 
 export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
+  companyName,
   initialTemplate,
   initialFormat,
   canApply,
@@ -112,8 +114,8 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
   }, [onClose]);
 
   const receiptHtml = useMemo(
-    () => withReceiptTheme(renderReceipt(template, format, SAMPLE_RECEIPT)),
-    [template, format]
+    () => withReceiptTheme(renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName })),
+    [companyName, template, format]
   );
 
   return (
