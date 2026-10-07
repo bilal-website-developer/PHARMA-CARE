@@ -1,80 +1,137 @@
-import React from 'react';
-import { Bell, Moon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Bell, Moon, Type } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
 
 interface TopNavProps {
   currentRole: UserRole;
-  onLogout: () => void;
   currentUserName: string;
   activeTitle: string;
   onOpenCloseDay: () => void;
 }
 
+const largeUiKey = (userName: string) => `pharmacare.largeUi.${userName}`;
+
+function readLargeUiPreference(userName: string): boolean {
+  try {
+    return localStorage.getItem(largeUiKey(userName)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
-  onLogout,
   currentUserName,
   activeTitle,
   onOpenCloseDay,
 }) => {
+  const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(currentUserName));
+  const [online, setOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('large-ui', largeUi);
+    try {
+      localStorage.setItem(largeUiKey(currentUserName), String(largeUi));
+    } catch {
+      // The selected size remains active for this page view.
+    }
+  }, [currentUserName, largeUi]);
+
+  useEffect(() => {
+    const checkApi = async () => {
+      try {
+        await fetch('/api/auth/config', { cache: 'no-store' });
+        setOnline(navigator.onLine);
+      } catch {
+        setOnline(false);
+      }
+    };
+    const handleOnline = () => void checkApi();
+    const handleOffline = () => setOnline(false);
+    void checkApi();
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.PHARMACIST;
+
   return (
-    <header className="bg-text text-white border-b border-white/10 px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-      {/* ── Breadcrumb / Title ────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-bold text-white">Demo Store</span>
-        <span className="text-white/50 text-xs">/</span>
-        <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">
+    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-2.5 shadow-xs sm:px-6">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-bold text-text">PharmaCare</div>
+        <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
           {activeTitle}
-        </span>
+        </div>
       </div>
 
-      {/* ── Right Status Indicators & User ────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        {/* Close Day Button */}
-        <button
-          onClick={onOpenCloseDay}
-          className="px-3 py-1.5 bg-primary hover:bg-primary text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+      <div className="flex items-center gap-2 sm:gap-3">
+        {canCloseDay && (
+          <button
+            onClick={onOpenCloseDay}
+            className="flex items-center gap-1.5 rounded-control bg-primary px-2.5 py-2 text-xs font-bold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Moon className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Close Day</span>
+          </button>
+        )}
+
+        <div className="flex items-center rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
+          <button
+            type="button"
+            aria-pressed={!largeUi}
+            onClick={() => setLargeUi(false)}
+            className={`rounded-full px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              !largeUi ? 'bg-primary text-white' : 'text-muted'
+            }`}
+          >
+            Normal UI
+          </button>
+          <button
+            type="button"
+            aria-pressed={largeUi}
+            onClick={() => setLargeUi(true)}
+            className={`flex items-center gap-1 rounded-full px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              largeUi ? 'bg-primary text-white' : 'text-muted'
+            }`}
+          >
+            <Type className="h-3 w-3" />
+            Large UI
+          </button>
+        </div>
+
+        <span
+          role="status"
+          className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-bold sm:inline-flex ${
+            online
+              ? 'border-border bg-surface text-primary'
+              : 'border-warning bg-warning/15 text-text'
+          }`}
         >
-          <Moon className="w-3.5 h-3.5" />
-          <span>Close Day</span>
-        </button>
-
-        {/* UI Mode Badge */}
-        <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-white/10 text-white/80 border border-white/15">
-          Normal UI
+          <span className={`h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-warning'}`} />
+          {online ? 'SYSTEM ONLINE' : 'OFFLINE'}
         </span>
 
-        {/* System Status */}
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-accent text-text border border-accent">
-          <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          SYSTEM ONLINE
-        </span>
-
-        {/* Bell */}
-        <button className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition relative">
-          <Bell className="w-4 h-4" />
-          <span className="w-1.5 h-1.5 rounded-full bg-danger absolute top-1 right-1" />
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative rounded-control p-2 text-muted hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Bell className="h-4 w-4" />
+          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-danger" />
         </button>
 
-        {/* User Pill & Role Switcher */}
-        <div className="flex items-center gap-2 pl-2 border-l border-white/20">
-          <div className="w-7 h-7 rounded-lg bg-primary text-white font-black text-xs flex items-center justify-center">
+        <div className="flex items-center gap-2 border-l border-border pl-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
             {currentUserName.charAt(0).toUpperCase()}
           </div>
-          <div className="hidden md:flex flex-col text-left">
-            <span className="text-xs font-bold text-white leading-none">
-              {currentUserName}
-            </span>
-              <span className="text-[10px] text-accent font-bold uppercase tracking-wider mt-0.5">
-                {currentRole}
-              </span>
-            </div>
-          <button
-            onClick={onLogout}
-            className="ml-1 px-2.5 py-1 text-xs font-semibold text-white/90 border border-white/20 rounded-lg hover:bg-white/10"
-          >
-            Log out
-          </button>
+          <div className="hidden min-w-0 md:block">
+            <div className="max-w-36 truncate text-xs font-bold text-text">{currentUserName}</div>
+            <div className="text-[10px] font-semibold uppercase text-muted">{currentRole}</div>
+          </div>
         </div>
       </div>
     </header>

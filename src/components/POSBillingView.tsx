@@ -38,12 +38,21 @@ import {
   BatchStatus,
 } from '../types/pharmacy';
 import { allocateFefo, localIsoDate } from '../utils/fefo';
+import {
+  BillingTemplate,
+  ReceiptFormat,
+  printReceipt,
+  receiptDataFromSale,
+  renderReceipt,
+} from '../utils/receipt';
 
 interface POSBillingViewProps {
   products: Product[];
   customers: Customer[];
   currentRole: UserRole;
   currentUserName: string;
+  billingTemplate: BillingTemplate;
+  receiptFormat: ReceiptFormat;
   onSaleComplete: (sale: CompletedSale) => void;
   onOpenTemplatePreview: () => void;
 }
@@ -53,6 +62,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   customers,
   currentRole,
   currentUserName,
+  billingTemplate,
+  receiptFormat,
   onSaleComplete,
   onOpenTemplatePreview,
 }) => {
@@ -818,7 +829,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  onOpenTemplatePreview();
+                  printReceipt(
+                    renderReceipt(
+                      billingTemplate,
+                      receiptFormat,
+                      receiptDataFromSale(saleCompleteModal)
+                    )
+                  );
                   setSaleCompleteModal(null);
                 }}
                 className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"

@@ -5,6 +5,7 @@ import {
   ControlledDrugLog,
   CashTransaction,
   CompletedSale,
+  DrugClass,
   UserRole,
   PaymentMethod,
 } from './types/pharmacy';
@@ -31,12 +32,20 @@ import { ReportsScreen } from './components/ReportsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { RepositoryReviewView } from './components/RepositoryReviewView';
 import { AuthSession, isAuthSession, LoginView } from './components/LoginView';
+import {
+  BillingPreferences,
+  BillingTemplate,
+  ReceiptFormat,
+  readBillingPreferences,
+  saveBillingPreferences,
+} from './utils/receipt';
 
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [demoConfigChecked, setDemoConfigChecked] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [localDemoMode, setLocalDemoMode] = useState(false);
 
   useEffect(() => {
     if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
@@ -55,13 +64,32 @@ export default function App() {
 
     fetch('/api/auth/config')
       .then(async (response) => {
-        if (!response.ok) return false;
+        if (!response.ok) {
+          if (response.status === 404 && import.meta.env.DEV) {
+            setDemoMode(true);
+            setLocalDemoMode(true);
+          } else {
+            setDemoMode(false);
+            setLocalDemoMode(false);
+          }
+          return;
+        }
         const result: unknown = await response.json();
-        if (typeof result !== 'object' || result === null) return false;
-        return (result as Record<string, unknown>).demoMode === true;
+        const enabled =
+          typeof result === 'object' &&
+          result !== null &&
+          (result as Record<string, unknown>).demoMode === true;
+        setDemoMode(enabled);
+        setLocalDemoMode(false);
       })
-      .then(setDemoMode)
-      .catch(() => setDemoMode(false))
+      .catch((error: unknown) => {
+        const allowLocalDemo = import.meta.env.DEV;
+        if (!allowLocalDemo) {
+          console.warn('Demo configuration endpoint is unavailable.', error);
+        }
+        setDemoMode(allowLocalDemo);
+        setLocalDemoMode(allowLocalDemo);
+      })
       .finally(() => setDemoConfigChecked(true));
   }, []);
 
@@ -71,6 +99,11 @@ export default function App() {
     const expireSession = () => {
       window.clearTimeout(timeoutId);
       timeoutId = window.setTimeout(() => {
+        if (session.userId.startsWith('local-demo:')) {
+          setSession(null);
+          window.history.replaceState({}, '', '/login');
+          return;
+        }
         void fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
           .then((response) => {
             if (!response.ok) throw new Error('Session could not be ended.');
@@ -98,6 +131,12 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    if (session?.userId.startsWith('local-demo:')) {
+      setSession(null);
+      window.history.replaceState({}, '', '/login');
+      return;
+    }
+
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
       if (!response.ok) throw new Error('Logout request failed.');
@@ -116,7 +155,13 @@ export default function App() {
     if (window.location.pathname !== '/login') {
       window.history.replaceState({}, '', '/login');
     }
-    return <LoginView demoEnabled={demoMode} onLogin={handleLogin} />;
+    return (
+      <LoginView
+        demoEnabled={demoMode}
+        localDemoMode={localDemoMode}
+        onLogin={handleLogin}
+      />
+    );
   }
 
   if (window.location.pathname === '/login') {
@@ -150,6 +195,12 @@ function PharmacyApp({
 
   const currentRole = session.role;
   const currentUserName = session.displayName;
+  const [billingPreferences, setBillingPreferences] = useState<BillingPreferences>(() =>
+    readBillingPreferences()
+  );
+  const [previewTemplate, setPreviewTemplate] = useState<BillingTemplate>(
+    billingPreferences.template
+  );
 
   // Main Datasets
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -162,64 +213,64 @@ function PharmacyApp({
       id: 'demo-sale-1',
       invoiceNumber: 'INV-87654321',
       timestamp: '06/10/2026, 11:54:23 pm',
-      cashierName: 'd',
+      cashierName: 'Bilal Cashier (POS 1)',
       customerName: 'Ahmed Tariq',
       customerPhone: '0300-1234567',
       items: [
         {
           productId: 'prod-1',
-          productName: 'Wireless Optical Mouse 2.4G (Logitech)',
-          genericName: 'RET-MOU-01',
-          batchId: 'b-1',
-          batchNumber: 'LOT-99',
-          expiryDate: '2028-01-01',
-          drugClass: 'OTC' as any,
-          unitName: 'Piece',
-          conversionFactor: 1,
+          productName: 'Panadol Extra 500mg/65mg',
+          genericName: 'Paracetamol + Caffeine',
+          batchId: 'b-101',
+          batchNumber: 'PE-2401',
+          expiryDate: '2026-12-31',
+          drugClass: DrugClass.OTC,
+          unitName: 'Strip (10 Tabs)',
+          conversionFactor: 10,
           quantityInUnit: 1,
-          mrpPaisaPerUnit: 185000,
-          costPaisaPerUnit: 140000,
+          mrpPaisaPerUnit: 6500,
+          costPaisaPerUnit: 4800,
           discountPercent: 0,
-          lineTotalPaisa: 185000,
+          lineTotalPaisa: 6500,
         },
         {
           productId: 'prod-2',
-          productName: 'Executive Hardcover Notebook A5 (Deli)',
-          genericName: 'RET-NTB-A5',
-          batchId: 'b-2',
-          batchNumber: 'LOT-98',
-          expiryDate: '2028-01-01',
-          drugClass: 'OTC' as any,
-          unitName: 'Piece',
-          conversionFactor: 1,
-          quantityInUnit: 2,
-          mrpPaisaPerUnit: 45000,
-          costPaisaPerUnit: 35000,
+          productName: 'Augmentin 625mg',
+          genericName: 'Amoxicillin + Clavulanic Acid',
+          batchId: 'b-201',
+          batchNumber: 'AUG-889',
+          expiryDate: '2026-11-15',
+          drugClass: DrugClass.RX,
+          unitName: 'Pack (14 Tabs)',
+          conversionFactor: 14,
+          quantityInUnit: 1,
+          mrpPaisaPerUnit: 48000,
+          costPaisaPerUnit: 38000,
           discountPercent: 0,
-          lineTotalPaisa: 90000,
+          lineTotalPaisa: 48000,
         },
         {
-          productId: 'prod-3',
-          productName: 'Ballpoint Pen Box (Pack of 10) (Piano)',
-          genericName: 'RET-PEN-10',
-          batchId: 'b-3',
-          batchNumber: 'LOT-97',
-          expiryDate: '2028-01-01',
-          drugClass: 'OTC' as any,
-          unitName: 'Pack',
+          productId: 'prod-6',
+          productName: 'Mixtard 30 HM 100IU (Insulin 70/30)',
+          genericName: 'Biphasic Isophane Insulin Human',
+          batchId: 'b-601',
+          batchNumber: 'NN-MIX-304',
+          expiryDate: '2027-03-31',
+          drugClass: DrugClass.RX,
+          unitName: 'Vial (10ml)',
           conversionFactor: 1,
           quantityInUnit: 1,
-          mrpPaisaPerUnit: 30000,
-          costPaisaPerUnit: 22000,
+          mrpPaisaPerUnit: 145000,
+          costPaisaPerUnit: 122000,
           discountPercent: 0,
-          lineTotalPaisa: 30000,
+          lineTotalPaisa: 145000,
         },
       ],
-      subtotalPaisa: 305000,
-      discountPaisa: 20000,
-      totalPaisa: 285000,
+      subtotalPaisa: 199500,
+      discountPaisa: 0,
+      totalPaisa: 199500,
       paymentMethod: PaymentMethod.CASH,
-      amountTenderedPaisa: 285000,
+      amountTenderedPaisa: 199500,
       changePaisa: 0,
     },
   ]);
@@ -227,6 +278,18 @@ function PharmacyApp({
   // Global Modals
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [showCloseDayModal, setShowCloseDayModal] = useState(false);
+
+  const updateBillingPreferences = (preferences: BillingPreferences) => {
+    setBillingPreferences(preferences);
+    if (!saveBillingPreferences(preferences)) {
+      window.alert('Template preference could not be saved in this browser.');
+    }
+  };
+
+  const openTemplatePreview = (template: BillingTemplate) => {
+    setPreviewTemplate(template);
+    setShowTemplatePreview(true);
+  };
 
   // Keyboard shortcut F1 for POS Billing
   useEffect(() => {
@@ -424,6 +487,8 @@ function PharmacyApp({
         activeItem={activeItem}
         onSelectItem={(item) => setActiveItem(item)}
         currentRole={currentRole}
+        currentUserName={currentUserName}
+        onLogout={onLogout}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
@@ -431,7 +496,6 @@ function PharmacyApp({
         {/* Top Header Strip */}
         <TopNav
           currentRole={currentRole}
-          onLogout={onLogout}
           currentUserName={currentUserName}
           activeTitle={getPageTitle(activeItem)}
           onOpenCloseDay={() => setShowCloseDayModal(true)}
@@ -466,8 +530,10 @@ function PharmacyApp({
               customers={customers}
               currentRole={currentRole}
               currentUserName={currentUserName}
+              billingTemplate={billingPreferences.template}
+              receiptFormat={billingPreferences.format}
               onSaleComplete={handleSaleComplete}
-              onOpenTemplatePreview={() => setShowTemplatePreview(true)}
+              onOpenTemplatePreview={() => openTemplatePreview(billingPreferences.template)}
             />
           )}
 
@@ -533,7 +599,14 @@ function PharmacyApp({
           )}
 
           {activeItem === 'settings' && (
-            <SettingsView onOpenTemplatePreview={() => setShowTemplatePreview(true)} />
+            <SettingsView
+              activeTemplate={billingPreferences.template}
+              canEditBilling={currentRole === UserRole.ADMIN}
+              onTemplateChange={(template: BillingTemplate) =>
+                updateBillingPreferences({ ...billingPreferences, template })
+              }
+              onOpenTemplatePreview={openTemplatePreview}
+            />
           )}
 
           {activeItem === 'suppliers' && (
@@ -628,7 +701,16 @@ function PharmacyApp({
 
       {/* ── Global Template Preview Modal (Screenshots 1-4, 68-80) ─────────── */}
       {showTemplatePreview && (
-        <TemplatePreviewModal onClose={() => setShowTemplatePreview(false)} />
+        <TemplatePreviewModal
+          initialTemplate={previewTemplate}
+          initialFormat={billingPreferences.format}
+          canApply={currentRole === UserRole.ADMIN}
+          onApply={(template: BillingTemplate, format: ReceiptFormat) => {
+            updateBillingPreferences({ template, format });
+            setShowTemplatePreview(false);
+          }}
+          onClose={() => setShowTemplatePreview(false)}
+        />
       )}
 
       {/* ── End of Day Summary Modal (Screenshot 5) ─────────────────────────── */}

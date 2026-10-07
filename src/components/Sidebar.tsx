@@ -45,21 +45,30 @@ interface SidebarProps {
   activeItem: NavItemKey;
   onSelectItem: (key: NavItemKey) => void;
   currentRole: UserRole;
+  currentUserName: string;
+  onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, currentRole }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  activeItem,
+  onSelectItem,
+  currentRole,
+  currentUserName,
+  onLogout,
+}) => {
   const isCashier = currentRole === UserRole.CASHIER;
+  const isAdmin = currentRole === UserRole.ADMIN;
 
   return (
-    <aside className="w-64 bg-text text-white flex flex-col shrink-0 h-screen sticky top-0 overflow-y-auto select-none border-r border-white/10">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 select-none flex-col border-r border-white/10 bg-text text-white">
       {/* ── Brand Header ─────────────────────────────────────────────────── */}
       <div className="p-4 flex items-center gap-3 border-b border-slate-800">
         <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white font-extrabold text-base shadow-md shadow-primary/30">
-          D
+          P
         </div>
         <div>
           <div className="text-sm font-black text-white tracking-wide uppercase">
-            Demo Store
+            PharmaCare
           </div>
           <div className="text-[10px] text-accent font-semibold tracking-wider uppercase">
             Control Panel • Rx
@@ -68,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
       </div>
 
       {/* ── Nav Links ────────────────────────────────────────────────────── */}
-      <div className="flex-1 px-3 py-4 space-y-5 text-xs">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4 text-xs">
         {/* MAIN */}
         <div className="space-y-1">
           <div className="px-3 text-[10px] font-bold text-slate-400 tracking-wider uppercase">
@@ -156,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
             <Users className="w-4 h-4" />
             <span>Customers</span>
           </button>
-          <button
+          {!isCashier && <button
             onClick={() => onSelectItem('customer-ledger')}
             className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
               activeItem === 'customer-ledger'
@@ -166,8 +175,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
           >
             <FileText className="w-4 h-4" />
             <span>Customer Ledger</span>
-          </button>
-          <button
+          </button>}
+          {!isCashier && <button
             onClick={() => onSelectItem('whatsapp-reminders')}
             className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
               activeItem === 'whatsapp-reminders'
@@ -177,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
           >
             <MessageSquare className="w-4 h-4" />
             <span>WhatsApp Reminders</span>
-          </button>
+          </button>}
           <button
             onClick={() => onSelectItem('sales-history')}
             className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
@@ -261,25 +270,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
               <BarChart3 className="w-4 h-4" />
               <span>Business Analytics</span>
             </button>
-            <button
-              onClick={() => onSelectItem('manage-users')}
-              className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
-                activeItem === 'manage-users'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 font-bold'
-                  : 'hover:bg-slate-800/60 text-slate-300'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>Manage Users</span>
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => onSelectItem('manage-users')}
+                className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
+                  activeItem === 'manage-users'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 font-bold'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Manage Users</span>
+              </button>
+            )}
           </div>
         )}
 
         {/* SETTINGS & SYSTEM */}
-        <div className="space-y-1">
-          <div className="px-3 text-[10px] font-bold text-slate-400 tracking-wider uppercase">
-            Settings & System
-          </div>
+        {!isCashier && (
+          <div className="space-y-1">
+            <div className="px-3 text-[10px] font-bold text-slate-400 tracking-wider uppercase">
+              Settings & System
+            </div>
           <button
             onClick={() => onSelectItem('settings')}
             className={`w-full text-left px-3 py-2 rounded-lg font-medium flex items-center gap-2.5 transition ${
@@ -313,13 +325,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeItem, onSelectItem, curr
             <HelpCircle className="w-4 h-4" />
             <span>Help & Support</span>
           </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <div className="p-3 border-t border-slate-800/80 text-[10px] text-slate-400 text-center leading-tight">
-        <div>Developed with ❤️ by</div>
-        <div className="font-bold text-slate-200 mt-0.5">EdgeX Digital & Babar Joya</div>
+      <div className="mt-auto flex items-center gap-2 border-t border-white/10 p-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+          {currentUserName.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-bold text-white">{currentUserName}</div>
+          <div className="text-[10px] font-semibold uppercase text-white/60">{currentRole}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          title="Log out"
+          className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          Log out
+        </button>
       </div>
     </aside>
   );

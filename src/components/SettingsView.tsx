@@ -10,17 +10,28 @@ import {
   Save,
   Printer,
   Sparkles,
+  FileText,
+  ScrollText,
+  ClipboardList,
 } from 'lucide-react';
+import { BillingTemplate } from '../utils/receipt';
 
 interface SettingsViewProps {
-  onOpenTemplatePreview: () => void;
+  activeTemplate: BillingTemplate;
+  canEditBilling: boolean;
+  onTemplateChange: (template: BillingTemplate) => void;
+  onOpenTemplatePreview: (template: BillingTemplate) => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenTemplatePreview }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  activeTemplate,
+  canEditBilling,
+  onTemplateChange,
+  onOpenTemplatePreview,
+}) => {
   const [shopName, setShopName] = useState('Demo Store');
   const [phone, setPhone] = useState('03011234567');
   const [city, setCity] = useState('Bahawalpur');
-  const [activeTemplate, setActiveTemplate] = useState('Classic');
   const [urduFooter, setUrduFooter] = useState('شکریہ! دوبارہ تشریف لائیں');
   const [debtTemplate, setDebtTemplate] = useState(
     'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!'
@@ -96,84 +107,91 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenTemplatePrevie
       </div>
 
       {/* ── Billing Template Selection (Matching Screenshot 54, 55, 67, 75) ── */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white p-5 sm:p-6 rounded-card border border-border shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div>
-            <h3 className="text-sm font-black text-slate-900">Billing Template</h3>
-            <p className="text-xs text-slate-500">
-              Choose how your receipts and invoices look when printed. Works for both 80mm thermal and A4.
+            <h3 className="text-sm font-black text-text">Billing Template</h3>
+            <p className="mt-1 text-xs text-muted">
+              Choose how your receipts and invoices look when printed. Works for 58mm and 80mm thermal and A4.
             </p>
           </div>
           <button
             type="button"
-            onClick={onOpenTemplatePreview}
-            className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg flex items-center gap-1 transition"
+            onClick={() => onOpenTemplatePreview(activeTemplate)}
+            className="flex items-center gap-1.5 rounded-control border border-border px-3 py-2 text-xs font-bold text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <Sparkles className="w-3.5 h-3.5" /> Full Screen Preview
+            <Sparkles className="h-3.5 w-3.5" /> Quick View Template Preview
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
-              id: 'Simple',
-              desc: 'Minimal & clean. No logo area. Compact spacing. Fast to print.',
-              icon: '📄',
+              id: 'simple' as const,
+              desc: 'Minimal & clean. No logo area, compact spacing. Fast to print.',
+              icon: FileText,
             },
             {
-              id: 'Classic',
+              id: 'classic' as const,
               desc: 'Standard receipt style with logo, dashed lines and item table. Recommended.',
-              icon: '🧾',
+              icon: ScrollText,
             },
             {
-              id: 'Professional',
-              desc: 'Full invoice look — letterhead, invoice number box, PAID stamp, signature line.',
-              icon: '📑',
+              id: 'professional' as const,
+              desc: 'Full invoice look: letterhead, invoice number box, PAID stamp, signature line.',
+              icon: ClipboardList,
             },
             {
-              id: 'Modern',
-              desc: 'Elegant & spacious. System sans-serif font, thin grey borders, cards for totals.',
-              icon: '✨',
+              id: 'modern' as const,
+              desc: 'Elegant & spacious. Clean sans-serif font, thin borders, cards for totals.',
+              icon: Sparkles,
             },
           ].map((tmpl) => (
             <div
               key={tmpl.id}
-              className={`p-3.5 rounded-2xl border flex flex-col justify-between transition ${
+              className={`flex min-w-0 flex-col justify-between rounded-card border p-4 shadow-xs transition ${
                 activeTemplate === tmpl.id
-                  ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-600/20'
-                  : 'border-slate-200 bg-white'
+                  ? 'border-2 border-primary bg-surface'
+                  : 'border-border bg-white'
               }`}
             >
               <div>
-                <span className="text-xl block mb-1">{tmpl.icon}</span>
-                <span className="font-bold text-slate-900 block">{tmpl.id}</span>
-                {activeTemplate === tmpl.id && (
-                  <span className="inline-block px-1.5 py-0.2 bg-blue-600 text-white text-[9px] font-bold rounded uppercase mt-0.5">
-                    Active
-                  </span>
-                )}
-                <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">{tmpl.desc}</p>
+                <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-control bg-surface text-primary">
+                  <tmpl.icon size={18} aria-hidden="true" />
+                </span>
+                <span className="flex min-h-6 flex-wrap items-center gap-2 font-bold capitalize text-text">
+                  {tmpl.id}
+                  {activeTemplate === tmpl.id && (
+                    <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold uppercase text-white">
+                      Active
+                    </span>
+                  )}
+                </span>
+                <p className="mt-2 min-h-16 text-[11px] leading-relaxed text-muted">
+                  {tmpl.desc}
+                </p>
               </div>
 
-              <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-slate-100">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTemplate(tmpl.id)}
-                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition ${
+                  onClick={() => onTemplateChange(tmpl.id)}
+                  disabled={!canEditBilling}
+                  className={`min-w-20 flex-1 rounded-control px-2 py-2 text-[10px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     activeTemplate === tmpl.id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
-                  }`}
+                      ? 'bg-primary text-white'
+                      : 'border border-border bg-white text-text hover:bg-surface'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   {activeTemplate === tmpl.id ? 'Selected' : 'Select'}
                 </button>
                 <button
                   type="button"
-                  onClick={onOpenTemplatePreview}
-                  className="p-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600"
+                  onClick={() => onOpenTemplatePreview(tmpl.id)}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-control border border-border px-2 py-2 text-[10px] font-semibold text-text hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   title="Preview"
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="h-3.5 w-3.5" /> Preview
                 </button>
               </div>
             </div>

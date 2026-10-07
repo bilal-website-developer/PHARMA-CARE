@@ -29,6 +29,7 @@ export function isAuthSession(value: unknown): value is AuthSession {
 
 interface LoginViewProps {
   demoEnabled: boolean;
+  localDemoMode: boolean;
   onLogin: (session: AuthSession) => void;
 }
 
@@ -36,41 +37,40 @@ const DEMO_ROLES = [
   {
     role: UserRole.ADMIN,
     title: 'Admin',
-    roleCode: 'ADMIN',
-    username: 'demo_admin',
+    roleCode: 'admin',
     description: 'System Administrator',
   },
   {
     role: UserRole.PHARMACIST,
     title: 'Pharmacist / Manager',
-    roleCode: 'PHARMACIST',
-    username: 'demo_pharmacist',
+    roleCode: 'pharmacist',
     description: 'Dr. Tariq Khan (Pharmacist)',
   },
   {
     role: UserRole.CASHIER,
     title: 'Cashier',
-    roleCode: 'CASHIER',
-    username: 'demo_cashier',
+    roleCode: 'cashier',
     description: 'Bilal Cashier (POS 1)',
   },
   {
     role: UserRole.INVENTORY,
     title: 'Inventory / Purchase',
-    roleCode: 'INVENTORY',
-    username: 'demo_inventory',
+    roleCode: 'inventory',
     description: 'Kamran (Inventory Manager)',
   },
   {
     role: UserRole.ACCOUNTANT,
     title: 'Accountant',
-    roleCode: 'ACCOUNTANT',
-    username: 'demo_accountant',
+    roleCode: 'accountant',
     description: 'Sajid (Head Accountant)',
   },
 ] as const;
 
-export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) => {
+export const LoginView: React.FC<LoginViewProps> = ({
+  demoEnabled,
+  localDemoMode,
+  onLogin,
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -115,6 +115,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
     if (loadingRole) return;
     setLoadingRole(role);
     setError('');
+    if (localDemoMode) {
+      const demoRole = DEMO_ROLES.find((candidate) => candidate.role === role);
+      if (!demoRole) {
+        setError('This demo role is unavailable.');
+        setLoadingRole(null);
+        return;
+      }
+      onLogin({
+        userId: `local-demo:${role.toLowerCase()}`,
+        displayName: demoRole.description,
+        role,
+      });
+      return;
+    }
+
     try {
       const response = await fetch('/api/auth/demo-login', {
         method: 'POST',
@@ -141,20 +156,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface px-3 py-8 font-inter text-text sm:px-5">
-      <div className="w-full max-w-lg">
-        <header className="mb-5 space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-card bg-primary text-white">
+    <main className="flex min-h-screen items-center justify-center bg-surface px-3 py-4 font-inter text-text sm:px-5">
+      <div className="w-full max-w-md">
+        <header className="mb-3 space-y-1.5 text-center">
+          <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-card bg-primary text-white">
             <Pill aria-hidden="true" />
           </div>
-          <h1 className="text-xl font-bold">Demo Store</h1>
-          <p className="text-sm text-muted">Sign in to PharmaCare</p>
+          <h1 className="text-lg font-bold">Demo Store</h1>
+          <p className="text-xs text-muted">Sign in to PharmaCare</p>
         </header>
 
         {demoEnabled && (
           <div
             role="status"
-            className="mb-3 rounded-control border border-warning bg-warning/15 px-4 py-2.5 text-center text-sm font-semibold text-text"
+            className="mb-2 rounded-control border border-warning bg-warning/15 px-3 py-2 text-center text-xs font-semibold text-text"
           >
             DEMO MODE: sample data only
           </div>
@@ -162,10 +177,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
 
         <section className="overflow-hidden rounded-card border border-border bg-white shadow-lg">
           <div className="h-1.5 bg-primary" />
-          <div className="p-5 sm:p-8">
+          <div className="p-4 sm:p-5">
             {demoEnabled && (
               <div
-                className="mb-6 flex border-b border-border"
+                className="mb-4 flex border-b border-border"
                 role="tablist"
                 aria-label="Login options"
               >
@@ -179,7 +194,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
                     setActiveTab('demo');
                     setError('');
                   }}
-                  className={`flex-1 border-b-2 px-2 pb-3 text-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                  className={`flex-1 border-b-2 px-2 pb-2.5 text-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     activeTab === 'demo'
                       ? 'border-primary font-bold text-primary'
                       : 'border-transparent font-medium text-muted'
@@ -197,7 +212,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
                     setActiveTab('manual');
                     setError('');
                   }}
-                  className={`flex-1 border-b-2 px-2 pb-3 text-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                  className={`flex-1 border-b-2 px-2 pb-2.5 text-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     activeTab === 'manual'
                       ? 'border-primary font-bold text-primary'
                       : 'border-transparent font-medium text-muted'
@@ -210,10 +225,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
 
             {demoEnabled && activeTab === 'demo' ? (
               <div id="demo-panel" role="tabpanel" aria-labelledby="demo-tab">
-                <p className="mb-4 text-sm leading-5 text-muted">
+                <p className="mb-3 text-sm leading-5 text-muted">
                   Click any role to test role-aware navigation and menu restrictions.
                 </p>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {DEMO_ROLES.map((demoRole) => {
                     const isLoading = loadingRole === demoRole.role;
                     return (
@@ -222,7 +237,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
                         type="button"
                         disabled={loadingRole !== null}
                         onClick={() => void handleDemoLogin(demoRole.role)}
-                        className="group w-full rounded-card border border-border bg-surface p-3 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-wait disabled:opacity-70 sm:p-4"
+                        className="group w-full rounded-card border border-border bg-surface p-3 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-wait disabled:opacity-70"
                       >
                         <span className="flex items-center justify-between gap-3">
                           <span className="min-w-0">
@@ -232,11 +247,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ demoEnabled, onLogin }) =>
                                 {demoRole.roleCode}
                               </span>
                             </span>
-                            <span className="mt-1 block text-sm text-muted">
-                              {demoRole.description}
-                            </span>
                             <span className="mt-1 block text-xs text-muted">
-                              Demo user: {demoRole.username}
+                              {demoRole.description}
                             </span>
                           </span>
                           <span className="shrink-0 text-sm font-semibold text-primary">

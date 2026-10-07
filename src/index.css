@@ -101,6 +101,10 @@
     font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
+  html.large-ui {
+    font-size: 18px;
+  }
+
   [lang="ur"],
   [dir="rtl"] {
     font-family: "Noto Nastaliq Urdu", serif;
