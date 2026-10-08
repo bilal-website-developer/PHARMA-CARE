@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, Type } from 'lucide-react';
-import { UserRole } from '../types/pharmacy';
+import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import PharmaLogo from './PharmaLogo';
 
 interface TopNavProps {
@@ -160,7 +160,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
           <div className="hidden min-w-0 md:block">
             <div className="max-w-36 truncate text-xs font-bold text-text">{currentUserName}</div>
-            <div className="text-[10px] font-semibold uppercase text-muted">{currentRole}</div>
+            <div className="text-[10px] font-semibold uppercase text-muted">{ROLE_LABELS[currentRole]}</div>
           </div>
         </div>
       </div>

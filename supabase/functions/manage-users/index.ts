@@ -5,7 +5,7 @@ const MODULE_KEYS = [
   'pos', 'products', 'categories', 'suppliers', 'customers', 'sales_history',
   'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports',
 ] as const;
-const ROLES = ['cashier', 'manager', 'accountant', 'admin'] as const;
+const ROLES = ['cashier', 'manager', 'accountant', 'admin', 'super_admin'] as const;
 type Role = (typeof ROLES)[number];
 
 const corsHeaders = {
@@ -62,7 +62,7 @@ function safeProfile(
     email,
     role: validRole(roleValue) ? roleValue : 'cashier',
     is_active: profile.is_active === true,
-    permissions: roleValue === 'admin'
+    permissions: roleValue === 'super_admin'
       ? [...MODULE_KEYS]
       : Array.isArray(profile.permissions)
         ? profile.permissions.filter((permission) => MODULE_KEYS.includes(permission as typeof MODULE_KEYS[number]))
@@ -101,12 +101,13 @@ Deno.serve(async (request) => {
     if (callerError) throw callerError;
     if (
       !callerProfile ||
-      callerProfile.role !== 'admin' ||
+      (callerProfile.role !== 'admin' && callerProfile.role !== 'super_admin') ||
       callerProfile.is_active !== true ||
       callerProfile.deleted_at !== null
     ) {
       return response(403, { message: 'Only an active admin can manage users.' });
     }
+    const isSuperAdmin = callerProfile.role === 'super_admin';
 
     let payload: Record<string, unknown>;
     try {
@@ -133,9 +134,12 @@ Deno.serve(async (request) => {
       if (authUsersError) throw authUsersError;
       const creationOrder = new Map(authUsers.users.map((user) => [user.id, user.created_at]));
       const authEmailById = new Map(authUsers.users.map((user) => [user.id, user.email]));
-      const orderedUsers = (users ?? []).map((user) => safeProfile(user, authEmailById.get(user.id))).sort((left, right) =>
-        (creationOrder.get(left.id) ?? '').localeCompare(creationOrder.get(right.id) ?? '')
-      );
+      const orderedUsers = (users ?? [])
+        .filter((user) => isSuperAdmin || user.role !== 'super_admin')
+        .map((user) => safeProfile(user, authEmailById.get(user.id)))
+        .sort((left, right) =>
+          (creationOrder.get(left.id) ?? '').localeCompare(creationOrder.get(right.id) ?? '')
+        );
       return response(200, { users: orderedUsers, userLimit: MAX_USERS, currentCount: orderedUsers.length });
     }
 
@@ -153,8 +157,31 @@ Deno.serve(async (request) => {
       if (authUsersError) throw authUsersError;
       const authEmailById = new Map(authUsers.users.map((user) => [user.id, user.email]));
       return response(200, {
-        users: (users ?? []).map((user) => safeProfile(user, authEmailById.get(user.id))),
+        users: (users ?? [])
+          .filter((user) => isSuperAdmin || user.role !== 'super_admin')
+          .map((user) => safeProfile(user, authEmailById.get(user.id))),
       });
+    }
+
+    if (action === 'reset_password') {
+      const id = typeof payload.id === 'string' ? payload.id : '';
+      const password = typeof payload.password === 'string' ? payload.password : '';
+      if (!id) return response(400, { message: 'User id is required.' });
+      if (password.length < 8) return response(400, { message: 'Password must be at least 8 characters.' });
+      const { data: target, error: targetError } = await adminClient
+        .from('profiles')
+        .select('id,role,deleted_at')
+        .eq('id', id)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target || target.role === 'super_admin' || (!isSuperAdmin && target.role === 'admin')) {
+        return response(404, { message: 'User not found.' });
+      }
+      if (target.deleted_at !== null) return response(400, { message: 'Restore this user before changing its password.' });
+
+      const { error: passwordError } = await adminClient.auth.admin.updateUserById(id, { password });
+      if (passwordError) return response(400, { message: `Could not reset password: ${passwordError.message}` });
+      return response(200, { message: 'Password reset successfully.' });
     }
 
     if (action === 'create') {
@@ -171,6 +198,9 @@ Deno.serve(async (request) => {
       if (password.length < 8) return response(400, { message: 'Password must be at least 8 characters.' });
       if (!role) return response(400, { message: 'Role is required.' });
       if (!validRole(role)) return response(400, { message: 'Role must be cashier, manager, accountant, or admin.' });
+      if (role === 'super_admin' || (!isSuperAdmin && role === 'admin')) {
+        return response(403, { message: 'You are not allowed to assign this role.' });
+      }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
       if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
         return response(400, { message: 'Active status must be true or false.' });
@@ -194,7 +224,7 @@ Deno.serve(async (request) => {
       }
       if ((currentUsers?.length ?? 0) >= MAX_USERS) return response(409, { message: 'The user limit has been reached.' });
 
-      const permissions = role === 'admin' ? [...MODULE_KEYS] : payload.permissions;
+      const permissions = role === 'super_admin' ? [...MODULE_KEYS] : payload.permissions;
       const { data: createdAuth, error: createAuthError } = await adminClient.auth.admin.createUser({
         email,
         password,
@@ -251,7 +281,9 @@ Deno.serve(async (request) => {
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
-      if (!target) return response(404, { message: 'User not found.' });
+      if (!target || target.role === 'super_admin' || (!isSuperAdmin && target.role === 'admin' && id !== authData.user.id)) {
+        return response(404, { message: 'User not found.' });
+      }
       const isSelf = id === authData.user.id;
 
       const { count: activeAdminCount, error: countError } = await adminClient
@@ -310,12 +342,17 @@ Deno.serve(async (request) => {
       if (!username) return response(400, { message: 'Username is required.' });
       if (!validEmail(email)) return response(400, { message: 'A valid email is required.' });
       if (!role) return response(400, { message: 'Role is required.' });
-      if (!validRole(role)) return response(400, { message: 'Role must be cashier, manager, accountant, or admin.' });
+      if (!validRole(role)) return response(400, { message: 'Role is invalid.' });
+      if (
+        role === 'super_admin' ||
+        (!isSuperAdmin && role === 'admin' && target.role !== 'admin') ||
+        (!isSuperAdmin && target.role === 'admin' && role !== 'admin')
+      ) {
+        return response(403, { message: 'You are not allowed to assign this role.' });
+      }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
       if (typeof payload.is_active !== 'boolean') return response(400, { message: 'Active status is required.' });
-      if (payload.password !== undefined && (typeof payload.password !== 'string' || payload.password.length < 8)) {
-        return response(400, { message: 'Password must be at least 8 characters.' });
-      }
+      if (payload.password !== undefined) return response(400, { message: 'Use the password reset action to set a new password.' });
       if (target.deleted_at !== null) return response(400, { message: 'Restore this user before editing.' });
       const { data: otherUsers, error: duplicateError } = await adminClient
         .from('profiles')
@@ -344,11 +381,10 @@ Deno.serve(async (request) => {
       if (isLastActiveAdmin && (!nextActive || isDemoting)) {
         return response(403, { message: 'Cannot demote or deactivate the last active admin.' });
       }
-      const permissions = nextRole === 'admin' ? [...MODULE_KEYS] : payload.permissions;
+      const permissions = nextRole === 'super_admin' ? [...MODULE_KEYS] : payload.permissions;
 
-      const authChanges: { email?: string; password?: string; ban_duration?: string } = {};
+      const authChanges: { email?: string; ban_duration?: string } = {};
       if (String(email ?? '').toLowerCase() !== String(target.email ?? '').toLowerCase()) authChanges.email = email;
-      if (typeof payload.password === 'string' && payload.password.length > 0) authChanges.password = payload.password;
       if (nextActive !== target.is_active) authChanges.ban_duration = nextActive ? 'none' : '876000h';
       if (Object.keys(authChanges).length) {
         const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(id, authChanges);

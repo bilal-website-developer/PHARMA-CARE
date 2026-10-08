@@ -8,7 +8,7 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
 } from './permissions';
 
-test('role defaults match the requested cashier, manager, accountant, and admin access', () => {
+test('role defaults preserve existing access and give super admins full admin access', () => {
   assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.CASHIER], ['pos', 'customers']);
   assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.MANAGER], [
     'pos', 'products', 'categories', 'suppliers', 'customers',
@@ -17,13 +17,21 @@ test('role defaults match the requested cashier, manager, accountant, and admin 
   assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.ACCOUNTANT], [
     'customers', 'suppliers', 'sales_history', 'purchase_history', 'expenses', 'reports',
   ]);
-  assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.ADMIN], MODULES.map(({ key }) => key));
+  assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.ADMIN], []);
+  assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.SUPER_ADMIN], MODULES.map(({ key }) => key));
 });
 
-test('admin access and assigned module permissions are respected by page guards', () => {
-  assert.equal(canAccessModule(UserRole.ADMIN, [], 'expenses'), true);
+test('admin and super admin access and assigned module permissions are respected by page guards', () => {
+  assert.equal(canAccessModule(UserRole.ADMIN, [], 'expenses'), false);
+  assert.equal(canAccessModule(UserRole.ADMIN, ['expenses'], 'expenses'), true);
+  assert.equal(canAccessModule(UserRole.SUPER_ADMIN, [], 'expenses'), true);
   assert.equal(canAccessModule(UserRole.CASHIER, ['pos'], 'pos'), true);
   assert.equal(canAccessModule(UserRole.CASHIER, ['pos'], 'purchases'), false);
+  assert.equal(canAccessPage(UserRole.ADMIN, [], 'manage-users'), true);
+  assert.equal(canAccessPage(UserRole.SUPER_ADMIN, [], 'manage-users'), true);
+  assert.equal(canAccessPage(UserRole.SUPER_ADMIN, [], 'settings'), true);
+  assert.equal(canAccessPage(UserRole.ADMIN, [], 'expenses'), false);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['expenses'], 'expenses'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'manage-users'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'manage-users'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'purchases'), false);

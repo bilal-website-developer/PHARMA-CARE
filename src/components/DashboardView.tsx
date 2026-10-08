@@ -53,8 +53,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [targetError, setTargetError] = useState('');
   const [, setRefreshCount] = useState(0);
 
-  const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.MANAGER;
-  const canViewProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.ACCOUNTANT;
+  const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.MANAGER;
+  const canViewProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
   const todaySales = salesForPeriod(sales, 'today');
   const monthlySales = salesForPeriod(sales, 'month');
 

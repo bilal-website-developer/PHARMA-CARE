@@ -26,7 +26,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly ModuleKey[]> = 
   [UserRole.ACCOUNTANT]: [
     'customers', 'suppliers', 'sales_history', 'purchase_history', 'expenses', 'reports',
   ],
-  [UserRole.ADMIN]: MODULES.map(({ key }) => key),
+  [UserRole.ADMIN]: [],
+  [UserRole.SUPER_ADMIN]: MODULES.map(({ key }) => key),
 };
 
 const PAGE_MODULE: Partial<Record<string, ModuleKey>> = {
@@ -50,7 +51,11 @@ export function isModuleKey(value: unknown): value is ModuleKey {
 }
 
 export function permissionsForRole(role: UserRole, permissions: readonly string[]) {
-  return role === UserRole.ADMIN ? ROLE_DEFAULT_PERMISSIONS[UserRole.ADMIN] : permissions;
+  return role === UserRole.SUPER_ADMIN ? ROLE_DEFAULT_PERMISSIONS[role] : permissions;
+}
+
+export function isAdminRole(role: UserRole) {
+  return role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN;
 }
 
 export function canAccessModule(role: UserRole, permissions: readonly string[], moduleKey: ModuleKey) {
@@ -59,7 +64,7 @@ export function canAccessModule(role: UserRole, permissions: readonly string[], 
 
 export function canAccessPage(role: UserRole, permissions: readonly string[], pageKey: string) {
   if (pageKey === 'dashboard' || pageKey === 'help-support') return true;
-  if (['manage-users', 'settings', 'trash-bin'].includes(pageKey)) return role === UserRole.ADMIN;
+  if (['manage-users', 'settings', 'trash-bin'].includes(pageKey)) return isAdminRole(role);
   const moduleKey = PAGE_MODULE[pageKey];
   return moduleKey ? canAccessModule(role, permissions, moduleKey) : false;
 }
@@ -78,7 +83,7 @@ export function PermissionsProvider({
   children,
 }: React.PropsWithChildren<{ role: UserRole; permissions: readonly string[] }>) {
   const value = useMemo<PermissionContextValue>(() => {
-    const isAdmin = role === UserRole.ADMIN;
+    const isAdmin = isAdminRole(role);
     const can = (moduleKey: ModuleKey) => canAccessModule(role, permissions, moduleKey);
     const canPage = (pageKey: string) => canAccessPage(role, permissions, pageKey);
     return { isAdmin, can, canPage };

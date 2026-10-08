@@ -17,7 +17,7 @@ interface ReportsScreenProps {
 }
 
 export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole }) => {
-  const canSeeProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.ACCOUNTANT;
+  const canSeeProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
 
   const totalRevenuePaisa = sales.reduce((sum, s) => sum + s.totalPaisa, 0);
   const totalCostPaisa = canSeeProfit ? sales.reduce((sum, s) => {

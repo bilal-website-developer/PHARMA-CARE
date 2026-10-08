@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { UserRole } from '../types/pharmacy';
+import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import { MODULES, ROLE_DEFAULT_PERMISSIONS, ModuleKey } from '../permissions';
 import { supabase } from '../utils/supabase';
 
@@ -58,16 +58,20 @@ function roleClass(role: UserRole) {
     case UserRole.MANAGER: return 'bg-orange-100 text-orange-800';
     case UserRole.ACCOUNTANT: return 'bg-teal-100 text-teal-800';
     case UserRole.ADMIN: return 'bg-purple-100 text-purple-800';
+    case UserRole.SUPER_ADMIN: return 'bg-red-100 text-red-800';
   }
 }
 
 export function ManageUsersView({
   currentUserId,
+  currentRole,
   onChangePassword,
 }: {
   currentUserId: string;
+  currentRole: UserRole;
   onChangePassword: () => void;
 }) {
+  const isSuperAdmin = currentRole === UserRole.SUPER_ADMIN;
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [currentCount, setCurrentCount] = useState(0);
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
@@ -102,6 +106,7 @@ export function ManageUsersView({
   };
 
   const startEdit = (user: ManagedUser) => {
+    if (user.role === UserRole.SUPER_ADMIN || (!isSuperAdmin && user.role === UserRole.ADMIN)) return;
     const email = String(user.email ?? '');
     setEditingId(user.id);
     setIsFormOpen(true);
@@ -151,13 +156,30 @@ export function ManageUsersView({
         full_name: fullName,
         username,
         email,
-        ...(form.password ? { password: form.password } : {}),
+        ...(!editingId ? { password: form.password } : {}),
         role: form.role,
-        permissions: form.role === UserRole.ADMIN
+        permissions: form.role === UserRole.SUPER_ADMIN
           ? MODULES.map(({ key }) => key)
           : form.permissions,
         is_active: form.is_active,
       });
+      if (editingId && form.password) {
+        try {
+          await invokeManageUsers<{ message: string }>({
+            action: 'reset_password',
+            id: editingId,
+            password: form.password,
+          });
+        } catch (error) {
+          cancelForm();
+          await refresh();
+          setNotice({
+            text: `Profile updated, but the password reset failed: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+            error: true,
+          });
+          return;
+        }
+      }
       cancelForm();
       setNotice({ text: result.message || 'User saved.', error: false });
       await refresh();
@@ -169,6 +191,7 @@ export function ManageUsersView({
   };
 
   const handleDelete = async (user: ManagedUser) => {
+    if (user.role === UserRole.SUPER_ADMIN || (!isSuperAdmin && user.role === UserRole.ADMIN)) return;
     if (!window.confirm(`Remove ${user.username}? They will no longer be able to log in.`)) return;
     setNotice(null);
     try {
@@ -188,9 +211,9 @@ export function ManageUsersView({
           <p className="mt-1 text-sm text-muted">Shop Limit (Unlimited): {currentCount} / {MAX_USERS} users</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
+          {currentRole !== UserRole.ADMIN && <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
             <KeyRound size={16} /> Change My Password
-          </button>
+          </button>}
           {!isFormOpen && (
             <button type="button" disabled={currentCount >= MAX_USERS} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
               <Plus size={17} /> Add User
@@ -218,10 +241,11 @@ export function ManageUsersView({
               Email *
               <input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal" />
             </label>
-            <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
-              Password{editingId ? '' : ' *'}
+            {!(editingId === currentUserId && currentRole === UserRole.ADMIN) && <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
+              {editingId ? 'Set New Password (optional)' : 'Password *'}
               <input type="password" autoComplete="new-password" required={!editingId} minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal" />
-            </label>
+              {editingId && <span className="block text-xs font-normal text-muted">Passwords cannot be viewed. Setting a new password replaces the current one.</span>}
+            </label>}
             <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
               Role
               <select value={form.role} disabled={editingId === currentUserId} onChange={(event) => {
@@ -231,21 +255,22 @@ export function ManageUsersView({
                 <option value={UserRole.CASHIER}>Cashier</option>
                 <option value={UserRole.MANAGER}>Manager</option>
                 <option value={UserRole.ACCOUNTANT}>Accountant</option>
-                <option value={UserRole.ADMIN}>Admin</option>
+                {(isSuperAdmin || form.role === UserRole.ADMIN) && <option value={UserRole.ADMIN}>Admin</option>}
               </select>
             </label>
           </div>
 
           <fieldset className="rounded-control border border-border p-4">
             <legend className="px-2 text-sm font-bold text-text">Allowed Modules (Custom Permissions)</legend>
-            {form.role === UserRole.ADMIN && <p className="mb-3 text-xs font-semibold text-muted">Admins can access everything</p>}
+            {form.role === UserRole.SUPER_ADMIN && <p className="mb-3 text-xs font-semibold text-muted">This role can access every module.</p>}
+            {form.role === UserRole.ADMIN && <p className="mb-3 text-xs font-semibold text-muted">Select the modules this admin is allowed to access.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
               {MODULES.map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 text-sm text-text">
                   <input
                     type="checkbox"
-                    checked={form.role === UserRole.ADMIN || form.permissions.includes(key)}
-                    disabled={form.role === UserRole.ADMIN}
+                    checked={form.role === UserRole.SUPER_ADMIN || form.permissions.includes(key)}
+                    disabled={form.role === UserRole.SUPER_ADMIN || (form.role === UserRole.ADMIN && !isSuperAdmin)}
                     onChange={(event) => setForm({
                       ...form,
                       permissions: event.target.checked
@@ -285,12 +310,14 @@ export function ManageUsersView({
                       <div className="font-bold text-text">{user.full_name} {user.id === currentUserId && <span className="ml-1 rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted">(You)</span>}</div>
                       <div className="mt-0.5 text-xs text-muted">{user.username} · {user.email}</div>
                     </td>
-                    <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${roleClass(Object.values(UserRole).includes(user.role as UserRole) ? user.role as UserRole : UserRole.CASHIER)}`}>{String(user.role ?? 'cashier')}</span></td>
+                    <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${roleClass(Object.values(UserRole).includes(user.role as UserRole) ? user.role as UserRole : UserRole.CASHIER)}`}>{user.role ? ROLE_LABELS[user.role] : ROLE_LABELS[UserRole.CASHIER]}</span></td>
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${user.is_active === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{user.is_active === true ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>
-                        {user.id !== currentUserId && <button type="button" onClick={() => void handleDelete(user)} title={`Delete ${user.username}`} aria-label={`Delete ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>}
+                        {user.role !== UserRole.SUPER_ADMIN && (isSuperAdmin || user.role !== UserRole.ADMIN) && <>
+                          <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>
+                          {user.id !== currentUserId && <button type="button" onClick={() => void handleDelete(user)} title={`Delete ${user.username}`} aria-label={`Delete ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>}
+                        </>}
                       </div>
                     </td>
                   </tr>
@@ -303,7 +330,7 @@ export function ManageUsersView({
   );
 }
 
-export function DeletedUsersView() {
+export function DeletedUsersView({ currentRole }: { currentRole: UserRole }) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -340,7 +367,9 @@ export function DeletedUsersView() {
       {users.length === 0 ? <p className="py-8 text-center text-sm text-muted">No deleted users found.</p> : users.map((user) => (
         <div key={user.id} className="flex items-center justify-between gap-3 border-t border-border py-3">
           <div><div className="font-bold text-text">{user.full_name}</div><div className="text-xs text-muted">{user.username} · {user.email}</div></div>
-          <button type="button" disabled={busyId !== null} onClick={() => void restore(user)} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{busyId === user.id ? 'Restoring…' : 'Restore'}</button>
+          {(currentRole === UserRole.SUPER_ADMIN
+            ? user.role !== UserRole.SUPER_ADMIN
+            : user.role !== UserRole.ADMIN && user.role !== UserRole.SUPER_ADMIN) && <button type="button" disabled={busyId !== null} onClick={() => void restore(user)} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{busyId === user.id ? 'Restoring…' : 'Restore'}</button>}
         </div>
       ))}
     </section>

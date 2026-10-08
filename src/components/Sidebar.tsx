@@ -5,7 +5,7 @@ import {
   ShoppingBag, ShoppingCart, Trash2, Truck, UserCheck, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { UserRole } from '../types/pharmacy';
+import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import { ModuleKey, usePermissions } from '../permissions';
 import PharmaLogo from './PharmaLogo';
 
@@ -130,17 +130,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className={`mt-auto flex items-center gap-2 border-t border-white/10 p-3 ${isCollapsed ? 'flex-col' : ''}`}>
-        <div title={`${currentUserName}, ${currentRole}`} aria-label={`${currentUserName}, ${currentRole}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+        <div title={`${currentUserName}, ${ROLE_LABELS[currentRole]}`} aria-label={`${currentUserName}, ${ROLE_LABELS[currentRole]}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
           {currentUserName.charAt(0).toUpperCase()}
         </div>
         <div className="sidebar-user-details min-w-0 flex-1">
           <div className="truncate text-xs font-bold text-white">{currentUserName}</div>
-          <div className="text-[10px] font-semibold uppercase text-white/60">{currentRole}</div>
+          <div className="text-[10px] font-semibold uppercase text-white/60">{ROLE_LABELS[currentRole]}</div>
         </div>
-        <button type="button" onClick={onChangePassword} title="Change My Password" aria-label="Change My Password" className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+        {currentRole !== UserRole.ADMIN && <button type="button" onClick={onChangePassword} title="Change My Password" aria-label="Change My Password" className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
           <KeyRound className="h-3.5 w-3.5" />
           <span className="sidebar-logout-label">Password</span>
-        </button>
+        </button>}
         <button type="button" onClick={onLogout} title="Log out" aria-label="Log out" className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
           <LogOut className="h-3.5 w-3.5" />
           <span className="sidebar-logout-label">Log out</span>

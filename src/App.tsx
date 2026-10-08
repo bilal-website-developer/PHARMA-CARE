@@ -36,7 +36,7 @@ import { LoginView } from './components/LoginView';
 import { ChangePasswordModal, DeletedUsersView, ManageUsersView } from './components/ManageUsersView';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
-import { PermissionsProvider, usePermissions } from './permissions';
+import { isAdminRole, PermissionsProvider, usePermissions } from './permissions';
 import {
   BillingPreferences,
   BillingTemplate,
@@ -711,7 +711,7 @@ function PharmacyWorkspace({
               currentRole={currentRole}
               currentUserName={currentUserName}
               activeTemplate={billingPreferences.template}
-              canEditBilling={currentRole === UserRole.ADMIN}
+              canEditBilling={isAdminRole(currentRole)}
               onTemplateChange={(template: BillingTemplate) =>
                 updateBillingPreferences({ ...billingPreferences, template })
               }
@@ -749,9 +749,9 @@ function PharmacyWorkspace({
             </div>
           )}
 
-          {activeItem === 'trash-bin' && <DeletedUsersView />}
+          {activeItem === 'trash-bin' && <DeletedUsersView currentRole={currentRole} />}
 
-          {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} onChangePassword={() => setShowPasswordDialog(true)} />}
+          {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} onChangePassword={() => setShowPasswordDialog(true)} />}
           </>
           )}
         </main>
@@ -763,7 +763,7 @@ function PharmacyWorkspace({
           companyName={companyName}
           initialTemplate={previewTemplate}
           initialFormat={billingPreferences.format}
-          canApply={currentRole === UserRole.ADMIN}
+          canApply={isAdminRole(currentRole)}
           onApply={(template: BillingTemplate, format: ReceiptFormat) => {
             updateBillingPreferences({ template, format });
             setShowTemplatePreview(false);
