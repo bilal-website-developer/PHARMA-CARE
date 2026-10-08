@@ -200,12 +200,12 @@ export const SuppliersView: React.FC = () => {
       </header>
 
       {error && (
-        <p role="alert" className="rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <p role="alert" className="visual-toast rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}
         </p>
       )}
       {notice && (
-        <p role="status" className="rounded-control border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+        <p role="status" className="visual-toast rounded-control border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
           {notice}
         </p>
       )}
@@ -242,7 +242,7 @@ export const SuppliersView: React.FC = () => {
               </button>
             )}
             <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
-              {editingId ? <Save aria-hidden="true" className="h-4 w-4" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
+              {editingId ? <Save aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} /> : <Plus aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} />}
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add supplier'}
             </button>
           </div>
@@ -263,11 +263,11 @@ export const SuppliersView: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted">Loading suppliers…</td></tr>
+              <tr><td colSpan={6} className="visual-skeleton px-4 py-8 text-center text-muted">Loading suppliers…</td></tr>
             ) : suppliers.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted">No suppliers were returned. If suppliers already exist, check the table&apos;s Supabase Row Level Security SELECT policy.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted"><span className="supplier-empty-state inline-flex items-center justify-center gap-2"><Truck aria-hidden="true" className="supplier-empty-truck h-5 w-5" />No suppliers were returned. If suppliers already exist, check the table&apos;s Supabase Row Level Security SELECT policy.</span></td></tr>
             ) : suppliers.map((supplier) => (
-              <tr key={supplier.id} className={!supplier.is_active ? 'bg-surface/60 text-muted' : ''}>
+              <tr key={supplier.id} className={`supplier-table-row ${!supplier.is_active ? 'bg-surface/60 text-muted' : ''}`}>
                 <td className="px-4 py-3">
                   <div className="font-semibold text-text">{supplier.name}</div>
                   <div className="mt-1 max-w-xs truncate text-[11px] text-muted">{supplier.address || 'No address'}</div>

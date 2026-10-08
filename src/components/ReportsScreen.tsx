@@ -49,33 +49,33 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
 
       {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
           <span className="text-xs font-semibold text-emerald-700">Gross Sales Revenue</span>
-          <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-1">
             Rs {(totalRevenuePaisa / 100).toFixed(2)}
           </div>
           <span className="text-[11px] text-emerald-600">Total processed counter sales</span>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
           <span className="text-xs font-semibold text-emerald-700">Invoices Processed</span>
-          <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">{sales.length}</div>
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-1">{sales.length}</div>
           <span className="text-[11px] text-emerald-600">Sequential receipt numbers</span>
         </div>
 
         {canSeeProfit ? (
           <>
-            <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
               <span className="text-xs font-semibold text-emerald-700">Gross Profit (Paisa)</span>
-              <div className="text-2xl font-bold font-mono text-emerald-700 mt-1">
+              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-700 mt-1">
                 Rs {(grossProfitPaisa / 100).toFixed(2)}
               </div>
               <span className="text-[11px] text-emerald-600">Revenue minus COGS</span>
             </div>
 
-            <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
               <span className="text-xs font-semibold text-emerald-700">Gross Margin %</span>
-              <div className="text-2xl font-bold font-mono text-emerald-800 mt-1">
+              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-800 mt-1">
                 {grossMarginPercent}%
               </div>
               <span className="text-[11px] text-emerald-600">Profit percentage</span>
@@ -112,7 +112,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
             </thead>
             <tbody className="divide-y divide-emerald-100 text-emerald-950">
               {sales.map((sale) => (
-                <tr key={sale.id} className="hover:bg-emerald-50/30">
+                <tr key={sale.id} className="sales-history-row hover:bg-emerald-50/30">
                   <td className="py-2.5 px-3 font-mono font-bold text-emerald-800">
                     {sale.invoiceNumber}
                   </td>
@@ -123,7 +123,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
                     {sale.items.map((i) => `${i.productName} (x${i.quantityInUnit})`).join(', ')}
                   </td>
                   <td className="py-2.5 px-3">
-                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[10px]">
+                    <span className="sales-method-badge px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[10px]">
                       {sale.paymentMethod}
                     </span>
                   </td>

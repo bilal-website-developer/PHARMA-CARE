@@ -111,7 +111,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
             <button
               key={c.id}
               onClick={() => setSelectedCustomerId(c.id)}
-              className={`w-full text-left p-3 rounded-lg border text-xs transition ${
+              className={`customer-list-item w-full text-left p-3 rounded-lg border text-xs transition ${
                 selectedCustomerId === c.id
                   ? 'bg-emerald-50 border-emerald-400 shadow-xs'
                   : 'bg-white border-emerald-100 hover:bg-emerald-50/50'
@@ -183,7 +183,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
                 </thead>
                 <tbody className="divide-y divide-emerald-100">
                   {currentLedger.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-emerald-50/30">
+                    <tr key={entry.id} className="customer-ledger-row hover:bg-emerald-50/30">
                       <td className="py-2.5 px-3 text-emerald-800 font-mono">{entry.date}</td>
                       <td className="py-2.5 px-3 font-mono font-semibold text-emerald-900">
                         {entry.referenceNo}

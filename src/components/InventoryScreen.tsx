@@ -133,9 +133,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex border border-emerald-300 rounded-lg overflow-hidden text-xs">
+          <div className="product-view-tabs flex border border-emerald-300 rounded-lg overflow-hidden text-xs">
             <button
               onClick={() => setViewMode('products')}
+              aria-pressed={viewMode === 'products'}
               className={`px-3 py-1.5 font-semibold transition ${
                 viewMode === 'products'
                   ? 'bg-emerald-700 text-white'
@@ -146,6 +147,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             </button>
             <button
               onClick={() => setViewMode('batches')}
+              aria-pressed={viewMode === 'batches'}
               className={`px-3 py-1.5 font-semibold transition ${
                 viewMode === 'batches'
                   ? 'bg-emerald-700 text-white'
@@ -189,7 +191,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   const avgCost = p.batches[0]?.costPricePaisa || 0;
 
                   return (
-                    <tr key={p.id} className="hover:bg-emerald-50/40 transition">
+                    <tr key={p.id} className="product-table-row hover:bg-emerald-50/40 transition">
                       <td className="py-3 px-4 font-mono text-[11px] text-emerald-800">
                         <div>{p.code}</div>
                         <div className="text-[10px] text-emerald-600 flex items-center gap-1">
@@ -203,7 +205,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       </td>
                       <td className="py-3 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          className={`drug-class-badge drug-class-${p.drugClass.toLowerCase()} px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             p.drugClass === DrugClass.NARCOTIC
                               ? 'bg-red-100 text-red-800'
                               : p.drugClass === DrugClass.CONTROLLED
@@ -232,7 +234,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         <span className="text-[10px] text-emerald-700">tabs/units</span>
                         {totalStock <= p.minStockAlert && (
                           <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5" /> Reorder Alert
+                            <AlertTriangle className="low-stock-warning w-2.5 h-2.5" /> Reorder Alert
                           </div>
                         )}
                       </td>
@@ -248,7 +250,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </td>
                       )}
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[11px]">
+                        <span className={`stock-batch-badge rounded px-2 py-0.5 text-[11px] font-semibold ${totalStock <= p.minStockAlert ? 'low-stock' : ''} bg-emerald-100 text-emerald-800`}>
                           {p.batches.length} active
                         </span>
                       </td>
@@ -280,7 +282,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </thead>
               <tbody className="divide-y divide-emerald-100 text-emerald-950">
                 {allBatches.map((b) => (
-                  <tr key={b.id} className="hover:bg-emerald-50/40 transition">
+                  <tr key={b.id} className="product-table-row hover:bg-emerald-50/40 transition">
                     <td className="py-3 px-4 font-bold text-emerald-950">{b.productBrand}</td>
                     <td className="py-3 px-4 font-mono font-bold text-emerald-800">{b.batchNumber}</td>
                     <td className="py-3 px-4 font-mono font-semibold">

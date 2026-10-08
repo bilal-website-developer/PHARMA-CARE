@@ -69,40 +69,40 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
     <div className="space-y-6">
       {/* ── Summary Stats ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-emerald-800">Total Cash Inflow</span>
             <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
               <ArrowDownLeft className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-950 mt-2">
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-2">
             Rs {(totalInflowsPaisa / 100).toFixed(2)}
           </div>
           <p className="text-[11px] text-emerald-600 mt-1">Includes Opening Float & Sales</p>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-red-800">Total Cash Expenses</span>
             <div className="p-2 bg-red-100 text-red-800 rounded-lg">
               <ArrowUpRight className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-mono text-red-600 mt-2">
+          <div className="report-stat-value text-2xl font-bold font-mono text-red-600 mt-2">
             Rs {(totalOutflowsPaisa / 100).toFixed(2)}
           </div>
           <p className="text-[11px] text-red-500 mt-1">Petty cash & operational vouchers</p>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-emerald-900">Expected In Drawer</span>
             <div className="p-2 bg-emerald-700 text-white rounded-lg">
               <Wallet className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-800 mt-2">
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-800 mt-2">
             Rs {(expectedDrawerPaisa / 100).toFixed(2)}
           </div>
           <p className="text-[11px] text-emerald-600 mt-1">Paisa calculated balance</p>
@@ -138,7 +138,7 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
               </thead>
               <tbody className="divide-y divide-emerald-100 text-emerald-950">
                 {transactions.map((t) => (
-                  <tr key={t.id} className="hover:bg-emerald-50/40">
+                  <tr key={t.id} className="supplier-table-row hover:bg-emerald-50/40">
                     <td className="py-2.5 px-3 font-mono text-[11px] text-emerald-800">{t.time}</td>
                     <td className="py-2.5 px-3">
                       <span

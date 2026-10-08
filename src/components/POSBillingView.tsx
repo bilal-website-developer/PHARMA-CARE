@@ -367,7 +367,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           </div>
 
           {/* Product Chips Grid (Matching Screenshot 7) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[580px] overflow-y-auto pr-1">
+          <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[580px] overflow-y-auto pr-1">
             {filteredProducts.map((p) => {
               const defaultUnit = p.units.find((u) => u.isDefaultSaleUnit) || p.units[0];
               const totalStock = p.batches.reduce((sum, b) => sum + b.quantitySmallestUnit, 0);
@@ -376,7 +376,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <button
                   key={p.id}
                   onClick={() => handleAddToCart(p)}
-                  className="bg-white p-3 rounded-xl border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-sm text-left transition flex flex-col justify-between group h-28"
+                  className="pos-product-card bg-white p-3 rounded-xl border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-sm text-left transition flex flex-col justify-between group h-28"
                 >
                   <div>
                     <span className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition block truncate">
@@ -396,7 +396,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                         Stock: {totalStock}
                       </span>
                     </div>
-                    <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs group-hover:bg-blue-600 group-hover:text-white transition">
+                    <span className="pos-add-indicator w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs group-hover:bg-blue-600 group-hover:text-white transition">
                       +
                     </span>
                   </div>
@@ -413,7 +413,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 mb-3">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-blue-600" />
-                <span className="text-xs font-black text-slate-900">
+                <span className="pos-cart-count text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
                   Cart ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)})
                 </span>
               </div>
@@ -493,7 +493,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 cart.map((item, idx) => (
                   <div
                     key={`${item.productId}-${idx}`}
-                    className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs"
+                    className="pos-cart-item p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs"
                   >
                     <div className="flex-1 pr-2 truncate">
                       <div className="font-bold text-slate-900 truncate">{item.productName}</div>
@@ -548,12 +548,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </span>
 
               {/* Quick Discount Pills */}
-              <div className="flex items-center gap-1 text-[10px]">
+              <div className="pos-discount-options flex items-center gap-1 text-[10px]">
                 <span className="text-slate-500 font-semibold">Disc:</span>
                 {[0, 2, 5, 10, 15, 20].map((pct) => (
                   <button
                     key={pct}
                     onClick={() => setDiscountPercent(pct)}
+                    aria-pressed={discountPercent === pct}
                     className={`px-1.5 py-0.5 rounded font-bold transition ${
                       discountPercent === pct
                         ? 'bg-blue-600 text-white'
@@ -571,7 +572,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               <span className="text-xs font-black uppercase text-slate-700 tracking-wider">
                 NET TOTAL
               </span>
-              <span className="text-base font-black font-mono text-slate-950">
+              <span className="pos-total-value text-base font-black font-mono text-slate-950" key={totalPKR}>
                 Rs. {totalPKR.toFixed(0)}
               </span>
             </div>
@@ -623,9 +624,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             )}
 
             {/* Payment Methods Chips (Matching Screenshot 61) */}
-            <div className="grid grid-cols-4 gap-1.5 text-xs pt-1">
+            <div className="pos-payment-methods grid grid-cols-4 gap-1.5 text-xs pt-1">
               <button
                 onClick={() => setPaymentMethod('CASH')}
+                aria-pressed={paymentMethod === 'CASH'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'CASH'
                     ? 'bg-emerald-600 text-white border-emerald-700'
@@ -636,6 +638,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </button>
               <button
                 onClick={() => setPaymentMethod('ONLINE')}
+                aria-pressed={paymentMethod === 'ONLINE'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'ONLINE'
                     ? 'bg-blue-600 text-white border-blue-700'
@@ -646,6 +649,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </button>
               <button
                 onClick={() => setPaymentMethod('CREDIT')}
+                aria-pressed={paymentMethod === 'CREDIT'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'CREDIT'
                     ? 'bg-amber-600 text-white border-amber-700'
@@ -656,6 +660,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </button>
               <button
                 onClick={() => setPaymentMethod('SPLIT')}
+                aria-pressed={paymentMethod === 'SPLIT'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'SPLIT'
                     ? 'bg-purple-600 text-white border-purple-700'
@@ -671,7 +676,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               <button
                 onClick={() => setShowCheckoutModal(true)}
                 disabled={cart.length === 0}
-                className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                className="pos-charge-button relative flex-1 overflow-hidden py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
               >
                 <Zap className="w-3.5 h-3.5" />
                 <span>Charge Rs. {totalPKR.toFixed(0)} (F4)</span>
@@ -683,8 +688,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
       {/* ── EdgeX Checkout Modal (Matching Screenshot 9 & 10) ──────────────── */}
       {showCheckoutModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200">
+        <div className="pos-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="pos-modal-panel bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200">
             {/* Modal Header */}
             <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
               <div>
@@ -795,10 +800,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
       {/* ── Sale Complete Dialog (Matching Screenshot 11 & 65) ─────────────── */}
       {saleCompleteModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xs w-full p-6 text-center space-y-4 shadow-2xl border border-slate-200">
-            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-8 h-8" />
+        <div className="pos-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="pos-modal-panel bg-white rounded-2xl max-w-xs w-full p-6 text-center space-y-4 shadow-2xl border border-slate-200">
+            <div className="pos-sale-success relative w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle2 className="pos-success-check w-8 h-8" />
             </div>
 
             <div>

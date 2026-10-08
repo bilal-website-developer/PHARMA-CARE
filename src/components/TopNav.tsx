@@ -27,6 +27,12 @@ export const TopNav: React.FC<TopNavProps> = ({
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(currentUserName));
   const [online, setOnline] = useState(navigator.onLine);
+  const [theme, setTheme] = useState<'light' | 'night'>(() =>
+    document.documentElement.dataset.theme === 'night' ? 'night' : 'light'
+  );
+  const [animationsEnabled, setAnimationsEnabled] = useState(() =>
+    document.documentElement.dataset.animations !== 'off'
+  );
 
   useEffect(() => {
     document.documentElement.classList.toggle('large-ui', largeUi);
@@ -36,6 +42,24 @@ export const TopNav: React.FC<TopNavProps> = ({
       // The selected size remains active for this page view.
     }
   }, [currentUserName, largeUi]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem('pharmacare.theme', theme);
+    } catch {
+      // Keep the selected theme for this page view if browser storage is unavailable.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.animations = animationsEnabled ? 'on' : 'off';
+    try {
+      localStorage.setItem('pharmacare.animations', String(animationsEnabled));
+    } catch {
+      // Keep the selected animation preference for this page view.
+    }
+  }, [animationsEnabled]);
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -49,7 +73,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-2.5 shadow-xs sm:px-6">
+    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:px-6">
       <div className="min-w-0">
         <div className="truncate text-sm font-bold text-text">{companyName}</div>
         <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
@@ -58,6 +82,25 @@ export const TopNav: React.FC<TopNavProps> = ({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1 rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
+          <button
+            type="button"
+            aria-pressed={theme === 'light'}
+            onClick={() => setTheme('light')}
+            className={`rounded-full px-2 py-1.5 ${theme === 'light' ? 'bg-primary text-white' : 'text-muted'}`}
+          >
+            Light Mint
+          </button>
+          <button
+            type="button"
+            aria-pressed={theme === 'night'}
+            onClick={() => setTheme('night')}
+            className={`rounded-full px-2 py-1.5 ${theme === 'night' ? 'bg-primary text-white' : 'text-muted'}`}
+          >
+            Emerald Night
+          </button>
+        </div>
+
         <div className="flex items-center rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
           <button
             type="button"
@@ -82,6 +125,15 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         </div>
 
+        <button
+          type="button"
+          aria-pressed={animationsEnabled}
+          onClick={() => setAnimationsEnabled((enabled) => !enabled)}
+          className="rounded-full border border-border bg-surface px-2.5 py-1.5 text-[10px] font-semibold text-muted hover:text-text"
+        >
+          Animations: {animationsEnabled ? 'On' : 'Off'}
+        </button>
+
         <span
           role="status"
           className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-bold sm:inline-flex ${
@@ -90,7 +142,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               : 'border-warning bg-warning/15 text-text'
           }`}
         >
-          <span className={`h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-warning'}`} />
+          <span className={`system-status-dot h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-warning'}`} />
           {online ? 'SYSTEM ONLINE' : 'OFFLINE'}
         </span>
 
@@ -99,7 +151,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           aria-label="Notifications"
           className="relative rounded-control p-2 text-muted hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <Bell className="h-4 w-4" />
+          <Bell className="notification-bell h-4 w-4" />
           <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-danger" />
         </button>
 

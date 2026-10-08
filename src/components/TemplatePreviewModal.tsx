@@ -129,7 +129,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         aria-labelledby="template-preview-title"
         aria-modal="true"
         role="dialog"
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-card border border-border bg-white shadow-2xl"
+        className="visual-modal-panel flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-card border border-border bg-white shadow-2xl"
       >
         <header className="flex items-center justify-between bg-text px-5 py-4 text-white">
           <div className="flex items-center gap-3">
@@ -250,7 +250,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
 
           <div className="relative flex min-h-[420px] items-start justify-center overflow-auto bg-surface p-4 sm:p-6 md:min-h-0">
             {loading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface/80">
+              <div className="visual-skeleton absolute inset-0 z-10 flex items-center justify-center bg-surface/80">
                 <span className="animate-pulse text-sm font-semibold text-muted">Preparing receipt preview…</span>
               </div>
             )}

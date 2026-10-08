@@ -381,7 +381,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Target Modal */}
       {showTargetModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xs w-full p-5 space-y-3">
+          <div className="visual-modal-panel bg-white rounded-2xl max-w-xs w-full p-5 space-y-3">
             <h4 className="font-bold text-sm text-slate-900">Set Daily Sales Target</h4>
             <input
               type="number"

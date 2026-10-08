@@ -84,9 +84,10 @@ export const MasterDataView: React.FC = () => {
         </div>
 
         {/* Tab Buttons (Matching Screenshot 16) */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
+        <div className="master-data-tabs flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
           <button
             onClick={() => setActiveTab('categories')}
+            aria-pressed={activeTab === 'categories'}
             className={`px-3 py-1.5 rounded-lg transition ${
               activeTab === 'categories' ? 'bg-blue-600 text-white shadow-xs' : 'hover:text-slate-900'
             }`}
@@ -95,6 +96,7 @@ export const MasterDataView: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('brands')}
+            aria-pressed={activeTab === 'brands'}
             className={`px-3 py-1.5 rounded-lg transition ${
               activeTab === 'brands' ? 'bg-blue-600 text-white shadow-xs' : 'hover:text-slate-900'
             }`}
@@ -103,6 +105,7 @@ export const MasterDataView: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('units')}
+            aria-pressed={activeTab === 'units'}
             className={`px-3 py-1.5 rounded-lg transition ${
               activeTab === 'units' ? 'bg-blue-600 text-white shadow-xs' : 'hover:text-slate-900'
             }`}
@@ -184,12 +187,12 @@ export const MasterDataView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {categories.map((c, idx) => (
-                <tr key={c.id} className="hover:bg-slate-50">
+                <tr key={c.id} className="master-data-row hover:bg-slate-50">
                   <td className="py-2.5 px-4 font-mono text-slate-400">{idx + 1}</td>
                   <td className="py-2.5 px-4 font-bold text-slate-900">{c.name}</td>
                   <td className="py-2.5 px-4 font-mono text-slate-600">{c.productsCount}</td>
-                  <td className="py-2.5 px-4 font-mono text-amber-600 font-bold">⚠️ &le; {c.lowStockAlert}</td>
-                  <td className="py-2.5 px-4 text-right space-x-2">
+                  <td className="py-2.5 px-4 font-mono text-amber-600 font-bold"><span className="category-warning-icon inline-block">⚠️</span> &le; {c.lowStockAlert}</td>
+                  <td className="master-data-actions py-2.5 px-4 text-right space-x-2">
                     <button className="text-blue-600 hover:underline">Edit</button>
                     <button className="text-red-600 hover:underline">Delete</button>
                   </td>
@@ -245,10 +248,10 @@ export const MasterDataView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {brands.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-50">
+                <tr key={b.id} className="master-data-row hover:bg-slate-50">
                   <td className="py-2.5 px-4 font-bold text-slate-900">{b.name}</td>
                   <td className="py-2.5 px-4 font-mono text-slate-600">{b.productsCount}</td>
-                  <td className="py-2.5 px-4 text-right space-x-2">
+                  <td className="master-data-actions py-2.5 px-4 text-right space-x-2">
                     <button className="text-blue-600 hover:underline">View Products</button>
                     <button className="text-red-600 hover:underline">Delete</button>
                   </td>
@@ -315,10 +318,10 @@ export const MasterDataView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {units.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-50">
+                <tr key={u.id} className="master-data-row hover:bg-slate-50">
                   <td className="py-2.5 px-4 font-bold text-slate-900">{u.name}</td>
                   <td className="py-2.5 px-4 font-mono text-blue-600 font-bold">{u.abbr}</td>
-                  <td className="py-2.5 px-4 text-right space-x-2">
+                  <td className="master-data-actions py-2.5 px-4 text-right space-x-2">
                     <button className="text-blue-600 hover:underline">Edit</button>
                     <button className="text-red-600 hover:underline">Delete</button>
                   </td>

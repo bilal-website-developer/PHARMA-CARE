@@ -202,7 +202,7 @@ export default function App() {
   };
 
   if (!sessionChecked) {
-    return <div className="flex min-h-screen items-center justify-center bg-surface text-muted">Loading…</div>;
+    return <div className="app-loading visual-skeleton flex min-h-screen items-center justify-center bg-surface text-muted">Loading…</div>;
   }
 
   if (!session) {
@@ -612,8 +612,8 @@ function PharmacyWorkspace({
         />
 
         {/* Dynamic Screen View */}
-        <main className="p-4 sm:p-6 flex-1 overflow-y-auto">
-          {accessMessage && <p role="status" className="mb-4 rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">{accessMessage}</p>}
+        <main className="pharmacy-page p-4 sm:p-6 flex-1 overflow-y-auto">
+          {accessMessage && <p role="status" className="visual-toast mb-4 rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">{accessMessage}</p>}
           {!canPage(activeItem) ? (
             <p role="alert" className="rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">No access. Redirecting to Dashboard.</p>
           ) : (

@@ -200,7 +200,7 @@ export function ManageUsersView({
         </div>
       </header>
 
-      {notice && <p role={notice.error ? 'alert' : 'status'} className={`rounded-control border px-4 py-3 text-sm ${notice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>{notice.text}</p>}
+      {notice && <p role={notice.error ? 'alert' : 'status'} className={`visual-toast rounded-control border px-4 py-3 text-sm ${notice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>{notice.text}</p>}
 
       {isFormOpen && (
         <form onSubmit={(event) => void handleSave(event)} className="space-y-5 rounded-card border border-border bg-white p-5 shadow-sm">
@@ -277,10 +277,10 @@ export function ManageUsersView({
             <tr><th className="px-5 py-3">User Info</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {loading ? <tr><td colSpan={4} className="px-5 py-8 text-center text-muted">Loading users…</td></tr>
+            {loading ? <tr><td colSpan={4} className="visual-skeleton px-5 py-8 text-center text-muted">Loading users…</td></tr>
               : users.length === 0 ? <tr><td colSpan={4} className="px-5 py-8 text-center text-muted">No active profiles found.</td></tr>
                 : users.map((user) => (
-                  <tr key={user.id}>
+                  <tr key={user.id} className="users-table-row">
                     <td className="px-5 py-4">
                       <div className="font-bold text-text">{user.full_name} {user.id === currentUserId && <span className="ml-1 rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted">(You)</span>}</div>
                       <div className="mt-0.5 text-xs text-muted">{user.username} · {user.email}</div>
@@ -336,7 +336,7 @@ export function DeletedUsersView() {
   return (
     <section className="mx-auto max-w-3xl space-y-4 rounded-card border border-border bg-white p-6 shadow-sm">
       <h2 className="text-base font-black text-text">Deleted Users</h2>
-      {message && <p role={error ? 'alert' : 'status'} className="text-sm text-muted">{message}</p>}
+      {message && <p role={error ? 'alert' : 'status'} className="visual-toast text-sm text-muted">{message}</p>}
       {users.length === 0 ? <p className="py-8 text-center text-sm text-muted">No deleted users found.</p> : users.map((user) => (
         <div key={user.id} className="flex items-center justify-between gap-3 border-t border-border py-3">
           <div><div className="font-bold text-text">{user.full_name}</div><div className="text-xs text-muted">{user.username} · {user.email}</div></div>
@@ -400,13 +400,13 @@ export function ChangePasswordModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" className="w-full max-w-md space-y-4 rounded-card bg-white p-6 shadow-xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" className="visual-modal-panel w-full max-w-md space-y-4 rounded-card bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between"><h2 id="password-dialog-title" className="text-lg font-bold text-text">Change My Password</h2><button type="button" onClick={onClose} aria-label="Close" className="text-muted">×</button></div>
         <form onSubmit={(event) => void submit(event)} className="space-y-3">
           <label className="block text-sm font-semibold">Current password<input type="password" required autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
           <label className="block text-sm font-semibold">New password<input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
           <label className="block text-sm font-semibold">Confirm new password<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
-          {message && <p role={error ? 'alert' : 'status'} className={`text-sm ${error ? 'text-danger' : 'text-primary'}`}>{message}</p>}
+          {message && <p role={error ? 'alert' : 'status'} className={`visual-toast text-sm ${error ? 'text-danger' : 'text-primary'}`}>{message}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-control border border-border px-4 py-2 text-sm font-semibold">Cancel</button>
             <button type="submit" disabled={saving} className="rounded-control bg-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{saving ? 'Saving…' : 'Update Password'}</button>

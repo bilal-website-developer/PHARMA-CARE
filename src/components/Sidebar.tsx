@@ -87,11 +87,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       data-collapsed={isCollapsed}
-      className={`sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 bg-text text-white transition-[width] ${isCollapsed ? 'w-16' : 'w-64'}`}
+      className={`pharma-sidebar sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 text-white transition-none ${isCollapsed ? 'w-16' : 'w-64'}`}
     >
       <div className={`flex items-center border-b border-white/10 p-4 ${isCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-base font-extrabold text-white shadow-md shadow-primary/30">P</div>
+          <div className="sidebar-brand-mark relative flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-base font-extrabold text-white shadow-md shadow-primary/30">P</div>
           <div className="sidebar-brand-label min-w-0">
             <div className="text-sm font-black uppercase tracking-wide text-white">{companyName}</div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-white/60">Control Panel</div>
@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   title={label}
                   aria-label={label}
                   aria-current={activeItem === key ? 'page' : undefined}
-                  className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left font-medium transition ${activeItem === key ? 'bg-blue-600 font-bold text-white shadow-md shadow-blue-600/25' : 'text-slate-300 hover:bg-slate-800/60'}`}
+                  className={`sidebar-nav-item relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left font-medium transition ${activeItem === key ? 'bg-blue-600 font-bold text-white shadow-md shadow-blue-600/25' : 'text-slate-300 hover:bg-slate-800/60'}`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{label}</span>
