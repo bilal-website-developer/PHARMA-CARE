@@ -32,7 +32,11 @@ import { ReportsScreen } from './components/ReportsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { SuppliersView } from './components/SuppliersView';
 import { RepositoryReviewView } from './components/RepositoryReviewView';
-import { AuthSession, isAuthSession, LoginView } from './components/LoginView';
+import { LoginView } from './components/LoginView';
+import { ChangePasswordModal, DeletedUsersView, ManageUsersView } from './components/ManageUsersView';
+import { AuthSession, loadAuthSession } from './utils/auth';
+import { supabase } from './utils/supabase';
+import { PermissionsProvider, usePermissions } from './permissions';
 import {
   BillingPreferences,
   BillingTemplate,
@@ -42,58 +46,110 @@ import {
 } from './utils/receipt';
 import { readCompanyName, saveCompanyName } from './utils/storeSettings';
 
+const NAV_PATHS: Record<NavItemKey, string> = {
+  dashboard: '/',
+  pos: '/pos',
+  products: '/products',
+  'master-data': '/categories',
+  'stock-inventory': '/stock-inventory',
+  customers: '/customers',
+  'customer-ledger': '/customer-ledger',
+  'whatsapp-reminders': '/whatsapp-reminders',
+  'sales-history': '/sales-history',
+  suppliers: '/suppliers',
+  purchases: '/purchases',
+  'purchase-history': '/purchase-history',
+  expenses: '/expenses',
+  reports: '/reports',
+  'manage-users': '/users',
+  settings: '/settings',
+  'trash-bin': '/trash-bin',
+  'help-support': '/help',
+};
+
+function routeToNavItem(pathname: string): NavItemKey | null {
+  const match = Object.entries(NAV_PATHS).find(([, path]) => path === pathname);
+  return match ? (match[0] as NavItemKey) : null;
+}
+
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [demoConfigChecked, setDemoConfigChecked] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
-  const [localDemoMode, setLocalDemoMode] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
 
   useEffect(() => {
-    if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
-      window.history.replaceState({}, '', '/');
+    const client = supabase;
+    if (!client) {
+      setSessionChecked(true);
+      return;
     }
-
-    fetch('/api/auth/session', { credentials: 'include' })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        const result = (await response.json()) as { user?: unknown };
-        return isAuthSession(result.user) ? result.user : null;
-      })
-      .then(setSession)
-      .catch(() => setSession(null))
-      .finally(() => setSessionChecked(true));
-
-    fetch('/api/auth/config')
-      .then(async (response) => {
-        if (!response.ok) {
-          if (response.status === 404 && import.meta.env.DEV) {
-            setDemoMode(true);
-            setLocalDemoMode(true);
-          } else {
-            setDemoMode(false);
-            setLocalDemoMode(false);
-          }
+    let disposed = false;
+    const restoreSession = async () => {
+      try {
+        const { data: authData, error: authError } = await client.auth.getSession();
+        if (authError) throw authError;
+        if (!authData.session) {
+          if (!disposed) setSession(null);
           return;
         }
-        const result: unknown = await response.json();
-        const enabled =
-          typeof result === 'object' &&
-          result !== null &&
-          (result as Record<string, unknown>).demoMode === true;
-        setDemoMode(enabled);
-        setLocalDemoMode(false);
-      })
-      .catch((error: unknown) => {
-        const allowLocalDemo = import.meta.env.DEV;
-        if (!allowLocalDemo) {
-          console.warn('Demo configuration endpoint is unavailable.', error);
+        const { data: userData, error: userError } = await client.auth.getUser();
+        if (userError) throw userError;
+        if (!userData.user) throw new Error('Your session is no longer valid. Sign in again.');
+        const profile = await loadAuthSession(userData.user.id, userData.user.email);
+        if (!disposed) setSession(profile);
+      } catch (error) {
+        if (!disposed) {
+          setSession(null);
+          setAuthMessage(error instanceof Error ? error.message : 'Could not restore your session.');
         }
-        setDemoMode(allowLocalDemo);
-        setLocalDemoMode(allowLocalDemo);
-      })
-      .finally(() => setDemoConfigChecked(true));
+      } finally {
+        if (!disposed) setSessionChecked(true);
+      }
+    };
+    void restoreSession();
+    const { data: authListener } = client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' && !disposed) {
+        setSession(null);
+        setSessionChecked(true);
+      }
+    });
+    return () => {
+      disposed = true;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    const refreshProfile = async () => {
+      try {
+        if (!supabase) throw new Error('Supabase is not configured.');
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (!data.user) throw new Error('Your session is no longer valid. Sign in again.');
+        const updated = await loadAuthSession(data.user.id, data.user.email);
+        setSession(updated);
+        setAuthMessage('');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not verify your account.';
+        setAuthMessage(message);
+        if (
+          (error instanceof Error && error.name === 'ProfileLoadError') ||
+          message.startsWith('Your account is disabled') ||
+          message.startsWith('No profile exists') ||
+          message.startsWith('Your profile has an invalid role') ||
+          message.startsWith('Your session is no longer valid')
+        ) {
+          setSession(null);
+          await supabase?.auth.signOut();
+        }
+      }
+    };
+    const intervalId = window.setInterval(() => void refreshProfile(), 2 * 60 * 1000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [session?.userId]);
 
   useEffect(() => {
     if (!session) return;
@@ -101,21 +157,16 @@ export default function App() {
     const expireSession = () => {
       window.clearTimeout(timeoutId);
       timeoutId = window.setTimeout(() => {
-        if (session.userId.startsWith('local-demo:')) {
+        void (async () => {
+          const { error } = await supabase?.auth.signOut() ?? { error: new Error('Supabase is not configured.') };
+          if (error) {
+            window.alert('Could not end the inactive session. Please contact your administrator.');
+            expireSession();
+            return;
+          }
           setSession(null);
           window.history.replaceState({}, '', '/login');
-          return;
-        }
-        void fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-          .then((response) => {
-            if (!response.ok) throw new Error('Session could not be ended.');
-            setSession(null);
-            window.history.replaceState({}, '', '/login');
-          })
-          .catch(() => {
-            window.alert('Could not end the server session. Please contact your administrator.');
-            expireSession();
-          });
+        })();
       }, 30 * 60 * 1000);
     };
     const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'mousemove', 'touchstart'];
@@ -125,49 +176,43 @@ export default function App() {
       window.clearTimeout(timeoutId);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, expireSession));
     };
-  }, [session]);
+  }, [session?.userId]);
 
-  const handleLogin = (authenticatedSession: AuthSession) => {
-    setSession(authenticatedSession);
-    window.history.replaceState({}, '', '/');
+  const handleLogin = async (userId: string, email: string) => {
+    setAuthMessage('');
+    try {
+      const authenticatedSession = await loadAuthSession(userId, email);
+      setSession(authenticatedSession);
+      window.history.replaceState({}, '', '/');
+    } catch (error) {
+      await supabase?.auth.signOut();
+      throw error;
+    }
   };
 
   const handleLogout = async () => {
-    if (session?.userId.startsWith('local-demo:')) {
-      setSession(null);
-      window.history.replaceState({}, '', '/login');
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      window.alert(`Could not end the session: ${error.message}`);
       return;
     }
-
-    try {
-      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-      if (!response.ok) throw new Error('Logout request failed.');
-      setSession(null);
-      window.history.replaceState({}, '', '/login');
-    } catch {
-      window.alert('Could not end the server session. Please try again.');
-    }
+    setSession(null);
+    window.history.replaceState({}, '', '/login');
   };
 
-  if (!sessionChecked || (!session && !demoConfigChecked)) {
+  if (!sessionChecked) {
     return <div className="flex min-h-screen items-center justify-center bg-surface text-muted">Loading…</div>;
   }
 
   if (!session) {
-    if (window.location.pathname !== '/login') {
-      window.history.replaceState({}, '', '/login');
-    }
+    if (window.location.pathname !== '/login') window.history.replaceState({}, '', '/login');
     return (
       <LoginView
-        demoEnabled={demoMode}
-        localDemoMode={localDemoMode}
         onLogin={handleLogin}
+        initialError={authMessage}
       />
     );
-  }
-
-  if (window.location.pathname === '/login') {
-    window.history.replaceState({}, '', '/');
   }
 
   return (
@@ -176,7 +221,7 @@ export default function App() {
         key={session.userId}
         session={session}
         onLogout={handleLogout}
-        demoMode={demoMode}
+        authMessage={authMessage}
       />
     </AppErrorBoundary>
   );
@@ -185,15 +230,34 @@ export default function App() {
 function PharmacyApp({
   session,
   onLogout,
-  demoMode,
+  authMessage,
 }: {
   session: AuthSession;
   onLogout: () => void;
-  demoMode: boolean;
+  authMessage: string;
 }) {
-  const [activeItem, setActiveItem] = useState<NavItemKey>(
-    session.role === UserRole.CASHIER ? 'pos' : 'dashboard'
+  return (
+    <PermissionsProvider role={session.role} permissions={session.permissions}>
+      <PharmacyWorkspace session={session} onLogout={onLogout} authMessage={authMessage} />
+    </PermissionsProvider>
   );
+}
+
+function PharmacyWorkspace({
+  session,
+  onLogout,
+  authMessage,
+}: {
+  session: AuthSession;
+  onLogout: () => void;
+  authMessage: string;
+}) {
+  const { canPage } = usePermissions();
+  const [activeItem, setActiveItem] = useState<NavItemKey>(
+    routeToNavItem(window.location.pathname) ?? 'dashboard'
+  );
+  const [accessMessage, setAccessMessage] = useState('');
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
   const currentRole = session.role;
   const currentUserName = session.displayName;
@@ -204,6 +268,40 @@ function PharmacyApp({
     billingPreferences.template
   );
   const [companyName, setCompanyName] = useState(readCompanyName);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const requested = routeToNavItem(window.location.pathname);
+      if (!requested) {
+        if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
+        setActiveItem('dashboard');
+        return;
+      }
+      if (!canPage(requested)) {
+        setAccessMessage('No access. Your account does not have permission to open that page.');
+        setActiveItem('dashboard');
+        window.history.replaceState({}, '', '/');
+        return;
+      }
+      setAccessMessage('');
+      setActiveItem(requested);
+    };
+    syncRoute();
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, [canPage]);
+
+  const navigateTo = React.useCallback((item: NavItemKey) => {
+    if (!canPage(item)) {
+      setAccessMessage('No access. Your account does not have permission to open that page.');
+      setActiveItem('dashboard');
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+    setAccessMessage('');
+    setActiveItem(item);
+    window.history.pushState({}, '', NAV_PATHS[item]);
+  }, [canPage]);
 
   // Main Datasets
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -305,7 +403,7 @@ function PharmacyApp({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F1') {
         e.preventDefault();
-        setActiveItem('pos');
+        navigateTo('pos');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -494,15 +592,17 @@ function PharmacyApp({
       {/* ── Fixed Pharmacy Green Sidebar ───────────────────────────────────── */}
       <Sidebar
         activeItem={activeItem}
-        onSelectItem={(item) => setActiveItem(item)}
+        onSelectItem={navigateTo}
         currentRole={currentRole}
         currentUserName={currentUserName}
         companyName={companyName}
         onLogout={onLogout}
+        onChangePassword={() => setShowPasswordDialog(true)}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {authMessage && <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{authMessage}</p>}
         {/* Top Header Strip */}
         <TopNav
           currentRole={currentRole}
@@ -511,17 +611,13 @@ function PharmacyApp({
           companyName={companyName}
         />
 
-        {demoMode && (
-          <div
-            role="status"
-            className="border-b border-warning bg-warning/15 px-4 py-2 text-center text-xs font-semibold text-text sm:text-sm"
-          >
-            DEMO MODE: sample data only
-          </div>
-        )}
-
         {/* Dynamic Screen View */}
         <main className="p-4 sm:p-6 flex-1 overflow-y-auto">
+          {accessMessage && <p role="status" className="mb-4 rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">{accessMessage}</p>}
+          {!canPage(activeItem) ? (
+            <p role="alert" className="rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">No access. Redirecting to Dashboard.</p>
+          ) : (
+          <>
           {activeItem === 'dashboard' && (
             <DashboardView
               sales={completedSales}
@@ -529,7 +625,7 @@ function PharmacyApp({
               customers={customers}
               currentRole={currentRole}
               currentUserName={currentUserName}
-              onNavigate={(tab) => setActiveItem(tab)}
+              onNavigate={navigateTo}
               onOpenCloseDay={() => setShowCloseDayModal(true)}
             />
           )}
@@ -653,38 +749,10 @@ function PharmacyApp({
             </div>
           )}
 
-          {activeItem === 'trash-bin' && (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4 max-w-2xl mx-auto">
-              <div className="flex items-center justify-between pb-3 border-b">
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-                  <span>🗑️</span> Trash Bin
-                </h3>
-                <span className="text-xs text-slate-500 font-mono">All Types (0)</span>
-              </div>
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-                <span className="font-bold block">Deletion Order Guide — Kya pehle delete karein?</span>
-                <p className="text-[11px] text-amber-800">
-                  Step 1: Sale Items & Purchase Items • Step 2: Sales & Purchases • Step 3: Products / Customers / Suppliers.
-                </p>
-              </div>
-              <div className="py-12 text-center text-slate-400 text-xs">
-                Trash is empty! No deleted items found.
-              </div>
-            </div>
-          )}
+          {activeItem === 'trash-bin' && <DeletedUsersView />}
 
-          {activeItem === 'manage-users' && (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4 max-w-2xl mx-auto">
-              <div className="flex items-center justify-between pb-3 border-b">
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Manage Users</h3>
-                  <p className="text-xs text-slate-500">User management needs the unavailable server API.</p>
-                </div>
-              </div>
-              <p className="rounded-control border border-border bg-surface p-4 text-xs text-muted" role="status">
-                No account records are available in this frontend-only preview.
-              </p>
-            </div>
+          {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} onChangePassword={() => setShowPasswordDialog(true)} />}
+          </>
           )}
         </main>
       </div>
@@ -717,6 +785,7 @@ function PharmacyApp({
           netCashInHandPKR={netCashInHandPKR}
         />
       )}
+      {showPasswordDialog && <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />}
     </div>
   );
 }

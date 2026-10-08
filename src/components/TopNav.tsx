@@ -38,17 +38,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   }, [currentUserName, largeUi]);
 
   useEffect(() => {
-    const checkApi = async () => {
-      try {
-        const response = await fetch('/api/auth/config', { cache: 'no-store' });
-        setOnline(navigator.onLine && response.ok);
-      } catch {
-        setOnline(false);
-      }
-    };
-    const handleOnline = () => void checkApi();
+    const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
-    void checkApi();
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {

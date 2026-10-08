@@ -1,24 +1,21 @@
 export enum UserRole {
-  ADMIN = 'ADMIN',
-  PHARMACIST = 'PHARMACIST',
-  CASHIER = 'CASHIER',
-  INVENTORY = 'INVENTORY',
-  ACCOUNTANT = 'ACCOUNTANT',
+  ADMIN = 'admin',
+  MANAGER = 'manager',
+  CASHIER = 'cashier',
+  ACCOUNTANT = 'accountant',
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  [UserRole.ADMIN]: 'System Administrator',
-  [UserRole.PHARMACIST]: 'Registered Pharmacist',
-  [UserRole.CASHIER]: 'POS Cashier',
-  [UserRole.INVENTORY]: 'Inventory Manager',
-  [UserRole.ACCOUNTANT]: 'Chief Accountant',
+  [UserRole.ADMIN]: 'Admin',
+  [UserRole.MANAGER]: 'Manager',
+  [UserRole.CASHIER]: 'Cashier',
+  [UserRole.ACCOUNTANT]: 'Accountant',
 };
 
 export const ROLE_MAX_DISCOUNT: Record<UserRole, number> = {
   [UserRole.ADMIN]: 30,
-  [UserRole.PHARMACIST]: 15,
+  [UserRole.MANAGER]: 15,
   [UserRole.CASHIER]: 10,
-  [UserRole.INVENTORY]: 0,
   [UserRole.ACCOUNTANT]: 0,
 };
 

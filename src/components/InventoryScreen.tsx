@@ -32,6 +32,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [drugClassFilter, setDrugClassFilter] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'products' | 'batches'>('products');
   const [showAddModal, setShowAddModal] = useState(false);
+  const isCashier = currentRole === UserRole.CASHIER;
 
   // New product form state
   const [newBrand, setNewBrand] = useState('');
@@ -41,8 +42,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [newDrugClass, setNewDrugClass] = useState<DrugClass>(DrugClass.OTC);
   const [newRack, setNewRack] = useState('A-1-01');
   const [newPackPrice, setNewPackPrice] = useState(500);
-
-  const isCashier = currentRole === UserRole.CASHIER;
 
   const filteredProducts = products.filter((p) => {
     const matchSearch =
@@ -157,14 +156,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             </button>
           </div>
 
-          {currentRole !== UserRole.CASHIER && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="px-3.5 py-2 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition"
-            >
-              <Plus className="w-4 h-4" /> Add Product
-            </button>
-          )}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-3.5 py-2 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg flex items-center gap-1.5 shadow-xs transition"
+          >
+            <Plus className="w-4 h-4" /> Add Product
+          </button>
         </div>
       </div>
 
