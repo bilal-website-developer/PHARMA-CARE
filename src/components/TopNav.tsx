@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, Type } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
+import PharmaLogo from './PharmaLogo';
 
 interface TopNavProps {
   currentRole: UserRole;
   currentUserName: string;
   activeTitle: string;
-  companyName: string;
 }
 
-const largeUiKey = (userName: string) => `pharmacare.largeUi.${userName}`;
+const largeUiKey = (userName: string) => `pharma-care.largeUi.${userName}`;
 
 function readLargeUiPreference(userName: string): boolean {
   try {
@@ -23,7 +23,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
   currentUserName,
   activeTitle,
-  companyName,
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(currentUserName));
   const [online, setOnline] = useState(navigator.onLine);
@@ -46,7 +45,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
-      localStorage.setItem('pharmacare.theme', theme);
+      localStorage.setItem('pharma-care.theme', theme);
     } catch {
       // Keep the selected theme for this page view if browser storage is unavailable.
     }
@@ -55,7 +54,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   useEffect(() => {
     document.documentElement.dataset.animations = animationsEnabled ? 'on' : 'off';
     try {
-      localStorage.setItem('pharmacare.animations', String(animationsEnabled));
+      localStorage.setItem('pharma-care.animations', String(animationsEnabled));
     } catch {
       // Keep the selected animation preference for this page view.
     }
@@ -74,8 +73,8 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:px-6">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-bold text-text">{companyName}</div>
+      <div className="flex min-w-0 items-center gap-3">
+        <PharmaLogo size={2.6} layout="inline" className="pharma-brand header-pharma-logo" />
         <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
           {activeTitle}
         </div>

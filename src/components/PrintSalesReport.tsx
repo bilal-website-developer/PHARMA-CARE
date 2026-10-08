@@ -8,6 +8,7 @@ import {
   SalesReportPeriod,
   salesForPeriod,
   summarizeSales,
+  withSalesReportBranding,
 } from '../utils/salesReport';
 
 interface PrintSalesReportProps {
@@ -53,7 +54,8 @@ export const PrintSalesReport: React.FC<PrintSalesReportProps> = ({
       }).format(new Date()),
       format,
     });
-    printReceipt(html);
+    const brandedHtml = withSalesReportBranding(html);
+    printReceipt(brandedHtml);
   };
 
   return (

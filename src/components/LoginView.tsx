@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Check, Eye, EyeOff, LockKeyhole, Pill, UserRound } from 'lucide-react';
+import { Check, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import PharmaLogo from './PharmaLogo';
+import { APP_NAME } from '../constants/brand';
 
 interface LoginViewProps {
   onLogin: (userId: string, email: string) => Promise<void>;
@@ -39,11 +41,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, initialError = ''
     <main className="flex min-h-screen items-center justify-center bg-surface px-3 py-4 font-inter text-text sm:px-5">
       <div className="w-full max-w-md">
         <header className="mb-3 space-y-1.5 text-center">
-          <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-card bg-primary text-white">
-            <Pill aria-hidden="true" />
-          </div>
-          <h1 className="text-lg font-bold">PharmaCare</h1>
-          <p className="text-xs text-muted">Sign in to PharmaCare</p>
+          <PharmaLogo size={9} className="mx-auto" />
+          <p className="text-xs text-muted">Sign in to {APP_NAME}</p>
         </header>
         <section className="overflow-hidden rounded-card border border-border bg-white shadow-lg">
           <div className="h-1.5 bg-primary" />

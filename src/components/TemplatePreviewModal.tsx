@@ -7,6 +7,7 @@ import {
   renderReceipt,
   withReceiptTheme,
 } from '../utils/receipt';
+import { APP_NAME } from '../constants/brand';
 
 interface TemplatePreviewModalProps {
   companyName: string;
@@ -18,7 +19,7 @@ interface TemplatePreviewModalProps {
 }
 
 const SAMPLE_RECEIPT: ReceiptData = {
-  storeName: 'PharmaCare',
+  storeName: APP_NAME,
   invoiceNo: 'INV-240810',
   dateTime: '07/10/2026, 12:15 pm',
   cashierName: 'Sample Pharmacist',
@@ -67,7 +68,7 @@ const SAMPLE_RECEIPT: ReceiptData = {
 const TEMPLATES: Array<{ id: BillingTemplate; description: string; icon: React.ReactNode }> = [
   {
     id: 'simple',
-    description: 'Minimal & clean. No logo area, compact spacing. Fast to print.',
+    description: 'Minimal & clean with a compact logo and spacing. Fast to print.',
     icon: <FileText size={18} />,
   },
   {

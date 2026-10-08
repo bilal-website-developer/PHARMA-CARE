@@ -270,7 +270,6 @@
   .border-warning { border-color: var(--warning); }
 }
 
-aside[data-collapsed="true"] .sidebar-brand-label,
 aside[data-collapsed="true"] .sidebar-user-details,
 aside[data-collapsed="true"] .space-y-1 > div:first-child {
   display: none;
@@ -405,21 +404,26 @@ header.bg-white\/90 {
   box-shadow: 8px 0 28px rgb(5 35 21 / 10%);
 }
 
-.pharma-sidebar .sidebar-brand-mark {
-  background-color: var(--sidebar-mark);
+.pharma-brand {
+  --pc-ink: var(--text);
 }
 
-.sidebar-brand-mark::after {
-  position: absolute;
-  right: -8px;
-  bottom: -4px;
-  width: 24px;
-  height: 12px;
-  content: "";
-  background: var(--accent);
-  clip-path: polygon(0 58%, 27% 58%, 38% 8%, 54% 94%, 68% 43%, 78% 58%, 100% 58%, 100% 72%, 72% 72%, 56% 100%, 40% 39%, 34% 74%, 0 74%);
-  filter: drop-shadow(0 0 4px var(--primary-glow));
-  animation: ecg-beat 2.8s ease-in-out infinite;
+.pharma-sidebar .pharma-brand {
+  --pc-ink: #ffffff;
+}
+
+@media (max-width: 639px) {
+  .header-pharma-logo {
+    display: none !important;
+  }
+
+  .pharma-sidebar .pharma-brand .pc-text {
+    display: none;
+  }
+}
+
+:root[data-theme="night"] .pharma-brand {
+  --pc-ink: #ffffff;
 }
 
 .sidebar-nav-item {
@@ -454,7 +458,6 @@ header.bg-white\/90 {
   transform: translateX(2px);
 }
 
-aside[data-collapsed="true"] .sidebar-brand-label,
 aside[data-collapsed="true"] .sidebar-user-details,
 aside[data-collapsed="true"] .space-y-1 > div:first-child {
   display: block;
@@ -836,11 +839,6 @@ aside[data-collapsed="true"] .sidebar-logout-label {
   25% { transform: rotate(-10deg); }
   50% { transform: rotate(8deg); }
   75% { transform: rotate(-5deg); }
-}
-
-@keyframes ecg-beat {
-  0%, 72%, 100% { opacity: 0.65; transform: scaleX(0.9); }
-  80% { opacity: 1; transform: scaleX(1); }
 }
 
 @keyframes pos-enter {

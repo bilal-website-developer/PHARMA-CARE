@@ -1,5 +1,7 @@
-const COMPANY_NAME_KEY = 'pharmacare.companyName';
-export const DEFAULT_COMPANY_NAME = 'PharmaCare';
+import { APP_NAME } from '../constants/brand';
+
+const COMPANY_NAME_KEY = 'pharma-care.companyName';
+export const DEFAULT_COMPANY_NAME = APP_NAME;
 
 export function readCompanyName(): string {
   try {

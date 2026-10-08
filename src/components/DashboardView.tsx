@@ -39,7 +39,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const currentDate = new Date();
   const targetDateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-  const targetStorageKey = `pharmacare.salesTarget.${currentUserName}.${targetDateKey}`;
+  const targetStorageKey = `pharma-care.salesTarget.${currentUserName}.${targetDateKey}`;
   const [salesTarget, setSalesTarget] = useState<number | null>(() => {
     try {
       const target = Number(localStorage.getItem(targetStorageKey));

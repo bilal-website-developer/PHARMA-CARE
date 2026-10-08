@@ -1,0 +1,21 @@
+.pc{display:inline-flex;flex-direction:column;align-items:center;perspective:70em;font-family:Sora,system-ui,sans-serif}
+.pc-inline{flex-direction:row}
+.pc-mark{display:block;padding:3.6em 4.4em;transform-style:preserve-3d;animation:pc-bob 3.4s ease-in-out infinite}
+.pc-cap{display:flex;transform:rotateZ(-35deg);transform-style:preserve-3d;animation:pc-wob 5s ease-in-out infinite}
+.pc-l,.pc-r{height:6.8em;width:8.4em;display:flex;align-items:center;justify-content:center}
+.pc-l svg,.pc-r svg{width:3em;height:3em}
+.pc-l{background:linear-gradient(180deg,#4ade80,#15803d 55%,#14532d);border-radius:3.4em 0 0 3.4em;animation:pc-sl 3.4s ease-in-out infinite}
+.pc-r{background:linear-gradient(180deg,#fff,#d1fae5 60%,#a7f3d0);border-radius:0 3.4em 3.4em 0;animation:pc-sr 3.4s ease-in-out infinite}
+.pc-text{margin-top:-.4em;font-weight:800;font-size:3.2em;letter-spacing:-.03em;color:var(--pc-ink,#0B3B2A)}
+.pc-text b{color:#16A34A;font-weight:800}
+.pc-inline .pc-text{margin:0 0 0 -2.4em}
+.pc-static .pc-mark,.pc-static .pc-cap,.pc-static .pc-l,.pc-static .pc-r{animation:none}
+@keyframes pc-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.2em)}}
+@keyframes pc-wob{0%,100%{transform:rotateZ(-35deg) rotateY(-22deg)}50%{transform:rotateZ(-35deg) rotateY(22deg)}}
+@keyframes pc-sl{0%,100%{transform:translateX(0)}50%{transform:translateX(-1.6em)}}
+@keyframes pc-sr{0%,100%{transform:translateX(0)}50%{transform:translateX(1.6em)}}
+@media (prefers-reduced-motion:reduce){.pc-mark,.pc-cap,.pc-l,.pc-r{animation:none}}
+:root[data-animations="off"] .pc-mark,
+:root[data-animations="off"] .pc-cap,
+:root[data-animations="off"] .pc-l,
+:root[data-animations="off"] .pc-r{animation:none}

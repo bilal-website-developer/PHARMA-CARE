@@ -24,6 +24,7 @@ import {
   Receipt,
   X,
 } from 'lucide-react';
+import PharmaLogo from './PharmaLogo';
 import {
   Product,
   CartItem,
@@ -769,7 +770,7 @@ export const POSScreen: React.FC<POSScreenProps> = ({
             {/* Thermal Slip Content */}
             <div className="p-4 bg-slate-50 border border-dashed border-slate-300 font-mono text-[11px] text-slate-800 space-y-2 rounded-lg">
               <div className="text-center">
-                <h4 className="font-bold text-sm text-slate-900">PHARMACARE SYSTEM</h4>
+                <PharmaLogo size={3.2} animated={false} className="mx-auto" />
                 <p className="text-[10px] text-slate-500">Retail & Hospital Pharmacy</p>
                 <p className="text-[10px] text-slate-500">Tel: +92 42 111-222-333</p>
                 <div className="border-b border-dashed border-slate-400 my-2" />

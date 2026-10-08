@@ -7,6 +7,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
 import { ModuleKey, usePermissions } from '../permissions';
+import PharmaLogo from './PharmaLogo';
 
 export type NavItemKey =
   | 'dashboard' | 'pos' | 'products' | 'master-data' | 'stock-inventory'
@@ -19,7 +20,6 @@ interface SidebarProps {
   onSelectItem: (key: NavItemKey) => void;
   currentRole: UserRole;
   currentUserName: string;
-  companyName: string;
   onLogout: () => void;
   onChangePassword: () => void;
 }
@@ -65,12 +65,12 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  activeItem, onSelectItem, currentRole, currentUserName, companyName, onLogout, onChangePassword,
+  activeItem, onSelectItem, currentRole, currentUserName, onLogout, onChangePassword,
 }) => {
   const { isAdmin, can } = usePermissions();
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(`pharmacare.sidebarCollapsed.${currentUserName}`) === 'true';
+      return localStorage.getItem(`pharma-care.sidebarCollapsed.${currentUserName}`) === 'true';
     } catch {
       return false;
     }
@@ -78,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem(`pharmacare.sidebarCollapsed.${currentUserName}`, String(isCollapsed));
+      localStorage.setItem(`pharma-care.sidebarCollapsed.${currentUserName}`, String(isCollapsed));
     } catch {
       // Keep the current layout for this page view if browser storage is unavailable.
     }
@@ -90,12 +90,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       className={`pharma-sidebar sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 text-white transition-none ${isCollapsed ? 'w-16' : 'w-64'}`}
     >
       <div className={`flex items-center border-b border-white/10 p-4 ${isCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="sidebar-brand-mark relative flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-base font-extrabold text-white shadow-md shadow-primary/30">P</div>
-          <div className="sidebar-brand-label min-w-0">
-            <div className="text-sm font-black uppercase tracking-wide text-white">{companyName}</div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-white/60">Control Panel</div>
-          </div>
+        <div className="pharma-brand flex min-w-0 items-center">
+          {isCollapsed
+            ? <PharmaLogo size={2.4} showText={false} />
+            : <PharmaLogo size={2.6} layout="inline" />}
         </div>
         <button type="button" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setIsCollapsed((collapsed) => !collapsed)} className={`sidebar-collapse-control rounded-control p-1.5 text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${isCollapsed ? 'hidden' : ''}`}>
           <ChevronLeft className="h-4 w-4" />

@@ -45,6 +45,7 @@ import {
   receiptDataFromSale,
   renderReceipt,
 } from '../utils/receipt';
+import { APP_NAME } from '../constants/brand';
 
 interface POSBillingViewProps {
   products: Product[];
@@ -686,7 +687,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
       </div>
 
-      {/* ── EdgeX Checkout Modal (Matching Screenshot 9 & 10) ──────────────── */}
+      {/* ── Pharma Care checkout modal ─────────────────────────────────────── */}
       {showCheckoutModal && (
         <div className="pos-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="pos-modal-panel bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200">
@@ -694,7 +695,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-blue-200 uppercase tracking-wider block">
-                  EDGEX CHECKOUT
+                  {APP_NAME.toUpperCase()} CHECKOUT
                 </span>
                 <span className="text-base font-black">
                   Total Payable: Rs. {totalPKR.toFixed(0)}

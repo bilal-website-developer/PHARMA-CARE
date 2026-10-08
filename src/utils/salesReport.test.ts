@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CompletedSale, PaymentMethod } from '../types/pharmacy';
-import { renderSalesReport, salesForPeriod, summarizeSales } from './salesReport';
+import { renderSalesReport, salesForPeriod, summarizeSales, withSalesReportBranding } from './salesReport';
+import { APP_NAME } from '../constants/brand';
 
 const sampleSale: CompletedSale = {
   id: 'sale-1',
@@ -62,7 +63,7 @@ test('summarizes invoice, discount, payment method, medicine quantity and cashie
 
 test('renders a safe report without private item financial fields', () => {
   const html = renderSalesReport(summarizeSales([sampleSale]), {
-    storeName: 'PharmaCare',
+    storeName: APP_NAME,
     periodLabel: 'Today',
     generatedBy: 'Manager',
     generatedAt: '07/10/2026, 10:30 am',
@@ -73,4 +74,17 @@ test('renders a safe report without private item financial fields', () => {
   assert.match(html, /Rs 100/);
   const renderedContent = html.replace(/<style>[\s\S]*?<\/style>/i, '');
   assert.doesNotMatch(renderedContent, /cost|profit|margin|purchase price/i);
+});
+
+test('adds the static Pharma Care logo to printed report headers', () => {
+  const html = withSalesReportBranding(renderSalesReport(summarizeSales([]), {
+    storeName: APP_NAME,
+    periodLabel: 'Today',
+    generatedBy: 'Manager',
+    generatedAt: '07/10/2026, 10:30 am',
+    format: 'a4',
+  }));
+
+  assert.match(html, /<img src="\/pharma-care-512\.png" alt="Pharma Care"/);
+  assert.doesNotMatch(html, /animation:/i);
 });

@@ -45,6 +45,8 @@ import {
   saveBillingPreferences,
 } from './utils/receipt';
 import { readCompanyName, saveCompanyName } from './utils/storeSettings';
+import PharmaLogo from './components/PharmaLogo';
+import { APP_NAME } from './constants/brand';
 
 const NAV_PATHS: Record<NavItemKey, string> = {
   dashboard: '/',
@@ -202,7 +204,7 @@ export default function App() {
   };
 
   if (!sessionChecked) {
-    return <div className="app-loading visual-skeleton flex min-h-screen items-center justify-center bg-surface text-muted">Loading…</div>;
+    return <div className="app-loading flex min-h-screen items-center justify-center bg-surface"><PharmaLogo size={12} /></div>;
   }
 
   if (!session) {
@@ -595,7 +597,6 @@ function PharmacyWorkspace({
         onSelectItem={navigateTo}
         currentRole={currentRole}
         currentUserName={currentUserName}
-        companyName={companyName}
         onLogout={onLogout}
         onChangePassword={() => setShowPasswordDialog(true)}
       />
@@ -608,7 +609,6 @@ function PharmacyWorkspace({
           currentRole={currentRole}
           currentUserName={currentUserName}
           activeTitle={getPageTitle(activeItem)}
-          companyName={companyName}
         />
 
         {/* Dynamic Screen View */}
@@ -739,7 +739,7 @@ function PharmacyWorkspace({
 
           {activeItem === 'help-support' && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs max-w-xl mx-auto space-y-4">
-              <h3 className="text-base font-black text-text">Help & Support</h3>
+              <h3 className="text-base font-black text-text">{APP_NAME} Help & Support</h3>
               <p
                 className="rounded-control border border-border bg-surface p-4 text-xs text-muted"
                 role="status"

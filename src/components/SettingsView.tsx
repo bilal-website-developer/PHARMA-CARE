@@ -144,7 +144,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {[
             {
               id: 'simple' as const,
-              desc: 'Minimal & clean. No logo area, compact spacing. Fast to print.',
+              desc: 'Minimal & clean with a compact logo and spacing. Fast to print.',
               icon: FileText,
             },
             {
