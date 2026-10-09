@@ -1,0 +1,124 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { assignableRolesFor, canAssignRole, canManageTarget, profileChangeDenial } from './policy.ts';
+
+const emptyChange = {
+  callerRole: 'admin' as const,
+  callerId: 'actor',
+  targetId: 'target',
+  targetRole: 'cashier' as const,
+  targetPermissions: ['pos'],
+  targetActive: true,
+  activeAdminCount: 2,
+  superAdminCount: 1,
+  activeSuperAdminCount: 1,
+};
+
+test('admins are assigned only lower roles; super admins may assign admin and super_admin', () => {
+  assert.deepEqual(assignableRolesFor('admin'), ['cashier', 'manager', 'accountant']);
+  assert.ok(assignableRolesFor('super_admin').includes('admin'));
+  assert.ok(assignableRolesFor('super_admin').includes('super_admin'));
+});
+
+test('admin cannot create or manage admin users while super_admin can manage admins', () => {
+  assert.equal(canAssignRole('admin', 'admin'), false);
+  assert.equal(profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    targetRole: 'admin',
+    nextRole: 'admin',
+    nextPermissions: [],
+    nextActive: true,
+  }), 'You are not allowed to manage this user.');
+  assert.equal(canManageTarget('super_admin', 'root', 'target', 'admin'), true);
+});
+
+test('nobody can change their own role, permissions, or active state', () => {
+  assert.match(profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    callerRole: 'admin',
+    callerId: 'same',
+    targetId: 'same',
+    nextRole: 'admin',
+    nextPermissions: [],
+    nextActive: true,
+  }) ?? '', /own role, permissions, or active status/);
+});
+
+test('protects the last active super_admin from delete, demotion, and deactivation', () => {
+  const deleteDenial = profileChangeDenial({
+    ...emptyChange,
+    action: 'delete',
+    callerRole: 'super_admin',
+    targetRole: 'super_admin',
+    superAdminCount: 1,
+    activeSuperAdminCount: 1,
+  });
+  const demoteDenial = profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    callerRole: 'super_admin',
+    targetRole: 'super_admin',
+    nextRole: 'admin',
+    nextPermissions: [],
+    nextActive: true,
+    superAdminCount: 1,
+    activeSuperAdminCount: 1,
+  });
+  const deactivateDenial = profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    callerRole: 'super_admin',
+    targetRole: 'super_admin',
+    nextRole: 'super_admin',
+    nextPermissions: ['pos'],
+    nextActive: false,
+    superAdminCount: 2,
+    activeSuperAdminCount: 1,
+  });
+  assert.match(deleteDenial ?? '', /last super_admin/);
+  assert.match(demoteDenial ?? '', /last super_admin/);
+  assert.match(deactivateDenial ?? '', /last super_admin/);
+});
+
+test('does not block removing an inactive admin when another active admin remains', () => {
+  assert.equal(profileChangeDenial({
+    ...emptyChange,
+    action: 'delete',
+    callerRole: 'super_admin',
+    targetRole: 'admin',
+    targetActive: false,
+    activeAdminCount: 1,
+  }), null);
+});
+
+  test('protects the last active admin from deletion, demotion, and deactivation', () => {
+    for (const change of [
+      { action: 'delete' as const },
+      { action: 'update' as const, nextRole: 'cashier' as const, nextActive: true },
+      { action: 'update' as const, nextRole: 'admin' as const, nextActive: false },
+    ]) {
+      assert.match(profileChangeDenial({
+        ...emptyChange,
+        ...change,
+        callerRole: 'super_admin',
+        targetRole: 'admin',
+        targetActive: true,
+        nextPermissions: [],
+        activeAdminCount: 1,
+      }) ?? '', /last active admin/);
+    }
+  });
+
+  test('super_admin may create an admin role', () => {
+  assert.equal(profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    callerRole: 'super_admin',
+    targetRole: 'cashier',
+    nextRole: 'admin',
+    nextPermissions: [],
+    nextActive: true,
+  }), null);
+});

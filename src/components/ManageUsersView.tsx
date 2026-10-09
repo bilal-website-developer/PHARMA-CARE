@@ -14,6 +14,7 @@ interface ManagedUser {
   role: UserRole | null;
   is_active: boolean | null;
   permissions: ModuleKey[] | null;
+  can_manage: boolean;
 }
 
 interface UserForm {
@@ -74,6 +75,8 @@ export function ManageUsersView({
   const isSuperAdmin = currentRole === UserRole.SUPER_ADMIN;
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [currentCount, setCurrentCount] = useState(0);
+  const [assignableRoles, setAssignableRoles] = useState<UserRole[]>([]);
+  const [grantablePermissions, setGrantablePermissions] = useState<ModuleKey[]>([]);
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -84,11 +87,18 @@ export function ManageUsersView({
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await invokeManageUsers<{ users: ManagedUser[]; currentCount: number }>(
+      const result = await invokeManageUsers<{
+        users: ManagedUser[];
+        currentCount: number;
+        assignable_roles: UserRole[];
+        grantable_permissions: ModuleKey[];
+      }>(
         { action: 'list' }
       );
       setUsers(result.users);
       setCurrentCount(result.currentCount);
+      setAssignableRoles(result.assignable_roles);
+      setGrantablePermissions(result.grantable_permissions);
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : 'Could not load users.', error: true });
     } finally {
@@ -106,7 +116,7 @@ export function ManageUsersView({
   };
 
   const startEdit = (user: ManagedUser) => {
-    if (user.role === UserRole.SUPER_ADMIN || (!isSuperAdmin && user.role === UserRole.ADMIN)) return;
+    if (!user.can_manage) return;
     const email = String(user.email ?? '');
     setEditingId(user.id);
     setIsFormOpen(true);
@@ -191,7 +201,7 @@ export function ManageUsersView({
   };
 
   const handleDelete = async (user: ManagedUser) => {
-    if (user.role === UserRole.SUPER_ADMIN || (!isSuperAdmin && user.role === UserRole.ADMIN)) return;
+    if (!user.can_manage || user.id === currentUserId) return;
     if (!window.confirm(`Remove ${user.username}? They will no longer be able to log in.`)) return;
     setNotice(null);
     try {
@@ -252,10 +262,12 @@ export function ManageUsersView({
                 const role = event.target.value as UserRole;
                 setForm({ ...form, role, permissions: [...ROLE_DEFAULT_PERMISSIONS[role]] });
               }} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
-                <option value={UserRole.CASHIER}>Cashier</option>
-                <option value={UserRole.MANAGER}>Manager</option>
-                <option value={UserRole.ACCOUNTANT}>Accountant</option>
-                {(isSuperAdmin || form.role === UserRole.ADMIN) && <option value={UserRole.ADMIN}>Admin</option>}
+                {editingId === currentUserId && !assignableRoles.includes(form.role) && (
+                  <option value={form.role}>{ROLE_LABELS[form.role]}</option>
+                )}
+                {assignableRoles.map((role) => (
+                  <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                ))}
               </select>
             </label>
           </div>
@@ -265,7 +277,7 @@ export function ManageUsersView({
             {form.role === UserRole.SUPER_ADMIN && <p className="mb-3 text-xs font-semibold text-muted">This role can access every module.</p>}
             {form.role === UserRole.ADMIN && <p className="mb-3 text-xs font-semibold text-muted">Select the modules this admin is allowed to access.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
-              {MODULES.map(({ key, label }) => (
+              {MODULES.filter(({ key }) => grantablePermissions.includes(key)).map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 text-sm text-text">
                   <input
                     type="checkbox"
@@ -314,7 +326,7 @@ export function ManageUsersView({
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${user.is_active === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{user.is_active === true ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
-                        {user.role !== UserRole.SUPER_ADMIN && (isSuperAdmin || user.role !== UserRole.ADMIN) && <>
+                        {user.can_manage && <>
                           <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>
                           {user.id !== currentUserId && <button type="button" onClick={() => void handleDelete(user)} title={`Delete ${user.username}`} aria-label={`Delete ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>}
                         </>}
