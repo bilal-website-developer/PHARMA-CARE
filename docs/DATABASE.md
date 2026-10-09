@@ -31,6 +31,8 @@ The export does not list `purchase_number_state` or `supplier_ledger`; the local
 
 The reviewed categories/brands migration adds `categories` and `brands`; both are backfilled from `medicines.category` and `medicines.company`. Staff read them under RLS, while category-permission writes are exposed through checked RPCs so renames can update the medicine text column atomically. The stock-adjustment migration adds `adjust_stock(...)`, which changes one locked batch and records its movement in one transaction. It removes the exported `quantity_remaining <= quantity_received` constraint so an upward physical-count correction can exceed the original receipt; the separate nonnegative quantity constraint remains. The later `save_medicine(...)` migration is used by the Products form to create/update a medicine and its units transactionally.
 
+The frontend inventory redesign's Phase 1 adds shared display components and pure stock/expiry presentation helpers under `src/components/inventory/`. These are UI-only primitives; Phase 1 does not create or alter database tables, functions, policies, or stored data.
+
 ## Stock flow
 
 1. A posted purchase is submitted through `post_purchase(...)` as a Postgres RPC. The current checked-in migration validates the purchase and each item, locks/advances the purchase-number counter, verifies that each unit belongs to its medicine, and performs all related writes transactionally.

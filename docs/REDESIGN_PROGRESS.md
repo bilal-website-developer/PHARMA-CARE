@@ -1,5 +1,26 @@
 # Redesign Progress
 
+## Inventory redesign
+
+### Phase status
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 — Discovery | Done | Read-only discovery completed from the checked-in app, migrations, baseline schema, and documentation. |
+| 1 — Shared UI pieces | Done | Added reusable inventory UI primitives and pure stock/expiry display logic with unit tests; no database changes. |
+| 2 — Products | Pending approval | Not started. |
+| 3 — Categories & master data | Pending approval | Not started. |
+| 4 — Stock Inventory | Pending approval | Not started. |
+| 5 — Reorder suggestions | Pending approval | Not started. |
+| 6 — Returns & stock-take | Gated | Start only after written approval for Phases 1–5. |
+
+### Phase 1 delivered
+
+- Added `src/components/inventory/InventoryUi.tsx` with KPI cards, status/stock/expiry chips, filters, keyboard-operable segmented tabs, responsive selectable data tables, row actions, server-pagination controls, bulk-action bar, empty/loading states, and an accessible confirmation dialog.
+- Added pure stock-bar and expiry-display logic plus boundary/error tests in `src/components/inventory/inventoryUiLogic.ts` and its test file.
+- Registered the focused test suite in the existing `npm test` runner. No dependencies, database objects, or live data were changed.
+- Validation: `npm run lint`, `npm test` (67 tests), and `npm run build` pass. Vite still reports its existing config-loader and large-chunk warnings.
+
 ## Safe demo login
 
 ### Implemented
