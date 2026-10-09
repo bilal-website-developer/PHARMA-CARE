@@ -33,6 +33,10 @@ test('admin and super admin access and assigned module permissions are respected
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'expenses'), false);
   assert.equal(canAccessPage(UserRole.ADMIN, ['expenses'], 'expenses'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'manage-users'), true);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['purchases'], 'purchases'), true);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['purchases'], 'purchase-history'), false);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchase-history'), true);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchases'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'manage-users'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'purchases'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['customers'], 'customer-ledger'), true);

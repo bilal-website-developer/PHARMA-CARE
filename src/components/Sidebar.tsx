@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  BarChart3, ChevronLeft, ChevronRight, FileText, HelpCircle, History, KeyRound,
-  Layers, LayoutDashboard, LogOut, MessageSquare, Package, Receipt, Settings,
+  BarChart3, ChevronLeft, ChevronRight, FileText, HelpCircle, History,
+  Layers, LayoutDashboard, MessageSquare, Package, Receipt, Settings,
   ShoppingBag, ShoppingCart, Trash2, Truck, UserCheck, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import { ModuleKey, usePermissions } from '../permissions';
 import PharmaLogo from './PharmaLogo';
+import GlowCredit from './GlowCredit';
 
 export type NavItemKey =
   | 'dashboard' | 'pos' | 'products' | 'master-data' | 'stock-inventory'
@@ -18,10 +18,7 @@ export type NavItemKey =
 interface SidebarProps {
   activeItem: NavItemKey;
   onSelectItem: (key: NavItemKey) => void;
-  currentRole: UserRole;
-  currentUserName: string;
-  onLogout: () => void;
-  onChangePassword: () => void;
+  username: string;
 }
 
 interface NavEntry {
@@ -65,12 +62,12 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  activeItem, onSelectItem, currentRole, currentUserName, onLogout, onChangePassword,
+  activeItem, onSelectItem, username,
 }) => {
   const { isAdmin, can } = usePermissions();
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(`pharma-care.sidebarCollapsed.${currentUserName}`) === 'true';
+      return localStorage.getItem(`pharma-care.sidebarCollapsed.${username}`) === 'true';
     } catch {
       return false;
     }
@@ -78,11 +75,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem(`pharma-care.sidebarCollapsed.${currentUserName}`, String(isCollapsed));
+      localStorage.setItem(`pharma-care.sidebarCollapsed.${username}`, String(isCollapsed));
     } catch {
       // Keep the current layout for this page view if browser storage is unavailable.
     }
-  }, [currentUserName, isCollapsed]);
+  }, [username, isCollapsed]);
 
   return (
     <aside
@@ -129,23 +126,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      <div className={`mt-auto flex items-center gap-2 border-t border-white/10 p-3 ${isCollapsed ? 'flex-col' : ''}`}>
-        <div title={`${currentUserName}, ${ROLE_LABELS[currentRole]}`} aria-label={`${currentUserName}, ${ROLE_LABELS[currentRole]}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-          {currentUserName.charAt(0).toUpperCase()}
-        </div>
-        <div className="sidebar-user-details min-w-0 flex-1">
-          <div className="truncate text-xs font-bold text-white">{currentUserName}</div>
-          <div className="text-[10px] font-semibold uppercase text-white/60">{ROLE_LABELS[currentRole]}</div>
-        </div>
-        {currentRole !== UserRole.ADMIN && <button type="button" onClick={onChangePassword} title="Change My Password" aria-label="Change My Password" className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-          <KeyRound className="h-3.5 w-3.5" />
-          <span className="sidebar-logout-label">Password</span>
-        </button>}
-        <button type="button" onClick={onLogout} title="Log out" aria-label="Log out" className="rounded-control border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-          <LogOut className="h-3.5 w-3.5" />
-          <span className="sidebar-logout-label">Log out</span>
-        </button>
-      </div>
+      {!isCollapsed && <div className="mt-auto border-t border-white/10 p-3">
+        <GlowCredit />
+      </div>}
     </aside>
   );
 };

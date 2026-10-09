@@ -46,7 +46,9 @@ import {
 } from './utils/receipt';
 import { readCompanyName, saveCompanyName } from './utils/storeSettings';
 import PharmaLogo from './components/PharmaLogo';
-import { APP_NAME } from './constants/brand';
+import { HelpSupportView } from './components/HelpSupportView';
+import { StockPurchaseView } from './components/StockPurchaseView';
+import { PurchaseHistoryView } from './components/PurchaseHistoryView';
 
 const NAV_PATHS: Record<NavItemKey, string> = {
   dashboard: '/',
@@ -595,10 +597,7 @@ function PharmacyWorkspace({
       <Sidebar
         activeItem={activeItem}
         onSelectItem={navigateTo}
-        currentRole={currentRole}
-        currentUserName={currentUserName}
-        onLogout={onLogout}
-        onChangePassword={() => setShowPasswordDialog(true)}
+        username={currentUserName}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
@@ -607,8 +606,10 @@ function PharmacyWorkspace({
         {/* Top Header Strip */}
         <TopNav
           currentRole={currentRole}
-          currentUserName={currentUserName}
+          username={currentUserName}
           activeTitle={getPageTitle(activeItem)}
+          onChangePassword={() => setShowPasswordDialog(true)}
+          onLogout={onLogout}
         />
 
         {/* Dynamic Screen View */}
@@ -723,31 +724,11 @@ function PharmacyWorkspace({
 
           {activeItem === 'suppliers' && <SuppliersView />}
           {activeItem === 'purchases' && (
-            <EmptyModulePage
-              title="Purchase Entry"
-              message="No purchase entries yet."
-              detail="Purchase posting and stock movements require a server API and database."
-            />
+            <StockPurchaseView userId={session.userId} onViewHistory={() => navigateTo('purchase-history')} />
           )}
-          {activeItem === 'purchase-history' && (
-            <EmptyModulePage
-              title="Purchase History"
-              message="No purchases have been recorded yet."
-              detail="Purchase history requires persisted purchase records from a server API."
-            />
-          )}
+          {activeItem === 'purchase-history' && <PurchaseHistoryView currentRole={currentRole} />}
 
-          {activeItem === 'help-support' && (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs max-w-xl mx-auto space-y-4">
-              <h3 className="text-base font-black text-text">{APP_NAME} Help & Support</h3>
-              <p
-                className="rounded-control border border-border bg-surface p-4 text-xs text-muted"
-                role="status"
-              >
-                Support contact details are not configured. Please contact your store administrator.
-              </p>
-            </div>
-          )}
+          {activeItem === 'help-support' && <HelpSupportView username={currentUserName} role={currentRole} />}
 
           {activeItem === 'trash-bin' && <DeletedUsersView currentRole={currentRole} />}
 
@@ -787,24 +768,6 @@ function PharmacyWorkspace({
       )}
       {showPasswordDialog && <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />}
     </div>
-  );
-}
-
-function EmptyModulePage({
-  title,
-  message,
-  detail,
-}: {
-  title: string;
-  message: string;
-  detail: string;
-}) {
-  return (
-    <section className="mx-auto max-w-3xl rounded-card border border-border bg-white p-8 text-center shadow-sm">
-      <h2 className="text-lg font-bold text-text">{title}</h2>
-      <p className="mt-2 text-sm text-muted">{message}</p>
-      <p className="mt-4 text-xs text-warning">{detail}</p>
-    </section>
   );
 }
 

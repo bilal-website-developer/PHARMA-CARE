@@ -14,6 +14,7 @@
     "test:report": "tsx --test src/utils/salesReport.test.ts"
   },
   "dependencies": {
+    "@e965/xlsx": "^0.20.3",
     "@google/genai": "^2.4.0",
     "@supabase/supabase-js": "^2.117.3",
     "@tailwindcss/vite": "^4.3.3",
