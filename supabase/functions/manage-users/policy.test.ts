@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assignableRolesFor, canAssignRole, canManageTarget, profileChangeDenial } from './policy.ts';
+import {
+  assignableRolesFor,
+  canAssignRole,
+  canManageTarget,
+  canUseManageUsers,
+  grantablePermissionsFor,
+  permissionGrantDenial,
+  profileChangeDenial,
+} from './policy.ts';
 
 const emptyChange = {
   callerRole: 'admin' as const,
@@ -122,3 +130,28 @@ test('does not block removing an inactive admin when another active admin remain
     nextActive: true,
   }), null);
 });
+
+  test('Manage Users holders can manage lower roles but not another Manage Users holder', () => {
+    const permissions = ['manage_users', 'customers', 'pos'];
+    assert.deepEqual(assignableRolesFor('manager', permissions), ['cashier', 'manager', 'accountant']);
+    assert.deepEqual(grantablePermissionsFor('manager', permissions, [
+      'pos', 'customers', 'manage_users', 'reports',
+    ]), ['customers', 'pos']);
+    assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['pos'], permissions), true);
+    assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['manage_users'], permissions), false);
+  });
+
+  test('only admins or active profiles with Manage Users permission pass the edge-function gate', () => {
+    assert.equal(canUseManageUsers('cashier', []), false);
+    assert.equal(canUseManageUsers('manager', ['manage_users']), true);
+    assert.equal(canUseManageUsers('admin', []), true);
+    assert.equal(canUseManageUsers('super_admin', []), true);
+  });
+
+  test('Manage Users holders can grant only held permissions and cannot grant Manage Users', () => {
+    const callerPermissions = ['manage_users', 'customers', 'pos'];
+    assert.equal(permissionGrantDenial('manager', callerPermissions, ['customers', 'pos']), null);
+    assert.match(permissionGrantDenial('manager', callerPermissions, ['reports']) ?? '', /only grant permissions that you hold/);
+    assert.match(permissionGrantDenial('manager', callerPermissions, ['manage_users']) ?? '', /Only admin or super_admin/);
+    assert.equal(permissionGrantDenial('admin', [], ['manage_users']), null);
+  });

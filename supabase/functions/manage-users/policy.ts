@@ -1,6 +1,11 @@
 export const ROLES = ['cashier', 'manager', 'accountant', 'admin', 'super_admin'] as const;
 export type Role = (typeof ROLES)[number];
 
+export function canUseManageUsers(callerRole: Role, callerPermissions: readonly string[]): boolean {
+  return callerRole === 'admin' || callerRole === 'super_admin'
+    || callerPermissions.includes('manage_users');
+}
+
 const ROLE_LEVEL: Record<Role, number> = {
   cashier: 0,
   manager: 1,
@@ -9,27 +14,67 @@ const ROLE_LEVEL: Record<Role, number> = {
   super_admin: 3,
 };
 
-export function assignableRolesFor(callerRole: Role): Role[] {
+export function assignableRolesFor(callerRole: Role, callerPermissions: readonly string[] = []): Role[] {
   return callerRole === 'super_admin'
     ? [...ROLES]
     : callerRole === 'admin'
       ? ['cashier', 'manager', 'accountant']
-      : [];
+      : callerPermissions.includes('manage_users')
+        ? ['cashier', 'manager', 'accountant']
+        : [];
 }
 
-export function canAssignRole(callerRole: Role, role: Role): boolean {
-  return assignableRolesFor(callerRole).includes(role);
+export function canAssignRole(
+  callerRole: Role,
+  role: Role,
+  callerPermissions: readonly string[] = []
+): boolean {
+  return assignableRolesFor(callerRole, callerPermissions).includes(role);
+}
+
+export function grantablePermissionsFor(
+  callerRole: Role,
+  callerPermissions: readonly string[],
+  permissionKeys: readonly string[]
+): string[] {
+  if (callerRole === 'admin' || callerRole === 'super_admin') return [...permissionKeys];
+  if (!callerPermissions.includes('manage_users')) return [];
+  return callerPermissions.filter((permission) => permission !== 'manage_users');
+}
+
+export function permissionGrantDenial(
+  callerRole: Role,
+  callerPermissions: readonly string[],
+  requestedPermissions: readonly string[],
+  currentPermissions: readonly string[] = []
+): string | null {
+  if (callerRole === 'admin' || callerRole === 'super_admin') return null;
+  if (!callerPermissions.includes('manage_users')) return 'You do not have permission to manage users.';
+  if (requestedPermissions.includes('manage_users') && !currentPermissions.includes('manage_users')) {
+    return 'Only admin or super_admin may grant Manage Users.';
+  }
+  if (requestedPermissions.some((permission) =>
+    !callerPermissions.includes(permission) && !currentPermissions.includes(permission)
+  )) {
+    return 'You may only grant permissions that you hold.';
+  }
+  return null;
 }
 
 export function canManageTarget(
   callerRole: Role,
   callerId: string,
   targetId: string,
-  targetRole: Role
+  targetRole: Role,
+  targetPermissions: readonly string[] = [],
+  callerPermissions: readonly string[] = []
 ): boolean {
   if (callerId === targetId) return true;
   if (callerRole === 'super_admin') return true;
-  return callerRole === 'admin' && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin;
+  if (callerRole === 'admin') return ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin;
+  return callerPermissions.includes('manage_users')
+    && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin
+    && !targetPermissions.includes('manage_users');
 }
 
 interface ProfileChangePolicy {
@@ -46,6 +91,7 @@ interface ProfileChangePolicy {
   activeAdminCount: number;
   superAdminCount: number;
   activeSuperAdminCount: number;
+  callerPermissions?: readonly string[];
 }
 
 function samePermissions(left: readonly string[], right: readonly string[]): boolean {
@@ -70,12 +116,26 @@ export function profileChangeDenial(change: ProfileChangePolicy): string | null 
     )) {
       return 'Cannot change your own role, permissions, or active status.';
     }
-    if (nextRole !== change.targetRole && !canAssignRole(change.callerRole, nextRole)) {
+    if (nextRole !== change.targetRole && !canAssignRole(change.callerRole, nextRole, change.callerPermissions)) {
       return 'You are not allowed to assign this role.';
     }
+    const permissionDenial = permissionGrantDenial(
+      change.callerRole,
+      change.callerPermissions ?? [],
+      nextPermissions,
+      change.targetPermissions
+    );
+    if (permissionDenial) return permissionDenial;
   }
 
-  if (!canManageTarget(change.callerRole, change.callerId, change.targetId, change.targetRole)) {
+  if (!canManageTarget(
+    change.callerRole,
+    change.callerId,
+    change.targetId,
+    change.targetRole,
+    change.targetPermissions,
+    change.callerPermissions
+  )) {
     return 'You are not allowed to manage this user.';
   }
 

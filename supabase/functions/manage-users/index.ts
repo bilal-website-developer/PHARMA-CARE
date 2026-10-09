@@ -3,6 +3,9 @@ import {
   assignableRolesFor,
   canAssignRole,
   canManageTarget,
+  canUseManageUsers,
+  grantablePermissionsFor,
+  permissionGrantDenial,
   profileChangeDenial,
   ROLES,
 } from './policy.ts';
@@ -11,7 +14,7 @@ import type { Role } from './policy.ts';
 const MAX_USERS = 99;
 const MODULE_KEYS = [
   'pos', 'products', 'categories', 'suppliers', 'customers', 'sales_history',
-  'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports',
+  'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports', 'manage_users',
 ] as const;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -118,20 +121,28 @@ Deno.serve(async (request) => {
 
     const { data: callerProfile, error: callerError } = await adminClient
       .from('profiles')
-      .select('role,is_active,deleted_at')
+      .select('role,is_active,deleted_at,permissions')
       .eq('id', authData.user.id)
       .maybeSingle();
     if (callerError) throw callerError;
+    const callerPermissionsFromProfile = Array.isArray(callerProfile?.permissions)
+      ? callerProfile.permissions
+      : [];
     if (
       !callerProfile ||
-      (callerProfile.role !== 'admin' && callerProfile.role !== 'super_admin') ||
+      (!validRole(callerProfile.role) || !canUseManageUsers(callerProfile.role, callerPermissionsFromProfile)) ||
       callerProfile.is_active !== true ||
       callerProfile.deleted_at !== null
     ) {
-      return response(403, { message: 'Only an active admin can manage users.' });
+      return response(403, { message: 'An active admin or a user with Manage Users permission is required.' });
     }
     const isSuperAdmin = callerProfile.role === 'super_admin';
     const callerRole = callerProfile.role as Role;
+    const callerPermissions = Array.isArray(callerProfile.permissions)
+      ? callerProfile.permissions.filter((permission) =>
+        typeof permission === 'string' && MODULE_KEYS.includes(permission as typeof MODULE_KEYS[number])
+      )
+      : [];
 
     let payload: Record<string, unknown>;
     try {
@@ -166,18 +177,23 @@ Deno.serve(async (request) => {
         )
         .map((user) => ({
           ...user,
-          can_manage: canManageTarget(callerRole, authData.user.id, user.id, user.role),
+          can_manage: canManageTarget(
+            callerRole, authData.user.id, user.id, user.role, user.permissions, callerPermissions
+          ),
         }));
       return response(200, {
         users: orderedUsers,
         userLimit: MAX_USERS,
         currentCount: orderedUsers.length,
-        assignable_roles: assignableRolesFor(callerRole),
-        grantable_permissions: [...MODULE_KEYS],
+        assignable_roles: assignableRolesFor(callerRole, callerPermissions),
+        grantable_permissions: grantablePermissionsFor(callerRole, callerPermissions, MODULE_KEYS),
       });
     }
 
     if (action === 'list_deleted') {
+      if (callerRole !== 'admin' && callerRole !== 'super_admin') {
+        return response(403, { message: 'Only admin or super_admin may access deleted users.' });
+      }
       const { data: users, error } = await adminClient
         .from('profiles')
         .select('id,full_name,username,email,role,is_active,permissions,deleted_at')
@@ -208,7 +224,9 @@ Deno.serve(async (request) => {
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
-      if (!target || !validRole(target.role) || !canManageTarget(callerRole, authData.user.id, id, target.role)) {
+      if (!target || !validRole(target.role) || !canManageTarget(
+        callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions
+      )) {
         return response(404, { message: 'User not found.' });
       }
       if (target.deleted_at !== null) return response(400, { message: 'Restore this user before changing its password.' });
@@ -239,10 +257,12 @@ Deno.serve(async (request) => {
       if (password.length < 8) return response(400, { message: 'Password must be at least 8 characters.' });
       if (!role) return response(400, { message: 'Role is required.' });
       if (!validRole(role)) return response(400, { message: 'Role is invalid.' });
-      if (!canAssignRole(callerRole, role)) {
+      if (!canAssignRole(callerRole, role, callerPermissions)) {
         return response(403, { message: 'You are not allowed to assign this role.' });
       }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
+      const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, payload.permissions);
+      if (permissionDenial) return response(403, { message: permissionDenial });
       if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
         return response(400, { message: 'Active status must be true or false.' });
       }
@@ -396,7 +416,10 @@ Deno.serve(async (request) => {
       }
 
       if (action === 'restore') {
-        if (!canManageTarget(callerRole, authData.user.id, id, target.role)) {
+        if (callerRole !== 'admin' && callerRole !== 'super_admin') {
+          return response(403, { message: 'Only admin or super_admin may restore users.' });
+        }
+        if (!canManageTarget(callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions)) {
           return response(403, { message: 'You are not allowed to manage this user.' });
         }
         if (target.deleted_at === null) return response(400, { message: 'User is not deleted.' });
@@ -439,7 +462,7 @@ Deno.serve(async (request) => {
       if (!validEmail(email)) return response(400, { message: 'A valid email is required.' });
       if (!role) return response(400, { message: 'Role is required.' });
       if (!validRole(role)) return response(400, { message: 'Role is invalid.' });
-      if (!canManageTarget(callerRole, authData.user.id, id, target.role)) {
+      if (!canManageTarget(callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions)) {
         return response(403, { message: 'You are not allowed to manage this user.' });
       }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
@@ -482,6 +505,7 @@ Deno.serve(async (request) => {
         activeAdminCount: activeAdminCount ?? 0,
         superAdminCount: superAdminCount ?? 0,
         activeSuperAdminCount: activeSuperAdminCount ?? 0,
+        callerPermissions,
       });
       if (denial) return response(403, { message: denial });
       const permissions = nextRole === 'super_admin' ? [...MODULE_KEYS] : payload.permissions;

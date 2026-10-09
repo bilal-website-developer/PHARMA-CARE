@@ -53,7 +53,7 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
   { title: 'Accounts & Admin', items: [
     { key: 'expenses', label: 'Expenses', icon: Wallet, module: 'expenses' },
     { key: 'reports', label: 'Business Analytics', icon: BarChart3, module: 'reports' },
-    { key: 'manage-users', label: 'Manage Users', icon: UserCheck, admin: true },
+    { key: 'manage-users', label: 'Manage Users', icon: UserCheck, module: 'manage_users' },
   ] },
   { title: 'Settings & System', items: [
     { key: 'settings', label: 'Settings', icon: Settings, admin: true },

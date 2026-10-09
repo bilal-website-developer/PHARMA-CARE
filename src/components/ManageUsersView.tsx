@@ -111,7 +111,12 @@ export function ManageUsersView({
   const startAdd = () => {
     setEditingId(null);
     setIsFormOpen(true);
-    setForm({ ...EMPTY_FORM, permissions: [...EMPTY_FORM.permissions] });
+    const role = assignableRoles[0] ?? UserRole.CASHIER;
+    setForm({
+      ...EMPTY_FORM,
+      role,
+      permissions: ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+    });
     setNotice(null);
   };
 
@@ -260,7 +265,11 @@ export function ManageUsersView({
               Role
               <select value={form.role} disabled={editingId === currentUserId} onChange={(event) => {
                 const role = event.target.value as UserRole;
-                setForm({ ...form, role, permissions: [...ROLE_DEFAULT_PERMISSIONS[role]] });
+                setForm({
+                  ...form,
+                  role,
+                  permissions: ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+                });
               }} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
                 {editingId === currentUserId && !assignableRoles.includes(form.role) && (
                   <option value={form.role}>{ROLE_LABELS[form.role]}</option>
@@ -272,7 +281,7 @@ export function ManageUsersView({
             </label>
           </div>
 
-          <fieldset className="rounded-control border border-border p-4">
+          <fieldset disabled={editingId === currentUserId} className="rounded-control border border-border p-4 disabled:opacity-70">
             <legend className="px-2 text-sm font-bold text-text">Allowed Modules (Custom Permissions)</legend>
             {form.role === UserRole.SUPER_ADMIN && <p className="mb-3 text-xs font-semibold text-muted">This role can access every module.</p>}
             {form.role === UserRole.ADMIN && <p className="mb-3 text-xs font-semibold text-muted">Select the modules this admin is allowed to access.</p>}

@@ -13,6 +13,7 @@ export const MODULES = [
   { key: 'expenses', label: 'Expenses' },
   { key: 'stock_inventory', label: 'Stock Inventory' },
   { key: 'reports', label: 'Reports' },
+  { key: 'manage_users', label: 'Manage Users' },
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]['key'];
@@ -64,7 +65,8 @@ export function canAccessModule(role: UserRole, permissions: readonly string[], 
 
 export function canAccessPage(role: UserRole, permissions: readonly string[], pageKey: string) {
   if (pageKey === 'dashboard' || pageKey === 'help-support') return true;
-  if (['manage-users', 'settings', 'trash-bin'].includes(pageKey)) return isAdminRole(role);
+  if (pageKey === 'settings' || pageKey === 'trash-bin') return isAdminRole(role);
+  if (pageKey === 'manage-users') return canAccessModule(role, permissions, 'manage_users');
   const moduleKey = PAGE_MODULE[pageKey];
   return moduleKey ? canAccessModule(role, permissions, moduleKey) : false;
 }

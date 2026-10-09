@@ -40,6 +40,10 @@ test('admin roles override assigned permissions while limited roles remain permi
   assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchase-history'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchases'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'manage-users'), false);
+  assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'manage-users'), true);
+  assert.equal(canAccessPage(UserRole.MANAGER, [], 'manage-users'), false);
+  assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'settings'), false);
+  assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'trash-bin'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'purchases'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, ['customers'], 'customer-ledger'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'dashboard'), true);
