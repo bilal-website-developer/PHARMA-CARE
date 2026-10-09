@@ -302,6 +302,8 @@ function ProductsCatalog({
   }, [loadOptions, loadProducts]);
 
   const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const lowStockCount = medicines.filter((medicine) => medicine.stock <= medicine.min_stock_alert).length;
+  const outOfStockCount = medicines.filter((medicine) => medicine.stock === 0).length;
 
   const openCreate = () => {
     setEditing(null);
@@ -401,33 +403,53 @@ function ProductsCatalog({
 
   return (
     <div className="space-y-4">
-      <section className={`${PANEL} flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between`}>
+      <section className={`${PANEL} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between`}>
         <div>
-          <h2 className="text-lg font-black text-text">Products</h2>
-          <p className="text-sm text-muted">Database medicines, live non-expired stock, and nearest batch expiry.</p>
+          <h2 className="text-xl font-black text-text">Inventory Management</h2>
+          <p className="text-sm text-muted">Track products, active stock, and nearest batch expiry.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="relative min-w-56 flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
-            <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search code, barcode or name" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
-          </label>
-          <select aria-label="Filter category" className={FIELD} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
+          <button type="button" className={SECONDARY} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
+          {canEditProducts && <button type="button" className={BUTTON} onClick={openCreate}><Plus size={16} /> Add product</button>}
+        </div>
+      </section>
+
+      <section aria-label="Product summary" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {[
+          { label: 'Matching products', value: totalCount.toLocaleString(), detail: 'Current filters' },
+          { label: 'On this page', value: medicines.length.toLocaleString(), detail: `Page ${page} of ${pageCount}` },
+          { label: 'Low stock', value: lowStockCount.toLocaleString(), detail: 'Visible products' },
+          { label: 'Out of stock', value: outOfStockCount.toLocaleString(), detail: 'Visible products' },
+        ].map(({ label, value, detail }) => (
+          <div key={label} className={`${PANEL} p-4`}>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p>
+            <p className="mt-1 text-2xl font-black text-primary">{value}</p>
+            <p className="mt-1 text-xs text-muted">{detail}</p>
+          </div>
+        ))}
+      </section>
+
+      <section aria-label="Product search and filters" className={`${PANEL} space-y-3 p-4`}>
+        <label className="relative block">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+          <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, code, barcode, or manufacturer" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Filter category" className={FIELD + ' w-auto min-w-36'} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
             <option value="">All categories</option>
             {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
           </select>
-          <select aria-label="Filter manufacturer" className={FIELD} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
+          <select aria-label="Filter manufacturer" className={FIELD + ' w-auto min-w-40'} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
             <option value="">All manufacturers</option>
             {brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
           </select>
-          <select aria-label="Filter medicine class" className={FIELD} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
+          <select aria-label="Filter medicine class" className={FIELD + ' w-auto min-w-36'} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
             <option value="">All classes</option>
             <option value="OTC">OTC</option><option value="RX">RX</option><option value="CONTROLLED">Controlled</option><option value="NARCOTIC">Narcotic</option>
           </select>
-          <select aria-label="Filter active status" className={FIELD} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
+          <select aria-label="Filter active status" className={FIELD + ' w-auto min-w-40'} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
             <option value="active">Active products</option><option value="inactive">Inactive products</option><option value="all">All products</option>
           </select>
-          <button type="button" className={SECONDARY} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /></button>
-          {canEditProducts && <button type="button" className={BUTTON} onClick={openCreate}><Plus size={16} /> Add product</button>}
         </div>
       </section>
 

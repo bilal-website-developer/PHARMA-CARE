@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   BarChart3, ChevronLeft, ChevronRight, FileText, HelpCircle, History,
   Layers, LayoutDashboard, MessageSquare, Package, Receipt, Settings,
@@ -18,7 +18,8 @@ export type NavItemKey =
 interface SidebarProps {
   activeItem: NavItemKey;
   onSelectItem: (key: NavItemKey) => void;
-  username: string;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 interface NavEntry {
@@ -62,40 +63,31 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  activeItem, onSelectItem, username,
+  activeItem, onSelectItem, isCollapsed, onToggleCollapsed,
 }) => {
   const { isAdmin, can } = usePermissions();
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(`pharma-care.sidebarCollapsed.${username}`) === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`pharma-care.sidebarCollapsed.${username}`, String(isCollapsed));
-    } catch {
-      // Keep the current layout for this page view if browser storage is unavailable.
-    }
-  }, [username, isCollapsed]);
 
   return (
     <aside
       data-collapsed={isCollapsed}
       className={`pharma-sidebar sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 text-white transition-none ${isCollapsed ? 'w-16' : 'w-64'}`}
     >
-      <div className={`flex items-center border-b border-white/10 p-4 ${isCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
+      <div className={`flex min-h-[72px] items-center border-b border-white/10 p-4 ${isCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
         <div className="pharma-brand flex min-w-0 items-center">
-          {isCollapsed
-            ? <PharmaLogo size={2.4} showText={false} />
-            : <PharmaLogo size={2.6} layout="inline" />}
+          {!isCollapsed && <PharmaLogo size={2.6} layout="inline" />}
         </div>
-        <button type="button" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setIsCollapsed((collapsed) => !collapsed)} className={`sidebar-collapse-control rounded-control p-1.5 text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${isCollapsed ? 'hidden' : ''}`}>
-          <ChevronLeft className="h-4 w-4" />
+        <button
+          type="button"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!isCollapsed}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={onToggleCollapsed}
+          className={`sidebar-collapse-control flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-white/15 text-white/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${isCollapsed ? 'absolute left-3 top-4' : ''}`}
+        >
+          {isCollapsed
+            ? <ChevronRight aria-hidden="true" className="h-4 w-4" />
+            : <ChevronLeft aria-hidden="true" className="h-4 w-4" />}
         </button>
-        {isCollapsed && <button type="button" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => setIsCollapsed(false)} className="rounded-control p-1.5 text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><ChevronRight className="h-4 w-4" /></button>}
       </div>
 
       <nav aria-label="Main navigation" className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4 text-xs">
@@ -115,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   title={label}
                   aria-label={label}
                   aria-current={activeItem === key ? 'page' : undefined}
-                  className={`sidebar-nav-item relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left font-medium transition ${activeItem === key ? 'bg-blue-600 font-bold text-white shadow-md shadow-blue-600/25' : 'text-slate-300 hover:bg-slate-800/60'}`}
+                  className={`sidebar-nav-item relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left font-medium transition ${activeItem === key ? 'bg-primary font-bold text-white shadow-md' : 'text-slate-300 hover:bg-white/10'}`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{label}</span>

@@ -270,6 +270,13 @@ function PharmacyWorkspace({
 
   const currentRole = session.role;
   const currentUserName = session.displayName;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(`pharma-care.sidebarCollapsed.${session.displayName}`) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [billingPreferences, setBillingPreferences] = useState<BillingPreferences>(() =>
     readBillingPreferences()
   );
@@ -277,6 +284,14 @@ function PharmacyWorkspace({
     billingPreferences.template
   );
   const [companyName, setCompanyName] = useState(readCompanyName);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`pharma-care.sidebarCollapsed.${currentUserName}`, String(sidebarCollapsed));
+    } catch {
+      // Keep the selected layout for this page view if browser storage is unavailable.
+    }
+  }, [currentUserName, sidebarCollapsed]);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -616,7 +631,8 @@ function PharmacyWorkspace({
       <Sidebar
         activeItem={activeItem}
         onSelectItem={navigateTo}
-        username={currentUserName}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
