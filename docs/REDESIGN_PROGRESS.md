@@ -74,3 +74,10 @@
 - Print Sales Report UI/data, full collapsible sidebar, dashboard/POS reference matching, comprehensive role/colour audit, broader sales-history/ledger reprint integration, and API tests remain incomplete.
 - Validation: `npm run build`, `npm run lint`, `npm run test:receipt` (13 tests), and `npm run test:fefo` (8 tests) pass. Receipt preview was checked with medicine names, batch/expiry, total and no cost/profit fields. API tests cannot run in this repository.
 - Branch differs from the referenced prompt: work was found on `main`; it was not moved to a new `redesign` branch.
+
+## Later
+
+- Shared settings across multiple counters: Pharmacy Memo settings currently use browser-local storage and are not shared between terminals.
+- Return slips and Sales History reprints: the frontend has no return-memo or receipt-reprint flows to connect yet.
+- API/server work: server-built receipt data, server-side settings permissions, and API tests require the missing backend.
+- ESC/POS: direct printer-driver support is not part of this frontend implementation.
