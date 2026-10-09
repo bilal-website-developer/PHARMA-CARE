@@ -1,7 +1,7 @@
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Edit2, Plus,
-  RefreshCw, Search, ShieldAlert, SlidersHorizontal, X,
+  AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Download, Edit2, FileUp, Package, Plus,
+  Printer, RefreshCw, Search, ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
@@ -45,6 +45,7 @@ interface Medicine {
   is_active: boolean;
   units: MedicineUnit[];
   stock: number;
+  cost_paisa_per_base_unit: number;
   nearest_expiry: string | null;
 }
 
@@ -97,6 +98,61 @@ function messageFor(error: unknown, fallback: string) {
 
 function money(paisa: number) {
   return `Rs ${(paisa / 100).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function csvCell(value: string | number | boolean | null | undefined) {
+  const text = value == null ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        cell += character;
+      }
+    } else if (character === '"' && cell.length === 0) {
+      quoted = true;
+    } else if (character === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (character === '\n') {
+      row.push(cell.replace(/\r$/, ''));
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += character;
+    }
+  }
+  if (quoted) throw new Error('The CSV file has an unclosed quoted field.');
+  if (cell.length || row.length) {
+    row.push(cell.replace(/\r$/, ''));
+    if (row.some((value) => value.trim())) rows.push(row);
+  }
+  if (rows.length < 2) throw new Error('The CSV file has a header row and at least one product row.');
+  const headers = rows[0].map((value) => value.trim().replace(/^\uFEFF/, ''));
+  if (new Set(headers).size !== headers.length) throw new Error('The CSV file contains duplicate column names.');
+  return rows.slice(1).map((values, index) => ({
+    line: index + 2,
+    values: Object.fromEntries(headers.map((header, column) => [header, values[column] ?? ''])),
+  }));
+}
+
+function safePrintText(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character] ?? character);
 }
 
 function initialProductForm(medicine?: Medicine): ProductFormValues {
@@ -169,6 +225,10 @@ function ProductsCatalog({
   const [brandFilter, setBrandFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -179,6 +239,7 @@ function ProductsCatalog({
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<ProductFormValues>(() => initialProductForm());
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!initialFilter) return;
@@ -250,9 +311,10 @@ function ProductsCatalog({
           .order('id')
           .range(from, to)),
         fetchAllSupabaseRows((from, to) => client.from('stock_batches')
-          .select('id,medicine_id,expiry_date,quantity_remaining')
+          .select('id,medicine_id,expiry_date,received_date,quantity_remaining,cost_paisa_per_base_unit')
           .in('medicine_id', ids)
           .gte('expiry_date', today())
+          .order('received_date', { ascending: false })
           .range(from, to)),
       ]);
 
@@ -274,6 +336,7 @@ function ProductsCatalog({
           ...medicine,
           units: unitsByMedicine.get(medicine.id) ?? [],
           stock: medicineBatches.reduce((sum, batch) => sum + batch.quantity_remaining, 0),
+          cost_paisa_per_base_unit: medicineBatches[0]?.cost_paisa_per_base_unit ?? 0,
           nearest_expiry: medicineBatches
             .map((batch) => batch.expiry_date)
             .sort()[0] ?? null,
@@ -302,8 +365,139 @@ function ProductsCatalog({
   }, [loadOptions, loadProducts]);
 
   const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const lowStockCount = medicines.filter((medicine) => medicine.stock <= medicine.min_stock_alert).length;
-  const outOfStockCount = medicines.filter((medicine) => medicine.stock === 0).length;
+  const visibleMedicines = lowStockOnly
+    ? medicines.filter((medicine) => medicine.stock <= medicine.min_stock_alert)
+    : medicines;
+  const currentPageSelected = medicines.length > 0 && medicines.every((medicine) => selectedIds.includes(medicine.id));
+
+  const exportProducts = () => {
+    const productsToExport = selectedIds.length
+      ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
+      : visibleMedicines;
+    if (!productsToExport.length) {
+      setNotice('There are no products on this page to export.');
+      return;
+    }
+    const headers = [
+      'code', 'barcode', 'brand_name', 'generic_name', 'category', 'company',
+      'drug_class', 'storage_condition', 'rack_location', 'min_stock_alert',
+      'requires_prescription', 'is_active', 'unit_name', 'conversion_factor',
+      'price_paisa', 'unit_barcode',
+    ];
+    const rows = productsToExport.map((medicine) => {
+      const unit = medicine.units.find((item) => item.is_default_sale_unit);
+      return [
+        medicine.code, medicine.barcode, medicine.brand_name, medicine.generic_name,
+        medicine.category, medicine.company, medicine.drug_class, medicine.storage_condition,
+        medicine.rack_location, medicine.min_stock_alert, medicine.requires_prescription,
+        medicine.is_active, unit?.name ?? '', unit?.conversion_factor ?? '',
+        unit?.price_paisa ?? '', unit?.barcode ?? '',
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pharma-care-products-page-${page}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice(`Exported ${productsToExport.length} product${productsToExport.length === 1 ? '' : 's'} from this page.`);
+  };
+
+  const importProducts = async (file: File) => {
+    if (!supabase) {
+      setNotice('Supabase is not configured.');
+      return;
+    }
+    setImporting(true);
+    setNotice('');
+    try {
+      const importedRows = parseCsv(await file.text());
+      const failures: string[] = [];
+      let succeeded = 0;
+      for (const { line, values } of importedRows) {
+        const requiredHeaders = ['code', 'brand_name', 'generic_name', 'category', 'company', 'unit_name', 'conversion_factor', 'price_paisa'];
+        const missingHeader = requiredHeaders.find((header) => !(header in values));
+        if (missingHeader) throw new Error(`CSV is missing the required "${missingHeader}" column.`);
+        const conversionFactor = Number(values.conversion_factor);
+        const pricePaisa = Number(values.price_paisa);
+        const minimumStock = Number(values.min_stock_alert || 0);
+        const drugClass = values.drug_class || 'OTC';
+        const storageCondition = values.storage_condition || 'ROOM_TEMPERATURE';
+        if (!Number.isSafeInteger(conversionFactor) || conversionFactor < 1
+          || !Number.isSafeInteger(pricePaisa) || pricePaisa < 0
+          || !Number.isSafeInteger(minimumStock) || minimumStock < 0) {
+          failures.push(`Line ${line}: conversion_factor, price_paisa, and min_stock_alert must be valid whole numbers.`);
+          continue;
+        }
+        if (!['OTC', 'RX', 'CONTROLLED', 'NARCOTIC'].includes(drugClass)
+          || !['ROOM_TEMPERATURE', 'COOL', 'COLD_REFRIGERATED'].includes(storageCondition)) {
+          failures.push(`Line ${line}: drug_class or storage_condition has an unsupported value.`);
+          continue;
+        }
+        const { error: importError } = await supabase.rpc('save_medicine', {
+          p_medicine_id: null,
+          p_values: {
+            code: values.code.trim(),
+            barcode: values.barcode.trim() || null,
+            brand_name: values.brand_name.trim(),
+            generic_name: values.generic_name.trim(),
+            category: values.category.trim(),
+            company: values.company.trim(),
+            drug_class: drugClass,
+            storage_condition: storageCondition,
+            rack_location: values.rack_location.trim(),
+            min_stock_alert: minimumStock,
+            requires_prescription: values.requires_prescription.toLowerCase() === 'true',
+            is_active: values.is_active ? values.is_active.toLowerCase() !== 'false' : true,
+          },
+          p_units: [{
+            name: values.unit_name.trim(),
+            conversion_factor: conversionFactor,
+            is_default_sale_unit: true,
+            price_paisa: pricePaisa,
+            barcode: values.unit_barcode.trim() || null,
+          }],
+        });
+        if (importError) failures.push(`Line ${line}: ${messageFor(importError, 'Could not import this product.')}`);
+        else succeeded += 1;
+      }
+      await loadProducts();
+      setSelectedIds([]);
+      setNotice([
+        `Imported ${succeeded} of ${importedRows.length} product${importedRows.length === 1 ? '' : 's'}.`,
+        ...failures.slice(0, 5),
+        ...(failures.length > 5 ? [`${failures.length - 5} additional row error(s) not shown.`] : []),
+      ].join(' '));
+    } catch (caught) {
+      setNotice(messageFor(caught, 'Could not import the CSV file.'));
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const printBarcodes = () => {
+    const productsToPrint = selectedIds.length
+      ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
+      : visibleMedicines;
+    if (!productsToPrint.length) {
+      setNotice('There are no products on this page to print.');
+      return;
+    }
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      setNotice('The barcode-label window was blocked. Allow pop-ups for this site and try again.');
+      return;
+    }
+    const labels = productsToPrint.map((medicine) => {
+      const barcodeValue = medicine.barcode || medicine.code;
+      return `<article class="label"><strong>${safePrintText(medicine.brand_name)}</strong><span>${safePrintText(medicine.code)}</span><div class="barcode-value">${safePrintText(barcodeValue)}</div></article>`;
+    }).join('');
+    printWindow.document.write(`<!doctype html><html><head><title>Product barcode labels</title><style>body{font-family:Arial,sans-serif;margin:12mm;color:#111}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}.label{height:27mm;border:1px dashed #777;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2mm;text-align:center;padding:2mm;overflow:hidden}.label strong{font-size:11pt}.label span{font-size:8pt}.barcode-value{font-family:monospace;font-size:12pt;letter-spacing:2px}@media print{.label{break-inside:avoid}}</style></head><body><main class="sheet">${labels}</main><script>window.onload=()=>window.print()</script></body></html>`);
+    printWindow.document.close();
+    setNotice(`Prepared ${productsToPrint.length} barcode label${productsToPrint.length === 1 ? '' : 's'} using each product barcode (or product code if none is set).`);
+  };
 
   const openCreate = () => {
     setEditing(null);
