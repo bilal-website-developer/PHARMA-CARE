@@ -179,6 +179,7 @@ begin
         or medicine.brand_name ilike '%' || btrim(p_search) || '%'
         or medicine.generic_name ilike '%' || btrim(p_search) || '%'
         or medicine.code ilike '%' || btrim(p_search) || '%'
+        or medicine.category ilike '%' || btrim(p_search) || '%'
         or coalesce(medicine.barcode, '') ilike '%' || btrim(p_search) || '%'
         or medicine.company ilike '%' || btrim(p_search) || '%'
       )
@@ -249,6 +250,7 @@ begin
         or medicine.brand_name ilike '%' || btrim(p_search) || '%'
         or medicine.generic_name ilike '%' || btrim(p_search) || '%'
         or medicine.code ilike '%' || btrim(p_search) || '%'
+        or medicine.category ilike '%' || btrim(p_search) || '%'
         or coalesce(medicine.barcode, '') ilike '%' || btrim(p_search) || '%'
         or medicine.company ilike '%' || btrim(p_search) || '%'
       )
