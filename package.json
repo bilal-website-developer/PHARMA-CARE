@@ -11,7 +11,9 @@
     "lint": "tsc --noEmit",
     "test:fefo": "tsx --test src/utils/fefo.test.ts",
     "test:receipt": "tsx --test src/utils/receipt.test.ts",
-    "test:report": "tsx --test src/utils/salesReport.test.ts"
+    "test:report": "tsx --test src/utils/salesReport.test.ts",
+    "test:permissions": "tsx --test src/permissions.test.ts",
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:report && npm run test:permissions"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

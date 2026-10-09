@@ -3,6 +3,7 @@ import {
   ArrowRight, Minus, Pause, Play, Plus, RefreshCw, Search, Trash2, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
+import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 
 interface PurchaseUnit {
@@ -147,7 +148,7 @@ export function StockPurchaseView({
       setSuppliers((supplierRows ?? []) as Supplier[]);
       return null;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not load products and suppliers.';
+      const message = getSupabaseErrorMessage(error, 'Could not load products and suppliers.');
       setNotice({ text: message, error: true });
       return message;
     } finally {
@@ -312,7 +313,7 @@ export function StockPurchaseView({
         ? { text: `${posted.pr_no} was saved, but product stock could not be refreshed: ${refreshError}`, error: true, viewHistory: true }
         : { text: `${posted.pr_no} saved successfully.`, error: false, viewHistory: true });
     } catch (error) {
-      setNotice({ text: error instanceof Error ? error.message : 'Purchase could not be saved. Your cart has been kept.', error: true });
+      setNotice({ text: getSupabaseErrorMessage(error, 'Purchase could not be saved. Your cart has been kept.'), error: true });
     } finally {
       setSaving(false);
     }

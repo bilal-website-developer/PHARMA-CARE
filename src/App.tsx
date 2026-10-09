@@ -30,6 +30,7 @@ import { ControlledDrugScreen } from './components/ControlledDrugScreen';
 import { CashBookScreen } from './components/CashBookScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
+import type { ProductFilter } from './components/InventoryScreen';
 import { SuppliersView } from './components/SuppliersView';
 import { RepositoryReviewView } from './components/RepositoryReviewView';
 import { LoginView } from './components/LoginView';
@@ -257,8 +258,12 @@ function PharmacyWorkspace({
   authMessage: string;
 }) {
   const { canPage } = usePermissions();
+  const initialPath = window.location.pathname;
   const [activeItem, setActiveItem] = useState<NavItemKey>(
-    routeToNavItem(window.location.pathname) ?? 'dashboard'
+    routeToNavItem(initialPath) ?? 'dashboard'
+  );
+  const [isPageNotFound, setIsPageNotFound] = useState(
+    initialPath !== '/' && initialPath !== '/login' && routeToNavItem(initialPath) === null
   );
   const [accessMessage, setAccessMessage] = useState('');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
@@ -277,10 +282,17 @@ function PharmacyWorkspace({
     const syncRoute = () => {
       const requested = routeToNavItem(window.location.pathname);
       if (!requested) {
-        if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
-        setActiveItem('dashboard');
+        if (window.location.pathname === '/login') {
+          window.history.replaceState({}, '', '/');
+          setIsPageNotFound(false);
+          setActiveItem('dashboard');
+          return;
+        }
+        setIsPageNotFound(true);
+        setAccessMessage('');
         return;
       }
+      setIsPageNotFound(false);
       if (!canPage(requested)) {
         setAccessMessage('No access. Your account does not have permission to open that page.');
         setActiveItem('dashboard');
@@ -303,9 +315,16 @@ function PharmacyWorkspace({
       return;
     }
     setAccessMessage('');
+    setIsPageNotFound(false);
     setActiveItem(item);
     window.history.pushState({}, '', NAV_PATHS[item]);
   }, [canPage]);
+
+  const [productFilter, setProductFilter] = React.useState<ProductFilter>(null);
+  const viewFilteredProducts = React.useCallback((filter: Exclude<ProductFilter, null>) => {
+    setProductFilter(filter);
+    navigateTo('products');
+  }, [navigateTo]);
 
   // Main Datasets
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -607,7 +626,7 @@ function PharmacyWorkspace({
         <TopNav
           currentRole={currentRole}
           username={currentUserName}
-          activeTitle={getPageTitle(activeItem)}
+          activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
           onChangePassword={() => setShowPasswordDialog(true)}
           onLogout={onLogout}
         />
@@ -615,7 +634,19 @@ function PharmacyWorkspace({
         {/* Dynamic Screen View */}
         <main className="pharmacy-page p-4 sm:p-6 flex-1 overflow-y-auto">
           {accessMessage && <p role="status" className="visual-toast mb-4 rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">{accessMessage}</p>}
-          {!canPage(activeItem) ? (
+          {isPageNotFound ? (
+            <section className="mx-auto flex min-h-[50vh] max-w-xl flex-col items-center justify-center gap-4 text-center">
+              <h1 className="text-2xl font-black text-text">Page not found</h1>
+              <p className="text-sm text-muted">The page you requested does not exist.</p>
+              <button
+                type="button"
+                onClick={() => navigateTo('dashboard')}
+                className="rounded-control bg-primary px-4 py-2 text-sm font-bold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Back to Dashboard
+              </button>
+            </section>
+          ) : !canPage(activeItem) ? (
             <p role="alert" className="rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">No access. Redirecting to Dashboard.</p>
           ) : (
           <>
@@ -647,19 +678,19 @@ function PharmacyWorkspace({
 
           {activeItem === 'products' && (
             <InventoryScreen
-              products={products}
+              mode="products"
               currentRole={currentRole}
-              onAddProduct={(prod) => setProducts((prev) => [prod, ...prev])}
+              initialFilter={productFilter}
+              onFilterApplied={() => setProductFilter(null)}
             />
           )}
 
-          {activeItem === 'master-data' && <MasterDataView />}
+          {activeItem === 'master-data' && <MasterDataView onViewProducts={viewFilteredProducts} />}
 
           {activeItem === 'stock-inventory' && (
             <InventoryScreen
-              products={products}
+              mode="stock"
               currentRole={currentRole}
-              onAddProduct={(prod) => setProducts((prev) => [prod, ...prev])}
             />
           )}
 

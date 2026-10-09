@@ -18,6 +18,41 @@ import { BillingTemplate } from '../utils/receipt';
 import { CompletedSale, UserRole } from '../types/pharmacy';
 import { PrintSalesReport } from './PrintSalesReport';
 
+const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
+const DEFAULT_DEBT_TEMPLATE =
+  'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!';
+
+interface SavedShopProfile {
+  phone: string;
+  city: string;
+  urduFooter: string;
+  debtTemplate: string;
+}
+
+function readSavedShopProfile(): SavedShopProfile {
+  const defaults = {
+    phone: '',
+    city: '',
+    urduFooter: 'شکریہ! دوبارہ تشریف لائیں',
+    debtTemplate: DEFAULT_DEBT_TEMPLATE,
+  };
+  try {
+    const saved = globalThis.localStorage?.getItem(SETTINGS_STORAGE_KEY);
+    if (!saved) return defaults;
+    const parsed: unknown = JSON.parse(saved);
+    if (typeof parsed !== 'object' || parsed === null) return defaults;
+    const values = parsed as Partial<SavedShopProfile>;
+    return {
+      phone: typeof values.phone === 'string' ? values.phone : defaults.phone,
+      city: typeof values.city === 'string' ? values.city : defaults.city,
+      urduFooter: typeof values.urduFooter === 'string' ? values.urduFooter : defaults.urduFooter,
+      debtTemplate: typeof values.debtTemplate === 'string' ? values.debtTemplate : defaults.debtTemplate,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 interface SettingsViewProps {
   sales: CompletedSale[];
   currentRole: UserRole;
@@ -41,19 +76,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onTemplateChange,
   onOpenTemplatePreview,
 }) => {
+  const [savedShopProfile] = useState(readSavedShopProfile);
   const [shopName, setShopName] = useState(companyName);
-  const [phone, setPhone] = useState('');
-  const [city, setCity] = useState('');
-  const [urduFooter, setUrduFooter] = useState('شکریہ! دوبارہ تشریف لائیں');
-  const [debtTemplate, setDebtTemplate] = useState(
-    'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!'
-  );
+  const [phone, setPhone] = useState(savedShopProfile.phone);
+  const [city, setCity] = useState(savedShopProfile.city);
+  const [urduFooter, setUrduFooter] = useState(savedShopProfile.urduFooter);
+  const [debtTemplate, setDebtTemplate] = useState(savedShopProfile.debtTemplate);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        phone,
+        city,
+        urduFooter,
+        debtTemplate,
+      }));
+    } catch {
+      window.alert('Contact phone, location, invoice footer, and reminder template could not be saved in this browser.');
+      return;
+    }
     if (!onSaveCompanyName(shopName)) {
-      window.alert('Company name could not be saved. Check browser storage and try again.');
+      setSavedSuccess(false);
+      window.alert('Contact phone, location, invoice footer, and reminder template were saved, but the shop name could not be saved.');
       return;
     }
     setSavedSuccess(true);
@@ -63,42 +109,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-4xl mx-auto pb-8">
       {/* ── Shop Profile ─────────────────────────────────────────────────── */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+      <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
         <div>
-          <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-base font-black text-text">
             <span>⚙️</span> Shop Profile
           </h2>
-          <p className="text-xs text-slate-500">This information will appear on your prints and invoices.</p>
+          <p className="text-xs text-muted">This information will appear on your prints and invoices.</p>
         </div>
 
         <div className="space-y-3 text-xs">
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Store / Shop Name</label>
+            <label className="mb-1 block font-semibold text-text">Store / Shop Name</label>
             <input
               type="text"
               value={shopName}
               onChange={(e) => setShopName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:outline-blue-600"
+              className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Contact Phone</label>
+              <label className="mb-1 block font-semibold text-text">Contact Phone</label>
               <input
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:outline-blue-600"
+                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Location / City</label>
+              <label className="mb-1 block font-semibold text-text">Location / City</label>
               <input
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:outline-blue-600"
+                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
               />
             </div>
           </div>
@@ -106,17 +152,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* ── Invoice Footer & Urdu Text (Matching Screenshot 50) ────────────── */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-        <h3 className="text-sm font-black text-slate-900">Invoice Footers & Urdu Greeting</h3>
+      <div className="space-y-3 rounded-card border border-border bg-white p-6 shadow-xs">
+        <h3 className="text-sm font-black text-text">Invoice Footers &amp; Urdu Greeting</h3>
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
+          <label className="mb-1 block text-xs font-semibold text-text">
             Invoice Footer (Urdu/English)
           </label>
           <input
             type="text"
             value={urduFooter}
             onChange={(e) => setUrduFooter(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-xl font-serif text-sm text-right focus:outline-blue-600"
+            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-right font-serif text-sm text-text"
             dir="rtl"
           />
         </div>
@@ -224,31 +270,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       />
 
       {/* ── WhatsApp Messaging Templates (Matching Screenshot 51 & 52) ────── */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+      <div className="space-y-3 rounded-card border border-border bg-white p-6 shadow-xs">
+        <h3 className="flex items-center gap-2 text-sm font-black text-text">
           <span>💬</span> WhatsApp Messaging Templates
         </h3>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Variables: <code>[Name]</code>, <code>[Shop Name]</code>, <code>[Amount]</code>, <code>[ID]</code>
         </p>
 
         <div className="text-xs space-y-2">
-          <label className="block font-semibold text-slate-700">Debt Reminder Template</label>
+          <label className="block font-semibold text-text">Debt Reminder Template</label>
           <textarea
             rows={3}
             value={debtTemplate}
             onChange={(e) => setDebtTemplate(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-blue-600"
+            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-text"
           />
         </div>
       </div>
 
       {/* ── Bottom Save Strip ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm sticky bottom-4 z-20">
-        <div className="text-xs text-slate-500">
+      <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-card border border-border bg-white p-4 shadow-sm">
+        <div className="text-xs text-muted">
           {savedSuccess ? (
-            <span className="text-emerald-600 font-bold flex items-center gap-1">
-              <Check className="w-4 h-4" /> Changes saved successfully!
+            <span className="flex items-center gap-1 font-bold text-primary">
+              <Check className="w-4 h-4" /> Shop name, contact phone, location, invoice footer, and reminder template saved in this browser.
             </span>
           ) : (
             'Make changes and click Update Profile.'
@@ -257,7 +303,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           type="submit"
-          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center gap-1.5 transition"
+          className="flex items-center gap-1.5 rounded-control bg-primary px-6 py-2.5 text-xs font-black text-white shadow-md transition hover:opacity-90"
         >
           <Save className="w-4 h-4" /> Update Profile
         </button>

@@ -13,13 +13,31 @@ alter table public.purchase_items
 alter table public.suppliers
   add column if not exists payable_balance_paisa integer not null default 0;
 
-update public.purchase_items
-set line_total_paisa = (quantity::numeric * unit_cost_paisa)::integer
-where line_total_paisa is null;
+do $migration$
+begin
+  if not exists (
+    select 1
+    from pg_attribute
+    where attrelid = 'public.purchase_items'::regclass
+      and attname = 'line_total_paisa'
+      and attgenerated <> ''
+      and not attisdropped
+  ) then
+    update public.purchase_items
+    set line_total_paisa = (quantity::numeric * unit_cost_paisa)::integer
+    where line_total_paisa is null;
+  end if;
+end;
+$migration$;
 
-with numbered_purchases as (
-  select id, row_number() over (order by created_at, id) as row_number
+with existing_max as (
+  select coalesce(max(substring(pr_no from '^PR-([0-9]+)$')::numeric), 0) as last_number
   from public.purchases
+  where pr_no is not null
+), numbered_purchases as (
+  select id, row_number() over (order by created_at, id) + existing_max.last_number as row_number
+  from public.purchases
+  cross join existing_max
   where pr_no is null
 )
 update public.purchases as purchase
@@ -58,6 +76,8 @@ alter table public.purchases
 alter table public.purchases
   add constraint purchases_payment_type_check
     check (payment_type in ('cash', 'credit')),
+  add constraint purchases_status_check
+    check (status in ('posted', 'void', 'cancelled')),
   add constraint purchases_discount_paisa_check
     check (discount_paisa >= 0),
   add constraint purchases_subtotal_paisa_check
@@ -78,7 +98,7 @@ alter table public.suppliers
 create unique index if not exists purchases_pr_no_key on public.purchases (pr_no);
 create index if not exists purchases_purchase_date_created_at_idx
   on public.purchases (purchase_date desc, created_at desc);
-create index if not exists purchase_items_purchase_id_idx
+create index if not exists purchase_items_purchase_idx
   on public.purchase_items (purchase_id);
 create index if not exists stock_movements_reference_id_idx
   on public.stock_movements (reference_id);
@@ -125,7 +145,8 @@ set payable_balance_paisa = coalesce((
   where purchase.supplier_id = supplier.id
     and purchase.status = 'posted'
     and purchase.payment_type = 'credit'
-), 0)::integer;
+), 0)::integer
+where supplier.payable_balance_paisa = 0;
 
 insert into public.supplier_ledger (
   supplier_id, purchase_id, entry_type, amount_paisa, description, created_by, created_at
@@ -138,7 +159,13 @@ select supplier_id, id, 'purchase',
 from public.purchases
 where status = 'posted'
   and payment_type = 'credit'
-  and total_paisa > paid_paisa;
+  and total_paisa > paid_paisa
+  and not exists (
+    select 1
+    from public.supplier_ledger ledger
+    where ledger.purchase_id = public.purchases.id
+      and ledger.entry_type = 'purchase'
+  );
 
 alter table public.supplier_ledger enable row level security;
 drop policy if exists "read by permission" on public.supplier_ledger;
@@ -151,6 +178,7 @@ drop policy if exists "read by permission" on public.purchases;
 drop policy if exists "add by permission" on public.purchases;
 drop policy if exists "edit by permission" on public.purchases;
 drop policy if exists "admin can delete" on public.purchases;
+drop policy if exists "purchase history read" on public.purchases;
 create policy "purchase history read"
   on public.purchases for select to authenticated
   using (public.has_any_permission(array['purchase_history']::text[]));
@@ -159,13 +187,14 @@ drop policy if exists "read by permission" on public.purchase_items;
 drop policy if exists "add by permission" on public.purchase_items;
 drop policy if exists "edit by permission" on public.purchase_items;
 drop policy if exists "admin can delete" on public.purchase_items;
+drop policy if exists "purchase history items read" on public.purchase_items;
 create policy "purchase history items read"
   on public.purchase_items for select to authenticated
   using (public.has_any_permission(array['purchase_history']::text[]));
 
 drop function if exists public.post_purchase(uuid, text, date, integer, text, jsonb);
 
-create function public.post_purchase(
+create or replace function public.post_purchase(
   p_supplier_id uuid,
   p_invoice_number text,
   p_purchase_date date,
@@ -224,18 +253,23 @@ begin
     raise exception 'Select an active supplier';
   end if;
 
-  update public.purchase_number_state
-  set last_number = last_number + 1
-  where id = 1
-  returning last_number into v_next_number;
-  if v_next_number is null then
-    raise exception 'Purchase number counter is not initialized';
-  end if;
-  v_pr_no := 'PR-' || lpad(
-    v_next_number::text,
-    greatest(4, length(v_next_number::text)),
-    '0'
-  );
+  loop
+    update public.purchase_number_state
+    set last_number = last_number + 1
+    where id = 1
+    returning last_number into v_next_number;
+    if v_next_number is null then
+      raise exception 'Purchase number counter is not initialized';
+    end if;
+    v_pr_no := 'PR-' || lpad(
+      v_next_number::text,
+      greatest(4, length(v_next_number::text)),
+      '0'
+    );
+    exit when not exists (
+      select 1 from public.purchases where pr_no = v_pr_no
+    );
+  end loop;
 
   insert into public.purchases (
     pr_no, supplier_id, invoice_number, purchase_date,
@@ -300,16 +334,35 @@ begin
       'Purchase ' || v_pr_no, auth.uid()
     );
 
-    insert into public.purchase_items (
-      purchase_id, medicine_id, unit_id, batch_number, expiry_date,
-      quantity, bonus_qty, conversion_factor, unit_cost_paisa,
-      mrp_paisa, line_total_paisa, stock_batch_id
-    )
-    values (
-      v_purchase_id, v_medicine_id, v_unit_id, v_batch_no, v_expiry,
-      v_qty, v_bonus, v_factor, v_unit_cost, v_mrp,
-      (v_qty::bigint * v_unit_cost)::integer, v_batch_id
-    );
+    if exists (
+      select 1
+      from pg_attribute
+      where attrelid = 'public.purchase_items'::regclass
+        and attname = 'line_total_paisa'
+        and attgenerated <> ''
+        and not attisdropped
+    ) then
+      insert into public.purchase_items (
+        purchase_id, medicine_id, unit_id, batch_number, expiry_date,
+        quantity, bonus_qty, conversion_factor, unit_cost_paisa,
+        mrp_paisa, stock_batch_id
+      )
+      values (
+        v_purchase_id, v_medicine_id, v_unit_id, v_batch_no, v_expiry,
+        v_qty, v_bonus, v_factor, v_unit_cost, v_mrp, v_batch_id
+      );
+    else
+      insert into public.purchase_items (
+        purchase_id, medicine_id, unit_id, batch_number, expiry_date,
+        quantity, bonus_qty, conversion_factor, unit_cost_paisa,
+        mrp_paisa, line_total_paisa, stock_batch_id
+      )
+      values (
+        v_purchase_id, v_medicine_id, v_unit_id, v_batch_no, v_expiry,
+        v_qty, v_bonus, v_factor, v_unit_cost, v_mrp,
+        (v_qty::bigint * v_unit_cost)::integer, v_batch_id
+      );
+    end if;
   end loop;
 
   if v_discount > v_subtotal then

@@ -26,7 +26,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly ModuleKey[]> = 
   [UserRole.ACCOUNTANT]: [
     'customers', 'suppliers', 'sales_history', 'purchase_history', 'expenses', 'reports',
   ],
-  [UserRole.ADMIN]: [],
+  [UserRole.ADMIN]: MODULES.map(({ key }) => key),
   [UserRole.SUPER_ADMIN]: MODULES.map(({ key }) => key),
 };
 
@@ -51,7 +51,7 @@ export function isModuleKey(value: unknown): value is ModuleKey {
 }
 
 export function permissionsForRole(role: UserRole, permissions: readonly string[]) {
-  return role === UserRole.SUPER_ADMIN ? ROLE_DEFAULT_PERMISSIONS[role] : permissions;
+  return isAdminRole(role) ? ROLE_DEFAULT_PERMISSIONS[role] : permissions;
 }
 
 export function isAdminRole(role: UserRole) {

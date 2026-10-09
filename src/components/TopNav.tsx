@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Bell, ChevronDown, KeyRound, LogOut, Type } from 'lucide-react';
+import { ChevronDown, KeyRound, LogOut, Type } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
+import { supabase } from '../utils/supabase';
 import PharmaLogo from './PharmaLogo';
 
 interface TopNavProps {
@@ -13,6 +14,7 @@ interface TopNavProps {
 }
 
 const largeUiKey = (userName: string) => `pharma-care.largeUi.${userName}`;
+type ServerHealth = 'checking' | 'online' | 'offline' | 'unreachable';
 
 function readLargeUiPreference(userName: string): boolean {
   try {
@@ -34,7 +36,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [online, setOnline] = useState(navigator.onLine);
+  const [serverHealth, setServerHealth] = useState<ServerHealth>('checking');
   const [theme, setTheme] = useState<'light' | 'night'>(() =>
     document.documentElement.dataset.theme === 'night' ? 'night' : 'light'
   );
@@ -90,11 +92,40 @@ export const TopNav: React.FC<TopNavProps> = ({
   }, [animationsEnabled]);
 
   useEffect(() => {
-    const handleOnline = () => setOnline(true);
-    const handleOffline = () => setOnline(false);
+    let active = true;
+    const checkServerHealth = async () => {
+      if (!navigator.onLine) {
+        if (active) setServerHealth('offline');
+        return;
+      }
+      if (!supabase) {
+        if (active) setServerHealth('unreachable');
+        return;
+      }
+      try {
+        const { error } = await supabase.auth.getUser();
+        if (!active) return;
+        if (!error) {
+          setServerHealth('online');
+          return;
+        }
+        const status = 'status' in error && typeof error.status === 'number'
+          ? error.status
+          : undefined;
+        setServerHealth(status !== undefined && status < 500 ? 'online' : 'unreachable');
+      } catch {
+        if (active) setServerHealth('unreachable');
+      }
+    };
+    const handleOnline = () => void checkServerHealth();
+    const handleOffline = () => setServerHealth('offline');
+    void checkServerHealth();
+    const intervalId = window.setInterval(() => void checkServerHealth(), 60_000);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
+      active = false;
+      window.clearInterval(intervalId);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -181,24 +212,22 @@ export const TopNav: React.FC<TopNavProps> = ({
 
         <span
           role="status"
+          aria-live="polite"
           className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-bold sm:inline-flex ${
-            online
+            serverHealth === 'online'
               ? 'border-border bg-surface text-primary'
               : 'border-warning bg-warning/15 text-text'
           }`}
         >
-          <span className={`system-status-dot h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-warning'}`} />
-          {online ? 'SYSTEM ONLINE' : 'OFFLINE'}
+          <span className={`system-status-dot h-2 w-2 rounded-full ${serverHealth === 'online' ? 'bg-primary' : 'bg-warning'}`} />
+          {serverHealth === 'online'
+            ? 'AUTH ONLINE'
+            : serverHealth === 'offline'
+              ? 'OFFLINE'
+              : serverHealth === 'checking'
+                ? 'CHECKING AUTH'
+                : 'AUTH UNREACHABLE'}
         </span>
-
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="relative rounded-control p-2 text-muted hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <Bell className="notification-bell h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-danger" />
-        </button>
 
         <div ref={profileRef} className="relative border-l border-border pl-2">
           <button

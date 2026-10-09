@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Printer, RefreshCw, X } from 'luci
 import * as XLSX from '@e965/xlsx';
 import { UserRole } from '../types/pharmacy';
 import { isAdminRole } from '../permissions';
+import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 
 interface HistoryItem {
@@ -132,7 +133,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       setRows(result.rows);
       setSummary(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not load purchase history.');
+      setError(getSupabaseErrorMessage(caught, 'Could not load purchase history.'));
     } finally {
       setLoading(false);
     }
@@ -149,7 +150,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       if (queryError) throw queryError;
       setSelected(data as PurchaseDetail);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not load purchase details.');
+      setError(getSupabaseErrorMessage(caught, 'Could not load purchase details.'));
     } finally {
       setDetailLoading(false);
     }
@@ -205,7 +206,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(itemSheet), 'Items');
       XLSX.writeFile(workbook, `purchase-history-${karachiToday()}.xlsx`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not export purchase history.');
+      setError(getSupabaseErrorMessage(caught, 'Could not export purchase history.'));
     } finally {
       setExporting(false);
     }
@@ -238,7 +239,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       await load();
       if (selected?.id === purchase.id) setSelected({ ...selected, status: 'void', void_reason: reason });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not void purchase.');
+      setError(getSupabaseErrorMessage(caught, 'Could not void purchase.'));
     }
   };
 
