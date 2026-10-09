@@ -335,18 +335,21 @@ export function ManageUsersView({
                   return (
                     <label key={permission} className="flex items-center justify-between gap-3 text-sm text-text">
                       <span>{label}</span>
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        aria-label={label}
-                        checked={form.permissions.includes(permission)}
-                        disabled={!canChange}
-                        onChange={(event) => setForm({
-                          ...form,
-                          permissions: setPosPrintPermission(form.permissions, permission, event.target.checked),
-                        })}
-                        className="h-4 w-4 accent-green-700"
-                      />
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-muted">{form.permissions.includes(permission) ? 'Yes' : 'No'}</span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          aria-label={label}
+                          checked={form.permissions.includes(permission)}
+                          disabled={!canChange}
+                          onChange={(event) => setForm({
+                            ...form,
+                            permissions: setPosPrintPermission(form.permissions, permission, event.target.checked),
+                          })}
+                          className="h-4 w-4 accent-green-700"
+                        />
+                      </span>
                     </label>
                   );
                 })}
