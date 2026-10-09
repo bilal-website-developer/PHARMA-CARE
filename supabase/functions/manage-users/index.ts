@@ -5,6 +5,7 @@ import {
   canManageTarget,
   canUseManageUsers,
   grantablePermissionsFor,
+  normalizePermissions,
   permissionGrantDenial,
   profileChangeDenial,
   ROLES,
@@ -16,6 +17,8 @@ const MODULE_KEYS = [
   'pos', 'products', 'categories', 'suppliers', 'customers', 'sales_history',
   'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports', 'manage_users',
 ] as const;
+const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
+const PERMISSION_KEYS = [...MODULE_KEYS, ...POS_PRINT_PERMISSION_KEYS] as const;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -61,7 +64,7 @@ async function writeAuditLog(
 
 function validPermissions(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(
-    (permission) => typeof permission === 'string' && MODULE_KEYS.includes(permission as typeof MODULE_KEYS[number])
+    (permission) => typeof permission === 'string' && PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])
   );
 }
 
@@ -91,7 +94,7 @@ function safeProfile(
     permissions: roleValue === 'super_admin'
       ? [...MODULE_KEYS]
       : Array.isArray(profile.permissions)
-        ? profile.permissions.filter((permission) => MODULE_KEYS.includes(permission as typeof MODULE_KEYS[number]))
+        ? normalizePermissions(profile.permissions.filter((permission) => PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])))
         : [],
   };
 }
@@ -140,7 +143,7 @@ Deno.serve(async (request) => {
     const callerRole = callerProfile.role as Role;
     const callerPermissions = Array.isArray(callerProfile.permissions)
       ? callerProfile.permissions.filter((permission) =>
-        typeof permission === 'string' && MODULE_KEYS.includes(permission as typeof MODULE_KEYS[number])
+        typeof permission === 'string' && PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])
       )
       : [];
 
@@ -186,7 +189,7 @@ Deno.serve(async (request) => {
         userLimit: MAX_USERS,
         currentCount: orderedUsers.length,
         assignable_roles: assignableRolesFor(callerRole, callerPermissions),
-        grantable_permissions: grantablePermissionsFor(callerRole, callerPermissions, MODULE_KEYS),
+        grantable_permissions: grantablePermissionsFor(callerRole, callerPermissions, PERMISSION_KEYS),
       });
     }
 
@@ -260,8 +263,9 @@ Deno.serve(async (request) => {
       if (!canAssignRole(callerRole, role, callerPermissions)) {
         return response(403, { message: 'You are not allowed to assign this role.' });
       }
-      if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
-      const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, payload.permissions);
+      if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
+      const normalizedPermissions = normalizePermissions(payload.permissions);
+      const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, normalizedPermissions);
       if (permissionDenial) return response(403, { message: permissionDenial });
       if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
         return response(400, { message: 'Active status must be true or false.' });
@@ -285,7 +289,7 @@ Deno.serve(async (request) => {
       }
       if ((currentUsers?.length ?? 0) >= MAX_USERS) return response(409, { message: 'The user limit has been reached.' });
 
-      const permissions = role === 'super_admin' ? [...MODULE_KEYS] : payload.permissions;
+      const permissions = role === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions;
       const { data: createdAuth, error: createAuthError } = await adminClient.auth.admin.createUser({
         email,
         password,
@@ -465,7 +469,8 @@ Deno.serve(async (request) => {
       if (!canManageTarget(callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions)) {
         return response(403, { message: 'You are not allowed to manage this user.' });
       }
-      if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid module key.' });
+      if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
+      const normalizedPermissions = normalizePermissions(payload.permissions);
       if (typeof payload.is_active !== 'boolean') return response(400, { message: 'Active status is required.' });
       if (payload.password !== undefined) return response(400, { message: 'Use the password reset action to set a new password.' });
       if (target.deleted_at !== null) return response(400, { message: 'Restore this user before editing.' });
@@ -499,7 +504,7 @@ Deno.serve(async (request) => {
         targetRole: target.role,
         nextRole,
         targetPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
-        nextPermissions: nextRole === 'super_admin' ? [...MODULE_KEYS] : payload.permissions,
+        nextPermissions: nextRole === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions,
         targetActive: target.is_active === true,
         nextActive,
         activeAdminCount: activeAdminCount ?? 0,
@@ -508,7 +513,7 @@ Deno.serve(async (request) => {
         callerPermissions,
       });
       if (denial) return response(403, { message: denial });
-      const permissions = nextRole === 'super_admin' ? [...MODULE_KEYS] : payload.permissions;
+      const permissions = nextRole === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions;
       const before = {
         role: target.role,
         permissions: target.permissions,

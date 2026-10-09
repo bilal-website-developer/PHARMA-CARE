@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
-import { MODULES, ROLE_DEFAULT_PERMISSIONS, ModuleKey } from '../permissions';
+import {
+  MODULES,
+  hasPosPrintToggles,
+  PermissionKey,
+  ROLE_DEFAULT_PERMISSIONS,
+  setModulePermission,
+  setPosPrintPermission,
+} from '../permissions';
 import { supabase } from '../utils/supabase';
 
 const MAX_USERS = 99;
@@ -13,7 +20,7 @@ interface ManagedUser {
   email: string | null;
   role: UserRole | null;
   is_active: boolean | null;
-  permissions: ModuleKey[] | null;
+  permissions: PermissionKey[] | null;
   can_manage: boolean;
 }
 
@@ -23,7 +30,7 @@ interface UserForm {
   email: string;
   password: string;
   role: UserRole;
-  permissions: ModuleKey[];
+  permissions: PermissionKey[];
   is_active: boolean;
 }
 
@@ -76,7 +83,7 @@ export function ManageUsersView({
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [currentCount, setCurrentCount] = useState(0);
   const [assignableRoles, setAssignableRoles] = useState<UserRole[]>([]);
-  const [grantablePermissions, setGrantablePermissions] = useState<ModuleKey[]>([]);
+  const [grantablePermissions, setGrantablePermissions] = useState<PermissionKey[]>([]);
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -91,7 +98,7 @@ export function ManageUsersView({
         users: ManagedUser[];
         currentCount: number;
         assignable_roles: UserRole[];
-        grantable_permissions: ModuleKey[];
+        grantable_permissions: PermissionKey[];
       }>(
         { action: 'list' }
       );
@@ -115,7 +122,12 @@ export function ManageUsersView({
     setForm({
       ...EMPTY_FORM,
       role,
-      permissions: ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+      permissions: setModulePermission(
+        ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+        'pos',
+        ROLE_DEFAULT_PERMISSIONS[role].includes('pos'),
+        true,
+      ).filter((permission) => grantablePermissions.includes(permission)),
     });
     setNotice(null);
   };
@@ -268,7 +280,12 @@ export function ManageUsersView({
                 setForm({
                   ...form,
                   role,
-                  permissions: ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+                  permissions: setModulePermission(
+                    ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
+                    'pos',
+                    ROLE_DEFAULT_PERMISSIONS[role].includes('pos'),
+                    true,
+                  ).filter((permission) => grantablePermissions.includes(permission)),
                 });
               }} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
                 {editingId === currentUserId && !assignableRoles.includes(form.role) && (
@@ -294,9 +311,12 @@ export function ManageUsersView({
                     disabled={form.role === UserRole.SUPER_ADMIN || (form.role === UserRole.ADMIN && !isSuperAdmin)}
                     onChange={(event) => setForm({
                       ...form,
-                      permissions: event.target.checked
-                        ? [...new Set([...form.permissions, key])]
-                        : form.permissions.filter((permission) => permission !== key),
+                      permissions: setModulePermission(
+                        form.permissions,
+                        key,
+                        event.target.checked,
+                        key === 'pos' && !editingId,
+                      ),
                     })}
                     className="h-4 w-4 accent-green-700"
                   />
@@ -304,6 +324,35 @@ export function ManageUsersView({
                 </label>
               ))}
             </div>
+            {hasPosPrintToggles(form.permissions) && (
+              <div className="mt-4 space-y-3 border-t border-border pt-4">
+                {([
+                  ['pos_print_sale', 'Print sale receipts'],
+                  ['pos_print_payment', 'Print receiving-money receipts'],
+                ] as const).map(([permission, label]) => {
+                  const canChange = grantablePermissions.includes(permission)
+                    || (editingId !== null && form.permissions.includes(permission));
+                  return (
+                    <label key={permission} className="flex items-center justify-between gap-3 text-sm text-text">
+                      <span>{label}</span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-label={label}
+                        checked={form.permissions.includes(permission)}
+                        disabled={!canChange}
+                        onChange={(event) => setForm({
+                          ...form,
+                          permissions: setPosPrintPermission(form.permissions, permission, event.target.checked),
+                        })}
+                        className="h-4 w-4 accent-green-700"
+                      />
+                    </label>
+                  );
+                })}
+                <p className="text-xs text-muted">New users can print sale receipts by default. Receiving-money receipts require separate approval.</p>
+              </div>
+            )}
           </fieldset>
 
           <label className="flex items-center gap-2 text-sm font-semibold text-text">

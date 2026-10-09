@@ -6,6 +6,7 @@ import {
   canManageTarget,
   canUseManageUsers,
   grantablePermissionsFor,
+  normalizePermissions,
   permissionGrantDenial,
   profileChangeDenial,
 } from './policy.ts';
@@ -135,7 +136,7 @@ test('does not block removing an inactive admin when another active admin remain
     const permissions = ['manage_users', 'customers', 'pos'];
     assert.deepEqual(assignableRolesFor('manager', permissions), ['cashier', 'manager', 'accountant']);
     assert.deepEqual(grantablePermissionsFor('manager', permissions, [
-      'pos', 'customers', 'manage_users', 'reports',
+      'pos', 'customers', 'manage_users', 'reports', 'pos_print_sale', 'pos_print_payment',
     ]), ['customers', 'pos']);
     assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['pos'], permissions), true);
     assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['manage_users'], permissions), false);
@@ -154,4 +155,12 @@ test('does not block removing an inactive admin when another active admin remain
     assert.match(permissionGrantDenial('manager', callerPermissions, ['reports']) ?? '', /only grant permissions that you hold/);
     assert.match(permissionGrantDenial('manager', callerPermissions, ['manage_users']) ?? '', /Only admin or super_admin/);
     assert.equal(permissionGrantDenial('admin', [], ['manage_users']), null);
+  });
+
+  test('normalizes print sub-permissions and strips them when POS is absent', () => {
+    assert.deepEqual(normalizePermissions(['customers', 'pos_print_sale', 'pos_print_payment']), ['customers']);
+    assert.deepEqual(
+      normalizePermissions(['pos', 'pos_print_sale', 'pos_print_sale', 'pos_print_payment']),
+      ['pos', 'pos_print_sale', 'pos_print_payment'],
+    );
   });

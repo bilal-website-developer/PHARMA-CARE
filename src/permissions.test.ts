@@ -4,7 +4,11 @@ import { UserRole } from './types/pharmacy';
 import {
   canAccessModule,
   canAccessPage,
+  hasPosPrintToggles,
   MODULES,
+  normalizePermissionSelection,
+  setModulePermission,
+  setPosPrintPermission,
   ROLE_DEFAULT_PERMISSIONS,
 } from './permissions';
 
@@ -19,6 +23,20 @@ test('role defaults preserve limited roles and give both admin roles full module
   ]);
   assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.ADMIN], MODULES.map(({ key }) => key));
   assert.deepEqual(ROLE_DEFAULT_PERMISSIONS[UserRole.SUPER_ADMIN], MODULES.map(({ key }) => key));
+});
+
+test('POS print toggles are visible only with POS Billing and default new POS users to sale-only printing', () => {
+  const withPos = setModulePermission(['customers'], 'pos', true, true);
+  assert.equal(hasPosPrintToggles(withPos), true);
+  assert.deepEqual(withPos, ['customers', 'pos', 'pos_print_sale']);
+  assert.equal(withPos.includes('pos_print_sale'), true);
+  assert.equal(withPos.includes('pos_print_payment'), false);
+
+  const withPaymentPrint = setPosPrintPermission(withPos, 'pos_print_payment', true);
+  assert.equal(withPaymentPrint.includes('pos_print_payment'), true);
+  assert.deepEqual(setModulePermission(withPaymentPrint, 'pos', false), ['customers']);
+  assert.equal(hasPosPrintToggles(['customers']), false);
+  assert.deepEqual(normalizePermissionSelection(['customers', 'pos_print_sale', 'pos_print_payment']), ['customers']);
 });
 
 test('admin roles override assigned permissions while limited roles remain permission-scoped', () => {

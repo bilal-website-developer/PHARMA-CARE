@@ -18,6 +18,54 @@ export const MODULES = [
 
 export type ModuleKey = (typeof MODULES)[number]['key'];
 
+export const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
+export type PosPrintPermissionKey = (typeof POS_PRINT_PERMISSION_KEYS)[number];
+export type PermissionKey = ModuleKey | PosPrintPermissionKey;
+
+export function hasPosPrintToggles(permissions: readonly PermissionKey[]): boolean {
+  return permissions.includes('pos');
+}
+
+export function normalizePermissionSelection(permissions: readonly PermissionKey[]): PermissionKey[] {
+  const unique = [...new Set(permissions)];
+  return hasPosPrintToggles(unique)
+    ? unique
+    : unique.filter((permission) => !POS_PRINT_PERMISSION_KEYS.includes(permission as PosPrintPermissionKey));
+}
+
+export function setModulePermission(
+  permissions: readonly PermissionKey[],
+  module: ModuleKey,
+  enabled: boolean,
+  defaultSalePrint = false,
+): PermissionKey[] {
+  const next = new Set(permissions);
+  if (enabled) next.add(module);
+  else next.delete(module);
+
+  if (module === 'pos') {
+    if (!enabled) {
+      POS_PRINT_PERMISSION_KEYS.forEach((permission) => next.delete(permission));
+    } else if (defaultSalePrint && !POS_PRINT_PERMISSION_KEYS.some((permission) => next.has(permission))) {
+      next.add('pos_print_sale');
+    }
+  }
+
+  return normalizePermissionSelection([...next]);
+}
+
+export function setPosPrintPermission(
+  permissions: readonly PermissionKey[],
+  permission: PosPrintPermissionKey,
+  enabled: boolean,
+): PermissionKey[] {
+  if (!hasPosPrintToggles(permissions)) return normalizePermissionSelection(permissions);
+  const next = new Set(permissions);
+  if (enabled) next.add(permission);
+  else next.delete(permission);
+  return normalizePermissionSelection([...next]);
+}
+
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly ModuleKey[]> = {
   [UserRole.CASHIER]: ['pos', 'customers'],
   [UserRole.MANAGER]: [

@@ -1,5 +1,13 @@
 export const ROLES = ['cashier', 'manager', 'accountant', 'admin', 'super_admin'] as const;
 export type Role = (typeof ROLES)[number];
+export const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
+
+export function normalizePermissions(permissions: readonly string[]): string[] {
+  const unique = [...new Set(permissions)];
+  return unique.includes('pos')
+    ? unique
+    : unique.filter((permission) => !POS_PRINT_PERMISSION_KEYS.includes(permission as typeof POS_PRINT_PERMISSION_KEYS[number]));
+}
 
 export function canUseManageUsers(callerRole: Role, callerPermissions: readonly string[]): boolean {
   return callerRole === 'admin' || callerRole === 'super_admin'
