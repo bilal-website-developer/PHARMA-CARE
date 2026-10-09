@@ -33,6 +33,8 @@ The reviewed categories/brands migration adds `categories` and `brands`; both ar
 
 The frontend inventory redesign's Phase 1 adds shared display components and pure stock/expiry presentation helpers under `src/components/inventory/`. These are UI-only primitives; Phase 1 does not create or alter database tables, functions, policies, or stored data.
 
+The proposed Products redesign migration `20261010040000_products_redesign_rpc.sql` adds `can_view_cost()`, `products_overview_stats()`, `products_list(...)`, `products_import_preview(...)`, `products_bulk_update(...)`, and `products_bulk_import(...)`. These are `SECURITY DEFINER` RPCs with a fixed `public` search path; product operations require an active, non-deleted profile with Products permission. Product filters, counts, expiry and stock values, ordering, and paging are computed in Postgres. Cost, stock value, and margin are redacted there unless the caller is an active admin, super-admin, or accountant. CSV writes use the existing `save_medicine`, `save_category`, and `save_brand` functions in the same transaction; creating missing categories/manufacturers requires Categories permission. The migration does not change RLS policies or shared permission helpers and is pending manual application. The schema has no medicine-strength field, so strength is neither displayed nor used to infer duplicate imports.
+
 ## Stock flow
 
 1. A posted purchase is submitted through `post_purchase(...)` as a Postgres RPC. The current checked-in migration validates the purchase and each item, locks/advances the purchase-number counter, verifies that each unit belongs to its medicine, and performs all related writes transactionally.

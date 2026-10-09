@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 0 — Discovery | Done | Read-only discovery completed from the checked-in app, migrations, baseline schema, and documentation. |
 | 1 — Shared UI pieces | Done | Added reusable inventory UI primitives and pure stock/expiry display logic with unit tests; no database changes. |
-| 2 — Products | Pending approval | Not started. |
+| 2 — Products | Implemented; migration awaits manual application | Server-backed paginated product list, filters/sorting, summary stats, cost redaction, bulk actions and transactional CSV import; strength is unavailable in the current schema. |
 | 3 — Categories & master data | Pending approval | Not started. |
 | 4 — Stock Inventory | Pending approval | Not started. |
 | 5 — Reorder suggestions | Pending approval | Not started. |
@@ -20,6 +20,16 @@
 - Added pure stock-bar and expiry-display logic plus boundary/error tests in `src/components/inventory/inventoryUiLogic.ts` and its test file.
 - Registered the focused test suite in the existing `npm test` runner. No dependencies, database objects, or live data were changed.
 - Validation: `npm run lint`, `npm test` (67 tests), and `npm run build` pass. Vite still reports its existing config-loader and large-chunk warnings.
+
+### Phase 2 delivered (migration not applied)
+
+- Replaced the Products page's client-side batch aggregation with server-side product list and summary RPCs. Search, active/class/category/manufacturer filters, low-stock-only, stable sorting, and pagination are applied before rows reach the browser.
+- Reused the Phase 1 responsive table, stock/expiry/status display, KPI cards, selection, bulk actions, and confirmation dialog. Export and barcode print remain limited to the current page or its selected rows.
+- Added server-checked category reassignment/deactivation for selected products and one-transaction CSV import after a row-by-row preview. The preview flags local/database duplicates and invalid values. New categories/manufacturers still use the existing category/brand RPCs and therefore require Categories permission when values are missing.
+- Added `can_view_cost()` and server-side cost/margin redaction in product responses. Cost fields are returned only for active admin/super-admin/accountant profiles; client visibility follows the RPC response. Product list/stat/import/bulk RPCs all check active, non-deleted profiles and Products permission. Existing RLS policies and shared permission helpers are unchanged.
+- Added pure CSV parsing/preview tests and included them in `npm test`.
+- No strength column exists in the current checked-in schema, so product lists and import matching do not invent or infer medicine strength.
+- Migration file: `supabase/migrations/20261010040000_products_redesign_rpc.sql`. It has **not** been run; apply it manually before the Products page can use these RPCs. No live data or database was changed.
 
 ## Safe demo login
 
