@@ -15,6 +15,7 @@ import {
   renderReceipt,
   saveBillingPreferences,
 } from './receipt';
+import { readPharmacyMemoSettings } from './storeSettings';
 
 const sale = {
   id: 'sample-sale',
@@ -165,11 +166,65 @@ test('rounds net to the selected amount and reflects the adjustment in printed d
   assert.match(html, /Net Amount:<\/strong><strong>510\.00/);
 });
 
-test('prints credit and partial-payment balance lines', () => {
+test('prints only Paid and Balance for a partial payment', () => {
   const html = memoHtml({ ...memoFixture, isCredit: true, paidPaisa: 20000, discountPaisa: 3116 });
-  assert.match(html, /Credit \/ Balance Due:<\/strong><strong>300\.00/);
+  assert.doesNotMatch(html, /Credit \/ Balance Due:/);
   assert.match(html, /Paid:<\/span><span>200\.00/);
   assert.match(html, /Balance:<\/span><span>300\.00/);
+});
+
+test('prints one Credit / Balance Due line for a fully credit sale', () => {
+  const html = memoHtml({ ...memoFixture, isCredit: true, paidPaisa: 0, discountPaisa: 3116 });
+  assert.match(html, /Credit \/ Balance Due:<\/strong><strong>500\.00/);
+  assert.doesNotMatch(html, /<span>Balance:<\/span>/);
+});
+
+test('prints address and editable phone prefix directly under the store name, skipping blanks', () => {
+  const header = memoHtml(memoFixture, {
+    ...memoSettings,
+    address: 'Main Street',
+    phone: 'TEL: 0300-1111111 / 0300-2222222',
+  }).match(/<header class="store">[\s\S]*?<\/header>/)?.[0];
+  assert.equal(
+    header,
+    '<header class="store"><strong>PHARMA TEST</strong><span>Main Street</span><span>TEL: 0300-1111111 / 0300-2222222</span></header>'
+  );
+  const noOptionalLines = memoHtml(memoFixture, { ...memoSettings, address: ' ', phone: ' ' });
+  assert.match(noOptionalLines, /<header class="store"><strong>PHARMA TEST<\/strong><\/header>/);
+  assert.match(noOptionalLines, /\.store span\{display:block\}/);
+});
+
+test('keeps the Net Amount label and value on a single line', () => {
+  const html = memoHtml();
+  assert.match(html, /\.net\{display:flex;flex-wrap:nowrap;white-space:nowrap/);
+  assert.match(html, /\.net strong\{white-space:nowrap\}/);
+});
+
+test('falls back to saved shop profile address and phone when memo-specific values are empty', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>([
+    ['pharma-care.shopProfile', JSON.stringify({ city: 'Saved City', phone: '0300-1234567' })],
+    ['pharma-care.pharmacyMemoSettings', JSON.stringify({
+      ...memoSettings,
+      address: '',
+      phone: '',
+    })],
+  ]);
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (key: string) => values.get(key) ?? null },
+  });
+  try {
+    const settings = readPharmacyMemoSettings();
+    assert.equal(settings.address, 'Saved City');
+    assert.equal(settings.phone, '0300-1234567');
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', descriptor ?? {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+  }
 });
 
 test('includes tax in net when configured but omits the tax row when disabled', () => {

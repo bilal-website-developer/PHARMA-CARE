@@ -3,15 +3,25 @@ import { DEFAULT_PHARMACY_MEMO_SETTINGS, MemoRounding, PharmacyMemoSettings } fr
 
 const COMPANY_NAME_KEY = 'pharma-care.companyName';
 const PHARMACY_MEMO_SETTINGS_KEY = 'pharma-care.pharmacyMemoSettings';
+const SHOP_PROFILE_KEY = 'pharma-care.shopProfile';
 export const DEFAULT_COMPANY_NAME = APP_NAME;
 
 export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): PharmacyMemoSettings {
   const defaults = { ...DEFAULT_PHARMACY_MEMO_SETTINGS, storeName: companyName || APP_NAME };
   try {
+    const savedProfile = globalThis.localStorage?.getItem(SHOP_PROFILE_KEY);
+    const profile: unknown = savedProfile ? JSON.parse(savedProfile) : null;
+    const profileValues = typeof profile === 'object' && profile !== null
+      ? profile as { phone?: unknown; city?: unknown }
+      : {};
+    const fallbackPhone = typeof profileValues.phone === 'string' ? profileValues.phone : '';
+    const fallbackAddress = typeof profileValues.city === 'string' ? profileValues.city : '';
     const stored = globalThis.localStorage?.getItem(PHARMACY_MEMO_SETTINGS_KEY);
-    if (!stored) return defaults;
+    if (!stored) return { ...defaults, address: fallbackAddress, phone: fallbackPhone };
     const parsed: unknown = JSON.parse(stored);
-    if (typeof parsed !== 'object' || parsed === null) return defaults;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { ...defaults, address: fallbackAddress, phone: fallbackPhone };
+    }
     const value = parsed as Partial<PharmacyMemoSettings>;
     const roundNet: MemoRounding = ['none', '1', '5', '10'].includes(String(value.roundNet))
       ? value.roundNet as MemoRounding
@@ -21,8 +31,8 @@ export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): Ph
       : defaults.notes;
     return {
       storeName: typeof value.storeName === 'string' ? value.storeName : defaults.storeName,
-      address: typeof value.address === 'string' ? value.address : defaults.address,
-      phone: typeof value.phone === 'string' ? value.phone : defaults.phone,
+      address: typeof value.address === 'string' && value.address.trim() ? value.address : fallbackAddress,
+      phone: typeof value.phone === 'string' && value.phone.trim() ? value.phone : fallbackPhone,
       notes,
       terminalName: typeof value.terminalName === 'string' ? value.terminalName : defaults.terminalName,
       showBatchExpiry: typeof value.showBatchExpiry === 'boolean' ? value.showBatchExpiry : defaults.showBatchExpiry,
