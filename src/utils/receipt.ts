@@ -106,8 +106,8 @@ export function readBillingPreferencesWithMigration(): {
     const format = ['thermal58', 'thermal80', 'a4'].includes(normalizeString(record.format))
       ? (record.format as ReceiptFormat)
       : defaults.format;
-    storage.setItem(MEMO_DEFAULT_APPLIED_KEY, 'true');
     if (isClassicDefault) storage.setItem(BILLING_PREFERENCES_KEY, JSON.stringify({ template, format }));
+    storage.setItem(MEMO_DEFAULT_APPLIED_KEY, 'true');
     return { preferences: { template, format }, migratedClassicDefault: isClassicDefault };
   } catch {
     return { preferences: defaults, migratedClassicDefault: false };
@@ -143,6 +143,23 @@ export const DEFAULT_PHARMACY_MEMO_SETTINGS: PharmacyMemoSettings = {
   duplicateLabel: true,
   autoPrint: false,
   numberDigits: 6,
+};
+
+export const PHARMACY_MEMO_TEST_FIXTURE: MemoData = {
+  kind: 'SALE',
+  memoNo: '335001',
+  dateTime: '2026-10-06T21:18:58',
+  customerName: '',
+  lines: [
+    { qty: 14, name: 'Glucophage Tab 250mg', ratePaisa: 244, batch: 'B2411', expiry: '08/2027' },
+    { qty: 7, name: 'MyoCure Tablet', ratePaisa: 5000, batch: 'M1022', expiry: '03/2028' },
+    { qty: 7, name: 'Folic 600mg Tab', ratePaisa: 2100, batch: 'F7731', expiry: '11/2027' },
+  ],
+  discountPaisa: 3116,
+  paidPaisa: 50000,
+  cashier: 'Sample Cashier',
+  role: 'CASHIER',
+  terminal: 'SERVER-PC',
 };
 
 export interface ReceiptData {
@@ -195,7 +212,9 @@ export function buildMemoData(
     })),
     discountPaisa: sale.discountPaisa,
     paidPaisa: sale.paymentMethod === PaymentMethod.CREDIT ? 0 : sale.amountTenderedPaisa,
-    isCredit: sale.paymentMethod === PaymentMethod.CREDIT,
+    roundingPaisa: sale.roundingPaisa,
+    isCredit: sale.paymentMethod === PaymentMethod.CREDIT
+      || sale.amountTenderedPaisa < sale.totalPaisa,
     cashier: sale.cashierName,
     role: identity.role ?? '',
     terminal: identity.terminal ?? DEFAULT_PHARMACY_MEMO_SETTINGS.terminalName,
@@ -372,11 +391,12 @@ export function renderPharmacyMemo(
   const taxPaisa = Math.max(0, Math.round(data.salesTaxPaisa ?? 0));
   const netBeforeRounding = grossPaisa - discountPaisa + taxPaisa;
   const roundingUnit = settings.roundNet === 'none' ? 0 : Number(settings.roundNet) * 100;
-  const netPaisa = roundingUnit
-    ? Math.floor(netBeforeRounding / roundingUnit + 0.5) * roundingUnit
-    : netBeforeRounding;
+  const calculatedRounding = roundingUnit
+    ? Math.floor(netBeforeRounding / roundingUnit + 0.5) * roundingUnit - netBeforeRounding
+    : 0;
+  const roundingPaisa = data.roundingPaisa ?? calculatedRounding;
+  const netPaisa = netBeforeRounding + roundingPaisa;
   const printedDiscount = grossPaisa + taxPaisa - netPaisa;
-  const roundingPaisa = netPaisa - netBeforeRounding;
   const { date, time } = memoDateTime(data.dateTime);
   const digitCount = Math.max(1, Math.min(20, Math.floor(settings.numberDigits) || 6));
   const digits = data.memoNo.replace(/\D/g, '');

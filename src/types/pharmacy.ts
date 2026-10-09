@@ -171,6 +171,7 @@ export interface CompletedSale {
   subtotalPaisa: number;
   discountPaisa: number;
   totalPaisa: number;
+  roundingPaisa?: number;
   paymentMethod: PaymentMethod;
   amountTenderedPaisa: number;
   changePaisa: number;

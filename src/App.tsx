@@ -42,10 +42,16 @@ import {
   BillingPreferences,
   BillingTemplate,
   ReceiptFormat,
-  readBillingPreferences,
+  PharmacyMemoSettings,
+  readBillingPreferencesWithMigration,
   saveBillingPreferences,
 } from './utils/receipt';
-import { readCompanyName, saveCompanyName } from './utils/storeSettings';
+import {
+  readCompanyName,
+  readPharmacyMemoSettings,
+  saveCompanyName,
+  savePharmacyMemoSettings,
+} from './utils/storeSettings';
 import PharmaLogo from './components/PharmaLogo';
 import { HelpSupportView } from './components/HelpSupportView';
 import { StockPurchaseView } from './components/StockPurchaseView';
@@ -277,13 +283,16 @@ function PharmacyWorkspace({
       return false;
     }
   });
-  const [billingPreferences, setBillingPreferences] = useState<BillingPreferences>(() =>
-    readBillingPreferences()
-  );
+  const [billingState] = useState(readBillingPreferencesWithMigration);
+  const [billingPreferences, setBillingPreferences] = useState<BillingPreferences>(billingState.preferences);
   const [previewTemplate, setPreviewTemplate] = useState<BillingTemplate>(
     billingPreferences.template
   );
   const [companyName, setCompanyName] = useState(readCompanyName);
+  const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(() =>
+    readPharmacyMemoSettings(companyName)
+  );
+  const [memoMigrationToast, setMemoMigrationToast] = useState(billingState.migratedClassicDefault);
 
   useEffect(() => {
     try {
@@ -418,11 +427,23 @@ function PharmacyWorkspace({
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [showCloseDayModal, setShowCloseDayModal] = useState(false);
 
+  useEffect(() => {
+    if (!memoMigrationToast) return;
+    const timeout = window.setTimeout(() => setMemoMigrationToast(false), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [memoMigrationToast]);
+
   const updateBillingPreferences = (preferences: BillingPreferences) => {
     setBillingPreferences(preferences);
     if (!saveBillingPreferences(preferences)) {
       window.alert('Template preference could not be saved in this browser.');
     }
+  };
+
+  const updateMemoSettings = (settings: PharmacyMemoSettings): boolean => {
+    if (!savePharmacyMemoSettings(settings)) return false;
+    setMemoSettings(settings);
+    return true;
   };
 
   const updateCompanyName = (name: string): boolean => {
@@ -524,12 +545,14 @@ function PharmacyWorkspace({
 
     const customer = customers.find((c) => c.id === customerId);
     const newBal = Math.max(0, (customer?.currentBalancePaisa || 0) - amountPaisa);
+    const paymentDateTime = new Date().toISOString();
+    const paymentReference = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newLedgerItem = {
       id: `led-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
+      date: paymentDateTime.split('T')[0],
       type: 'PAYMENT' as const,
-      referenceNo: `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+      referenceNo: paymentReference,
       description: note || 'Counter Payment Received',
       debitPaisa: 0,
       creditPaisa: amountPaisa,
@@ -551,6 +574,7 @@ function PharmacyWorkspace({
       handledBy: currentUserName,
     };
     setTransactions((prev) => [tx, ...prev]);
+    return { referenceNo: paymentReference, dateTime: paymentDateTime, balanceAfterPaisa: newBal };
   };
 
   // Calculations for End of Day modal
@@ -637,6 +661,7 @@ function PharmacyWorkspace({
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {memoMigrationToast && <div role="status" className="fixed right-4 top-4 z-[60] rounded-control border border-primary/30 bg-surface px-4 py-3 text-sm font-semibold text-text shadow-lg">Pharmacy Memo is now your default receipt template. You can change it in Settings.</div>}
         {authMessage && <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{authMessage}</p>}
         {/* Top Header Strip */}
         <TopNav
@@ -687,6 +712,7 @@ function PharmacyWorkspace({
               companyName={companyName}
               billingTemplate={billingPreferences.template}
               receiptFormat={billingPreferences.format}
+              memoSettings={memoSettings}
               onSaleComplete={handleSaleComplete}
               onOpenTemplatePreview={() => openTemplatePreview(billingPreferences.template)}
             />
@@ -715,6 +741,10 @@ function PharmacyWorkspace({
               customers={customers}
               ledgerEntries={ledgerEntries}
               onRecordPayment={handleRecordPayment}
+              memoSettings={memoSettings}
+              memoFormat={billingPreferences.format}
+              currentUserName={currentUserName}
+              currentRole={currentRole}
               onAddCustomer={(c) => {
                 setCustomers((prev) => [...prev, c]);
                 setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
@@ -727,6 +757,10 @@ function PharmacyWorkspace({
               customers={customers}
               ledgerEntries={ledgerEntries}
               onRecordPayment={handleRecordPayment}
+              memoSettings={memoSettings}
+              memoFormat={billingPreferences.format}
+              currentUserName={currentUserName}
+              currentRole={currentRole}
               onAddCustomer={(c) => {
                 setCustomers((prev) => [...prev, c]);
                 setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
@@ -766,6 +800,10 @@ function PharmacyWorkspace({
               companyName={companyName}
               onSaveCompanyName={updateCompanyName}
               onOpenTemplatePreview={openTemplatePreview}
+              memoSettings={memoSettings}
+              onMemoSettingsChange={updateMemoSettings}
+              memoFormat={billingPreferences.format}
+              onMemoFormatChange={(format) => updateBillingPreferences({ ...billingPreferences, format })}
             />
           )}
 
@@ -791,6 +829,7 @@ function PharmacyWorkspace({
           companyName={companyName}
           initialTemplate={previewTemplate}
           initialFormat={billingPreferences.format}
+          memoSettings={memoSettings}
           canApply={isAdminRole(currentRole)}
           onApply={(template: BillingTemplate, format: ReceiptFormat) => {
             updateBillingPreferences({ template, format });

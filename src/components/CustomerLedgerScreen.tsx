@@ -12,13 +12,29 @@ import {
   AlertCircle,
   CheckCircle,
 } from 'lucide-react';
-import { Customer, LedgerEntry } from '../types/pharmacy';
+import { Customer, LedgerEntry, UserRole } from '../types/pharmacy';
+import {
+  PharmacyMemoSettings,
+  ReceiptFormat,
+  buildPaymentMemoData,
+  printReceipt,
+  renderPharmacyMemo,
+  renderReceipt,
+} from '../utils/receipt';
 
 interface CustomerLedgerScreenProps {
   customers: Customer[];
   ledgerEntries: Record<string, LedgerEntry[]>;
-  onRecordPayment: (customerId: string, amountPaisa: number, note: string) => void;
+  onRecordPayment: (customerId: string, amountPaisa: number, note: string) => {
+    referenceNo: string;
+    dateTime: string;
+    balanceAfterPaisa: number;
+  };
   onAddCustomer: (customer: Customer) => void;
+  memoSettings: PharmacyMemoSettings;
+  memoFormat: ReceiptFormat;
+  currentUserName: string;
+  currentRole: UserRole;
 }
 
 export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
@@ -26,12 +42,17 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   ledgerEntries,
   onRecordPayment,
   onAddCustomer,
+  memoSettings,
+  memoFormat,
+  currentUserName,
+  currentRole,
 }) => {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(customers[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmountPKR, setPaymentAmountPKR] = useState<number>(0);
   const [paymentNote, setPaymentNote] = useState('Cash received on counter');
+  const [paymentPrintNotice, setPaymentPrintNotice] = useState('');
 
   // New Customer Modal
   const [showNewCustModal, setShowNewCustModal] = useState(false);
@@ -53,7 +74,46 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId || paymentAmountPKR <= 0) return;
-    onRecordPayment(selectedCustomerId, paymentAmountPKR * 100, paymentNote);
+    const payment = onRecordPayment(selectedCustomerId, paymentAmountPKR * 100, paymentNote);
+    try {
+      printReceipt(renderPharmacyMemo(buildPaymentMemoData({
+        referenceNo: payment.referenceNo,
+        dateTime: payment.dateTime,
+        customerName: selectedCustomer?.name ?? '',
+        amountReceivedPaisa: Math.round(paymentAmountPKR * 100),
+        balanceAfterPaisa: payment.balanceAfterPaisa,
+        cashier: currentUserName,
+        role: currentRole,
+        terminal: memoSettings.terminalName,
+      }), memoSettings, memoFormat));
+      setPaymentPrintNotice('');
+    } catch (error) {
+      try {
+        printReceipt(renderReceipt('classic', memoFormat, {
+          storeName: memoSettings.storeName,
+          address: memoSettings.address,
+          phone: memoSettings.phone,
+          invoiceNo: payment.referenceNo || '',
+          dateTime: payment.dateTime,
+          cashierName: currentUserName,
+          customerName: selectedCustomer?.name ?? '',
+          paymentMode: 'PAYMENT',
+          status: 'PAID',
+          items: [],
+          subtotal: Math.round(paymentAmountPKR * 100),
+          discount: 0,
+          total: Math.round(paymentAmountPKR * 100),
+          paid: Math.round(paymentAmountPKR * 100),
+          change: 0,
+          balanceDue: payment.balanceAfterPaisa,
+          footerEnglish: 'Payment received.',
+          footerUrdu: '',
+        }));
+        setPaymentPrintNotice(`Payment was recorded. Pharmacy Memo failed; the existing Classic receipt was printed instead. ${error instanceof Error ? error.message : ''}`);
+      } catch (fallbackError) {
+        setPaymentPrintNotice(`Payment was recorded, but its memo could not be printed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
+      }
+    }
     setShowPaymentModal(false);
     setPaymentAmountPKR(0);
   };
@@ -79,6 +139,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      {paymentPrintNotice && <p role="status" className="lg:col-span-12 rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{paymentPrintNotice}</p>}
       {/* ── Left 4 Cols: Customer List ──────────────────────────────────────── */}
       <div className="lg:col-span-4 bg-white p-4 rounded-xl border border-emerald-200 shadow-xs space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-emerald-100">

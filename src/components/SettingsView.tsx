@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Store,
   Upload,
@@ -14,7 +14,16 @@ import {
   ScrollText,
   ClipboardList,
 } from 'lucide-react';
-import { BillingTemplate } from '../utils/receipt';
+import {
+  BillingTemplate,
+  PHARMACY_MEMO_TEST_FIXTURE,
+  PharmacyMemoSettings,
+  ReceiptFormat,
+  printReceipt,
+  renderPharmacyMemo,
+  renderReceipt,
+  withReceiptTheme,
+} from '../utils/receipt';
 import { CompletedSale, UserRole } from '../types/pharmacy';
 import { PrintSalesReport } from './PrintSalesReport';
 
@@ -63,6 +72,10 @@ interface SettingsViewProps {
   canEditBilling: boolean;
   onTemplateChange: (template: BillingTemplate) => void;
   onOpenTemplatePreview: (template: BillingTemplate) => void;
+  memoSettings: PharmacyMemoSettings;
+  onMemoSettingsChange: (settings: PharmacyMemoSettings) => boolean;
+  memoFormat: ReceiptFormat;
+  onMemoFormatChange: (format: ReceiptFormat) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -75,6 +88,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   canEditBilling,
   onTemplateChange,
   onOpenTemplatePreview,
+  memoSettings: savedMemoSettings,
+  onMemoSettingsChange,
+  memoFormat,
+  onMemoFormatChange,
 }) => {
   const [savedShopProfile] = useState(readSavedShopProfile);
   const [shopName, setShopName] = useState(companyName);
@@ -83,6 +100,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [urduFooter, setUrduFooter] = useState(savedShopProfile.urduFooter);
   const [debtTemplate, setDebtTemplate] = useState(savedShopProfile.debtTemplate);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
+  const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
+  const memoPreview = useMemo(() => {
+    try {
+      return {
+        html: withReceiptTheme(renderPharmacyMemo(
+          { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
+          { ...memoSettings, storeName: memoSettings.storeName || shopName },
+          memoFormat
+        )),
+        warning: '',
+      };
+    } catch (error) {
+      return {
+        html: withReceiptTheme(renderReceipt('classic', memoFormat, {
+          storeName: shopName,
+          invoiceNo: PHARMACY_MEMO_TEST_FIXTURE.memoNo,
+          dateTime: PHARMACY_MEMO_TEST_FIXTURE.dateTime,
+          cashierName: 'Sample Cashier',
+          customerName: 'احمد',
+          paymentMode: 'CASH',
+          status: 'PAID',
+          items: PHARMACY_MEMO_TEST_FIXTURE.lines.map((line) => ({
+            name: line.name,
+            batchNo: line.batch ?? '',
+            expiry: line.expiry ?? '',
+            qty: line.qty,
+            unit: '',
+            unitPrice: line.ratePaisa,
+            lineTotal: line.qty * line.ratePaisa,
+          })),
+          subtotal: 53116,
+          discount: 3116,
+          total: 50000,
+          paid: 50000,
+          change: 0,
+          balanceDue: 0,
+          footerEnglish: 'Thank you for your business.',
+          footerUrdu: 'شکریہ! دوبارہ تشریف لائیں',
+        })),
+        warning: `Pharmacy Memo preview failed; showing the existing Classic receipt instead. ${error instanceof Error ? error.message : ''}`,
+      };
+    }
+  },
+    [memoFormat, memoSettings, shopName]
+  );
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +163,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (!onSaveCompanyName(shopName)) {
       setSavedSuccess(false);
       window.alert('Contact phone, location, invoice footer, and reminder template were saved, but the shop name could not be saved.');
+      return;
+    }
+    if (!onMemoSettingsChange({ ...memoSettings, storeName: memoSettings.storeName.trim() || shopName })) {
+      window.alert('Shop details were saved, but Pharmacy Memo settings could not be saved. Check the required fields and browser storage.');
       return;
     }
     setSavedSuccess(true);
@@ -186,7 +253,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 xl:grid-cols-5">
           {[
             {
               id: 'simple' as const,
@@ -207,6 +274,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               id: 'modern' as const,
               desc: 'Elegant & spacious. Clean sans-serif font, thin borders, cards for totals.',
               icon: Sparkles,
+            },
+            {
+              id: 'pharmacy-memo' as const,
+              desc: 'Cash-memo slip layout for 58mm and 80mm thermal paper.',
+              icon: ScrollText,
             },
           ].map((tmpl) => (
             <div
@@ -260,6 +332,109 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           ))}
         </div>
       </div>
+
+      <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
+          <div>
+            <h3 className="text-sm font-black text-text">Pharmacy Memo slip</h3>
+            <p className="mt-1 text-xs text-muted">Configure the cash-memo header, notes, and print behavior for this browser.</p>
+          </div>
+          <button type="button" onClick={() => onOpenTemplatePreview('pharmacy-memo')} className="rounded-control border border-border px-3 py-2 text-xs font-bold text-primary hover:bg-surface">
+            <Eye className="mr-1 inline h-3.5 w-3.5" /> Open full preview
+          </button>
+        </div>
+        {!canEditBilling && <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">Only Admin can change these settings. You can still view the preview.</p>}
+        <fieldset disabled={!canEditBilling} className="space-y-4 disabled:opacity-70">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-text">Memo store name
+              <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.storeName} onChange={(event) => setMemoSettings({ ...memoSettings, storeName: event.target.value })} />
+            </label>
+            <label className="text-xs font-semibold text-text">Terminal name
+              <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.terminalName} onChange={(event) => setMemoSettings({ ...memoSettings, terminalName: event.target.value })} />
+            </label>
+            <label className="text-xs font-semibold text-text">Address
+              <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.address} onChange={(event) => setMemoSettings({ ...memoSettings, address: event.target.value })} />
+            </label>
+            <label className="text-xs font-semibold text-text">Phone
+              <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.phone} onChange={(event) => setMemoSettings({ ...memoSettings, phone: event.target.value })} />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-text">Round net to nearest
+              <select className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.roundNet} onChange={(event) => setMemoSettings({ ...memoSettings, roundNet: event.target.value as PharmacyMemoSettings['roundNet'] })}>
+                <option value="none">No rounding</option><option value="1">Rs 1</option><option value="5">Rs 5</option><option value="10">Rs 10</option>
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-text">Memo number digits
+              <input type="number" min="1" max="20" step="1" className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.numberDigits} onChange={(event) => setMemoSettings({ ...memoSettings, numberDigits: Number(event.target.value) })} />
+            </label>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              ['showBatchExpiry', 'Print batch and expiry'],
+              ['printTax', 'Print sales tax row'],
+              ['duplicateLabel', 'Label reprints as DUPLICATE'],
+              ['autoPrint', 'Auto-print after completing a sale'],
+            ].map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-xs font-semibold text-text">
+                <input type="checkbox" checked={memoSettings[key as keyof PharmacyMemoSettings] as boolean} onChange={(event) => setMemoSettings({ ...memoSettings, [key]: event.target.checked })} className="accent-[var(--primary)]" />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-text">Memo notes (three printed lines)</h4>
+            {memoSettings.notes.map((note, index) => (
+              <label key={index} className="block text-xs font-semibold text-text">Note {index + 1}
+                <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={note} onChange={(event) => {
+                  const notes = [...memoSettings.notes] as PharmacyMemoSettings['notes'];
+                  notes[index] = event.target.value;
+                  setMemoSettings({ ...memoSettings, notes });
+                }} />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <label className="text-xs font-semibold text-text">Test print format
+            <select className="ml-2 rounded-control border border-border bg-surface px-2 py-1.5" value={memoFormat} onChange={(event) => onMemoFormatChange(event.target.value as ReceiptFormat)}>
+              <option value="thermal58">Thermal 58mm</option><option value="thermal80">Thermal 80mm</option><option value="a4">A4</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => setMemoPreviewOpen((open) => !open)} className="rounded-control border border-border px-3 py-2 text-xs font-bold text-text hover:bg-surface">
+            {memoPreviewOpen ? 'Hide live preview' : 'Show live preview'}
+          </button>
+          <button type="button" disabled={!canEditBilling} onClick={() => {
+            if (!onMemoSettingsChange({ ...memoSettings, storeName: memoSettings.storeName.trim() || shopName })) {
+              window.alert('Could not save Pharmacy Memo settings. Check that the store name, terminal, notes, and digit count are valid.');
+              return;
+            }
+            setSavedSuccess(true);
+            setTimeout(() => setSavedSuccess(false), 2500);
+          }} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+            <Save className="mr-1 inline h-3.5 w-3.5" /> Save memo settings
+          </button>
+          <button type="button" onClick={() => {
+            try {
+              printReceipt(renderPharmacyMemo(PHARMACY_MEMO_TEST_FIXTURE, { ...memoSettings, storeName: memoSettings.storeName || shopName }, memoFormat));
+            } catch (error) {
+              try {
+                printReceipt(memoPreview.html);
+                window.alert(`Pharmacy Memo test slip failed; the existing Classic receipt was used instead. ${error instanceof Error ? error.message : ''}`);
+              } catch (fallbackError) {
+                window.alert(`Test slip printing failed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
+              }
+            }
+          }} className="rounded-control border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10">
+            <Printer className="mr-1 inline h-3.5 w-3.5" /> Print test slip
+          </button>
+        </div>
+        <p className="text-[11px] text-muted">Printer notes: select the thermal printer, set the matching 58mm or 80mm roll, margins None, scale 100%, and turn headers and footers off.</p>
+        {memoPreviewOpen && <>
+          {memoPreview.warning && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-text">{memoPreview.warning}</p>}
+          <iframe title="Live Pharmacy Memo preview" srcDoc={memoPreview.html} className="h-[520px] w-full rounded-control border border-border bg-white" />
+        </>}
+      </section>
 
       <PrintSalesReport
         sales={sales}

@@ -40,9 +40,12 @@ import {
 import { allocateFefo, localIsoDate } from '../utils/fefo';
 import {
   BillingTemplate,
+  PharmacyMemoSettings,
   ReceiptFormat,
+  buildMemoData,
   printReceipt,
   receiptDataFromSale,
+  renderPharmacyMemo,
   renderReceipt,
 } from '../utils/receipt';
 import { APP_NAME } from '../constants/brand';
@@ -55,6 +58,7 @@ interface POSBillingViewProps {
   companyName: string;
   billingTemplate: BillingTemplate;
   receiptFormat: ReceiptFormat;
+  memoSettings: PharmacyMemoSettings;
   onSaleComplete: (sale: CompletedSale) => void;
   onOpenTemplatePreview: () => void;
 }
@@ -67,6 +71,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   companyName,
   billingTemplate,
   receiptFormat,
+  memoSettings,
   onSaleComplete,
   onOpenTemplatePreview,
 }) => {
@@ -91,6 +96,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
   const [saleError, setSaleError] = useState('');
+  const [printNotice, setPrintNotice] = useState('');
 
   // Modals
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -109,7 +115,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   );
   const discountPKR = discountPaisa / 100;
 
-  const totalPaisa = Math.max(0, subtotalPaisa - discountPaisa);
+  const unroundedTotalPaisa = Math.max(0, subtotalPaisa - discountPaisa);
+  const roundingUnitPaisa = billingTemplate === 'pharmacy-memo' && memoSettings.roundNet !== 'none'
+    ? Number(memoSettings.roundNet) * 100
+    : 0;
+  const totalPaisa = roundingUnitPaisa
+    ? Math.floor(unroundedTotalPaisa / roundingUnitPaisa + 0.5) * roundingUnitPaisa
+    : unroundedTotalPaisa;
+  const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
 
   const changeDuePKR = Math.max(0, tenderedAmountPKR - totalPKR);
@@ -190,6 +203,45 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     return matchSearch && matchCat && matchBrand;
   });
 
+  const printSaleReceipt = (sale: CompletedSale) => {
+    try {
+      const html = billingTemplate === 'pharmacy-memo'
+        ? renderPharmacyMemo(buildMemoData(sale, {
+          role: currentRole,
+          terminal: memoSettings.terminalName,
+        }), memoSettings, receiptFormat)
+        : renderReceipt(
+          billingTemplate,
+          receiptFormat,
+          receiptDataFromSale(sale, {
+            storeName: memoSettings.storeName || companyName,
+            address: memoSettings.address,
+            phone: memoSettings.phone,
+          })
+        );
+      printReceipt(html);
+      setPrintNotice('');
+      return true;
+    } catch (error) {
+      try {
+        printReceipt(renderReceipt(
+          'classic',
+          receiptFormat,
+          receiptDataFromSale(sale, {
+            storeName: memoSettings.storeName || companyName,
+            address: memoSettings.address,
+            phone: memoSettings.phone,
+          })
+        ));
+        setPrintNotice(`Pharmacy Memo could not be rendered; the existing Classic receipt was used instead. ${error instanceof Error ? error.message : ''}`);
+        return true;
+      } catch (fallbackError) {
+        setPrintNotice(`Receipt printing failed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
+        return false;
+      }
+    }
+  };
+
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
 
@@ -239,6 +291,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       subtotalPaisa,
       discountPaisa,
       totalPaisa,
+      roundingPaisa,
       paymentMethod:
         paymentMethod === 'ONLINE'
           ? PaymentMethod.EASYPAISA
@@ -255,6 +308,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     onSaleComplete(sale);
     setShowCheckoutModal(false);
     setSaleCompleteModal(sale);
+    if (memoSettings.autoPrint) window.setTimeout(() => { printSaleReceipt(sale); }, 0);
     setCart([]);
     setDiscountPercent(0);
     setTenderedAmountPKR(0);
@@ -268,6 +322,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           {saleError}
         </div>
       )}
+      {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{printNotice}</p>}
       {/* ── Top Tabs (Sale, Quotation, Search Quotation, Barcode Scan) ──────── */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200/90 shadow-xs">
@@ -845,14 +900,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  printReceipt(
-                    renderReceipt(
-                      billingTemplate,
-                      receiptFormat,
-                      receiptDataFromSale(saleCompleteModal, { storeName: companyName })
-                    )
-                  );
-                  setSaleCompleteModal(null);
+                  if (printSaleReceipt(saleCompleteModal)) setSaleCompleteModal(null);
                 }}
                 className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
               >

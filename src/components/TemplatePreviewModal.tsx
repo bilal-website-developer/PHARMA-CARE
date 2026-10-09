@@ -4,6 +4,9 @@ import {
   BillingTemplate,
   ReceiptFormat,
   ReceiptData,
+  PharmacyMemoSettings,
+  PHARMACY_MEMO_TEST_FIXTURE,
+  renderPharmacyMemo,
   renderReceipt,
   withReceiptTheme,
 } from '../utils/receipt';
@@ -13,6 +16,7 @@ interface TemplatePreviewModalProps {
   companyName: string;
   initialTemplate: BillingTemplate;
   initialFormat: ReceiptFormat;
+  memoSettings: PharmacyMemoSettings;
   canApply: boolean;
   onApply: (template: BillingTemplate, format: ReceiptFormat) => void;
   onClose: () => void;
@@ -86,6 +90,11 @@ const TEMPLATES: Array<{ id: BillingTemplate; description: string; icon: React.R
     description: 'Elegant & spacious. Clean sans-serif font, thin borders, cards for totals.',
     icon: <Sparkles size={18} />,
   },
+  {
+    id: 'pharmacy-memo',
+    description: 'Real cash-memo slip: simple, clear, thermal-friendly.',
+    icon: <FileText size={18} />,
+  },
 ];
 
 const FORMATS: Array<{ id: ReceiptFormat; label: string }> = [
@@ -98,6 +107,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
   companyName,
   initialTemplate,
   initialFormat,
+  memoSettings,
   canApply,
   onApply,
   onClose,
@@ -105,6 +115,8 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
   const [format, setFormat] = useState(initialFormat);
   const [template, setTemplate] = useState(initialTemplate);
   const [loading, setLoading] = useState(true);
+  const [previewWarning, setPreviewWarning] = useState('');
+  const [receiptHtml, setReceiptHtml] = useState('');
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -114,10 +126,21 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const receiptHtml = useMemo(
-    () => withReceiptTheme(renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName })),
-    [companyName, template, format]
-  );
+  useEffect(() => {
+    try {
+      setPreviewWarning('');
+      setReceiptHtml(withReceiptTheme(template === 'pharmacy-memo'
+        ? renderPharmacyMemo(
+          { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
+          { ...memoSettings, storeName: memoSettings.storeName || companyName },
+          format
+        )
+        : renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName })));
+    } catch (error) {
+      setPreviewWarning(`Pharmacy Memo preview failed; showing the existing Classic receipt instead. ${error instanceof Error ? error.message : ''}`);
+      setReceiptHtml(withReceiptTheme(renderReceipt('classic', format, { ...SAMPLE_RECEIPT, storeName: companyName })));
+    }
+  }, [companyName, memoSettings, template, format]);
 
   return (
     <div
@@ -208,7 +231,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
               <h3 className="font-bold text-text">Template Specs</h3>
               <div className="flex justify-between gap-2 text-muted">
                 <span>Option</span>
-                <strong className="capitalize text-text">{template}</strong>
+                <strong className="capitalize text-text">{template === 'pharmacy-memo' ? 'Pharmacy Memo' : template}</strong>
               </div>
               <div className="flex justify-between gap-2 text-muted">
                 <span>Paper width</span>
@@ -250,13 +273,14 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
           </div>
 
           <div className="relative flex min-h-[420px] items-start justify-center overflow-auto bg-surface p-4 sm:p-6 md:min-h-0">
+            {previewWarning && <p role="status" className="absolute left-3 right-3 top-3 z-20 rounded-control border border-warning/40 bg-surface px-3 py-2 text-xs text-text">{previewWarning}</p>}
             {loading && (
               <div className="visual-skeleton absolute inset-0 z-10 flex items-center justify-center bg-surface/80">
                 <span className="animate-pulse text-sm font-semibold text-muted">Preparing receipt preview…</span>
               </div>
             )}
             <iframe
-              key={`${template}-${format}`}
+              key={`${template === 'pharmacy-memo' ? 'Pharmacy Memo' : template}-${format}`}
               title={`${template} ${format} receipt preview`}
               srcDoc={receiptHtml}
               onLoad={() => setLoading(false)}
