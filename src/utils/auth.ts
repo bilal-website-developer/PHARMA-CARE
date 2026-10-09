@@ -1,5 +1,5 @@
 import { UserRole } from '../types/pharmacy';
-import { isModuleKey } from '../permissions';
+import { isPermissionKey } from '../permissions';
 import { supabase } from './supabase';
 
 export interface AuthSession {
@@ -37,6 +37,6 @@ export async function loadAuthSession(userId: string, authEmail?: string): Promi
     displayName: data.username || data.email || authEmail || 'User',
     email: data.email || authEmail || '',
     role: data.role as UserRole,
-    permissions: Array.isArray(data.permissions) ? data.permissions.filter(isModuleKey) : [],
+    permissions: Array.isArray(data.permissions) ? data.permissions.filter(isPermissionKey) : [],
   };
 }

@@ -17,10 +17,8 @@ import {
   PharmacyMemoSettings,
   ReceiptFormat,
   buildPaymentMemoData,
-  printReceipt,
-  renderPharmacyMemo,
-  renderReceipt,
 } from '../utils/receipt';
+import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
 
 interface CustomerLedgerScreenProps {
   customers: Customer[];
@@ -35,6 +33,7 @@ interface CustomerLedgerScreenProps {
   memoFormat: ReceiptFormat;
   currentUserName: string;
   currentRole: UserRole;
+  onPrintReceipt: PrintReceiptHandler;
 }
 
 export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
@@ -46,6 +45,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   memoFormat,
   currentUserName,
   currentRole,
+  onPrintReceipt,
 }) => {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(customers[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,12 +71,12 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
       (c.cnic && c.cnic.includes(searchQuery))
   );
 
-  const handlePaymentSubmit = (e: React.FormEvent) => {
+  const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId || paymentAmountPKR <= 0) return;
     const payment = onRecordPayment(selectedCustomerId, paymentAmountPKR * 100, paymentNote);
     try {
-      printReceipt(renderPharmacyMemo(buildPaymentMemoData({
+      const snapshot = buildPrintSnapshot(buildPaymentMemoData({
         referenceNo: payment.referenceNo,
         dateTime: payment.dateTime,
         customerName: selectedCustomer?.name ?? '',
@@ -85,34 +85,11 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
         cashier: currentUserName,
         role: currentRole,
         terminal: memoSettings.terminalName,
-      }), memoSettings, memoFormat));
+      }), memoSettings, memoFormat);
+      await onPrintReceipt('payment', snapshot);
       setPaymentPrintNotice('');
     } catch (error) {
-      try {
-        printReceipt(renderReceipt('classic', memoFormat, {
-          storeName: memoSettings.storeName,
-          address: memoSettings.address,
-          phone: memoSettings.phone,
-          invoiceNo: payment.referenceNo || '',
-          dateTime: payment.dateTime,
-          cashierName: currentUserName,
-          customerName: selectedCustomer?.name ?? '',
-          paymentMode: 'PAYMENT',
-          status: 'PAID',
-          items: [],
-          subtotal: Math.round(paymentAmountPKR * 100),
-          discount: 0,
-          total: Math.round(paymentAmountPKR * 100),
-          paid: Math.round(paymentAmountPKR * 100),
-          change: 0,
-          balanceDue: payment.balanceAfterPaisa,
-          footerEnglish: 'Payment received.',
-          footerUrdu: '',
-        }));
-        setPaymentPrintNotice(`Payment was recorded. Pharmacy Memo failed; the existing Classic receipt was printed instead. ${error instanceof Error ? error.message : ''}`);
-      } catch (fallbackError) {
-        setPaymentPrintNotice(`Payment was recorded, but its memo could not be printed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
-      }
+      setPaymentPrintNotice(`Payment was recorded, but its receipt action failed. ${error instanceof Error ? error.message : 'The print document could not be opened.'}`);
     }
     setShowPaymentModal(false);
     setPaymentAmountPKR(0);

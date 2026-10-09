@@ -22,7 +22,7 @@
 
 ### Blockers and checks
 
-- This repository currently contains a Vite/React frontend only. There is no API source, auth middleware, database/schema, migration or seed system, or API test suite. The rate-limited login endpoint, isolated demo database/records, password generation, audit trail, and server-side cost/profit/admin authorization cannot be added or verified here without introducing an unrelated backend and inventing the app's authentication and data model.
+- The app uses Supabase Auth, Postgres, migrations, and Edge Functions, but has no custom Node/Express API or API test harness. The rate-limited demo-login endpoint and isolated demo data model are not present. Server-side authorization must use the existing Supabase objects rather than introducing another backend.
 - `npm run build`, `npm run lint`, and `npm run test:fefo` pass (8 FEFO tests). Browser smoke checks logged all five roles into the app without calling the missing demo-login endpoint; Cashier opened POS, could not see product/user admin links, and saw profit redacted in Sales History. Admin sees Manage Users. The login layout was checked at 1366x768 and 1920x1080, with demo-off retaining only the manual form.
 - The Vite build reports an existing `__dirname` config-loader warning; it is unrelated and unchanged.
 
@@ -35,7 +35,7 @@
 | B0 | Partly | Inspected the Vite frontend; the checkout is `main`, not `redesign`, and reference screenshots are unavailable. |
 | B1 | Partly | Billing-template cards are implemented; preferences are browser-local, not backed by Admin-only API settings. |
 | B2 | Done (frontend) | Responsive preview modal supports 58mm, 80mm, and A4 and applies or cancels local preferences. |
-| B3 | Done (frontend) | Shared renderer, POS printing, and rendering/security tests are implemented. Sales-history and ledger reprint paths are not present in this frontend. |
+| B3 | Done (frontend) | Shared renderer, POS printing, and rendering/security tests are implemented. Sales History reprints are not present; Customer Ledger payment slips use the shared print workflow. |
 | B4 | Blocked | No report API or persisted report data is available. |
 | B5 | Partly | Header, role-filtered sidebar and user footer were updated; collapse control and all reference details remain. |
 | B6 | Partly | Existing dashboard/POS remain; a full spec audit and requested extras were not completed. |
@@ -56,10 +56,10 @@
 
 ### Assumptions
 
-- The attached billing/UI specification targets a different monorepo and `redesign` branch. The available checkout is the Vite-only frontend on `main`; no screenshots under `docs/reference/`, API, PostgreSQL, Settings persistence API, or role permission service are present.
+- The attached billing/UI specification targets a different monorepo and `redesign` branch. The available checkout is the Vite/React app on `pharmacy-memo`; no screenshots under `docs/reference/` or shared shop-settings service are present. Supabase Auth, Postgres, migrations, and the `manage-users` Edge Function are available.
 - Browser-local storage is used for the billing template and paper format as a frontend-only stand-in. It is not a server-enforced/admin-only preference.
 - The template picker/apply action is hidden from editing for non-Admin roles in the UI; this is not a substitute for server-side authorization.
-- Receipt header values use the product name and sample medicine items; real store profile persistence cannot be connected without the missing settings backend.
+- Receipt header values can use locally saved shop settings; those settings are per-browser and are not shared between counters.
 
 ### Completed in this frontend
 
@@ -70,14 +70,15 @@
 
 ### Blocked / remaining
 
-- Server-enforced billing settings, API tests and data permissions, print-sales-report endpoint/data, database migrations/backup, and persistent real store details are blocked by the absent API/database monorepo. Do not enable these features for production until server-side enforcement is implemented.
-- Print Sales Report UI/data, full collapsible sidebar, dashboard/POS reference matching, comprehensive role/colour audit, broader sales-history/ledger reprint integration, and API tests remain incomplete.
+- Shared/server-enforced billing settings, API/RPC tests, print-sales-report endpoint/data, backup, and persistent real store details remain incomplete. Print-request approval now uses Supabase RLS/RPC, but browser printing itself cannot be technically locked.
+- Print Sales Report UI/data, full collapsible sidebar, dashboard/POS reference matching, comprehensive role/colour audit, Sales History reprints, and API tests remain incomplete.
 - Validation: `npm run build`, `npm run lint`, `npm run test:receipt` (13 tests), and `npm run test:fefo` (8 tests) pass. Receipt preview was checked with medicine names, batch/expiry, total and no cost/profit fields. API tests cannot run in this repository.
 - Branch differs from the referenced prompt: work was found on `main`; it was not moved to a new `redesign` branch.
 
 ## Later
 
 - Shared settings across multiple counters: Pharmacy Memo settings currently use browser-local storage and are not shared between terminals.
-- Return slips and Sales History reprints: the frontend has no return-memo or receipt-reprint flows to connect yet.
-- API/server work: server-built receipt data, server-side settings permissions, and API tests require the missing backend.
+- Return slips and Sales History reprints: the renderer supports RETURN memos and admins can reprint approved requests, but there is no end-to-end return workflow or Sales History reprint path to connect yet.
+- Later server work: server-built receipt data and shared/server-enforced settings require persisted receipt and settings models; add API/RPC integration tests when a Supabase test environment is available.
 - ESC/POS: direct printer-driver support is not part of this frontend implementation.
+- Link print requests to persisted sales once POS sales are stored in the database; current request snapshots are intentionally self-contained.

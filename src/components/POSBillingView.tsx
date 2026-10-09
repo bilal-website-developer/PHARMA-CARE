@@ -43,22 +43,25 @@ import {
   PharmacyMemoSettings,
   ReceiptFormat,
   buildMemoData,
-  printReceipt,
-  receiptDataFromSale,
-  renderPharmacyMemo,
-  renderReceipt,
 } from '../utils/receipt';
+import {
+  buildPrintSnapshot,
+  canPrintReceipt,
+  PrintReceiptHandler,
+} from '../utils/printWorkflow';
 import { APP_NAME } from '../constants/brand';
 
 interface POSBillingViewProps {
   products: Product[];
   customers: Customer[];
   currentRole: UserRole;
+  permissions: readonly string[];
   currentUserName: string;
   companyName: string;
   billingTemplate: BillingTemplate;
   receiptFormat: ReceiptFormat;
   memoSettings: PharmacyMemoSettings;
+  onPrintReceipt: PrintReceiptHandler;
   onSaleComplete: (sale: CompletedSale) => void;
   onOpenTemplatePreview: () => void;
 }
@@ -67,11 +70,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   products,
   customers,
   currentRole,
+  permissions,
   currentUserName,
   companyName,
   billingTemplate,
   receiptFormat,
   memoSettings,
+  onPrintReceipt,
   onSaleComplete,
   onOpenTemplatePreview,
 }) => {
@@ -203,42 +208,21 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     return matchSearch && matchCat && matchBrand;
   });
 
-  const printSaleReceipt = (sale: CompletedSale) => {
+  const printSaleReceipt = async (sale: CompletedSale, autoPrint = false) => {
     try {
-      const html = billingTemplate === 'pharmacy-memo'
-        ? renderPharmacyMemo(buildMemoData(sale, {
+      const snapshot = buildPrintSnapshot(buildMemoData(sale, {
           role: currentRole,
           terminal: memoSettings.terminalName,
-        }), memoSettings, receiptFormat)
-        : renderReceipt(
-          billingTemplate,
-          receiptFormat,
-          receiptDataFromSale(sale, {
-            storeName: memoSettings.storeName || companyName,
-            address: memoSettings.address,
-            phone: memoSettings.phone,
-          })
-        );
-      printReceipt(html);
+        }), {
+          ...memoSettings,
+          storeName: memoSettings.storeName || companyName,
+        }, receiptFormat, billingTemplate);
+      const result = await onPrintReceipt('sale', snapshot, { autoPrint });
       setPrintNotice('');
-      return true;
+      return result === 'printed' || result === 'requested';
     } catch (error) {
-      try {
-        printReceipt(renderReceipt(
-          'classic',
-          receiptFormat,
-          receiptDataFromSale(sale, {
-            storeName: memoSettings.storeName || companyName,
-            address: memoSettings.address,
-            phone: memoSettings.phone,
-          })
-        ));
-        setPrintNotice(`Pharmacy Memo could not be rendered; the existing Classic receipt was used instead. ${error instanceof Error ? error.message : ''}`);
-        return true;
-      } catch (fallbackError) {
-        setPrintNotice(`Receipt printing failed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
-        return false;
-      }
+      setPrintNotice(`Receipt printing failed. ${error instanceof Error ? error.message : 'The print document could not be opened.'}`);
+      return false;
     }
   };
 
@@ -308,7 +292,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     onSaleComplete(sale);
     setShowCheckoutModal(false);
     setSaleCompleteModal(sale);
-    if (memoSettings.autoPrint) window.setTimeout(() => { printSaleReceipt(sale); }, 0);
+    if (memoSettings.autoPrint) {
+      if (canPrintReceipt(currentRole, permissions, 'sale')) {
+        window.setTimeout(() => { void printSaleReceipt(sale, true); }, 0);
+      } else {
+        setPrintNotice('Auto-print is disabled for this account. Use Request print to ask an admin.');
+      }
+    }
     setCart([]);
     setDiscountPercent(0);
     setTenderedAmountPKR(0);
@@ -900,11 +890,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  if (printSaleReceipt(saleCompleteModal)) setSaleCompleteModal(null);
+                  void printSaleReceipt(saleCompleteModal).then((completed) => {
+                    if (completed) setSaleCompleteModal(null);
+                  });
                 }}
                 className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition"
               >
-                <Printer className="w-4 h-4" /> Print Receipt
+                <Printer className="w-4 h-4" /> {canPrintReceipt(currentRole, permissions, 'sale') ? 'Print Receipt' : 'Request print'}
               </button>
               <button
                 onClick={() => setSaleCompleteModal(null)}

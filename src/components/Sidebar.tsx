@@ -1,7 +1,7 @@
 import React from 'react';
 import {
-  BarChart3, ChevronLeft, ChevronRight, FileText, HelpCircle, History,
-  Layers, LayoutDashboard, MessageSquare, Package, Receipt, Settings,
+  BarChart3, BellRing, ChevronLeft, ChevronRight, FileText, HelpCircle, History,
+  Layers, LayoutDashboard, MessageSquare, Package, Printer, Receipt, Settings,
   ShoppingBag, ShoppingCart, Trash2, Truck, UserCheck, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -13,13 +13,14 @@ export type NavItemKey =
   | 'dashboard' | 'pos' | 'products' | 'master-data' | 'stock-inventory'
   | 'customers' | 'customer-ledger' | 'whatsapp-reminders' | 'sales-history'
   | 'suppliers' | 'purchases' | 'purchase-history' | 'expenses' | 'reports'
-  | 'manage-users' | 'settings' | 'trash-bin' | 'help-support';
+  | 'manage-users' | 'my-print-requests' | 'print-requests' | 'settings' | 'trash-bin' | 'help-support';
 
 interface SidebarProps {
   activeItem: NavItemKey;
   onSelectItem: (key: NavItemKey) => void;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  pendingPrintCount: number;
 }
 
 interface NavEntry {
@@ -44,6 +45,7 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
     { key: 'customer-ledger', label: 'Customer Ledger', icon: FileText, module: 'customers' },
     { key: 'whatsapp-reminders', label: 'WhatsApp Reminders', icon: MessageSquare, module: 'customers' },
     { key: 'sales-history', label: 'Sales History', icon: History, module: 'sales_history' },
+    { key: 'my-print-requests', label: 'My print requests', icon: BellRing },
   ] },
   { title: 'Procurement', items: [
     { key: 'suppliers', label: 'Suppliers', icon: Truck, module: 'suppliers' },
@@ -54,6 +56,7 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
     { key: 'expenses', label: 'Expenses', icon: Wallet, module: 'expenses' },
     { key: 'reports', label: 'Business Analytics', icon: BarChart3, module: 'reports' },
     { key: 'manage-users', label: 'Manage Users', icon: UserCheck, module: 'manage_users' },
+    { key: 'print-requests', label: 'Print Requests', icon: Printer, admin: true },
   ] },
   { title: 'Settings & System', items: [
     { key: 'settings', label: 'Settings', icon: Settings, admin: true },
@@ -63,7 +66,7 @@ const GROUPS: Array<{ title: string; items: NavEntry[] }> = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  activeItem, onSelectItem, isCollapsed, onToggleCollapsed,
+  activeItem, onSelectItem, isCollapsed, onToggleCollapsed, pendingPrintCount,
 }) => {
   const { isAdmin, can } = usePermissions();
 
@@ -111,6 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{label}</span>
+                  {key === 'print-requests' && pendingPrintCount > 0 && (
+                    <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-black text-white">
+                      {pendingPrintCount > 99 ? '99+' : pendingPrintCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

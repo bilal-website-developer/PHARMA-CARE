@@ -99,6 +99,10 @@ export function isModuleKey(value: unknown): value is ModuleKey {
   return typeof value === 'string' && MODULES.some(({ key }) => key === value);
 }
 
+export function isPermissionKey(value: unknown): value is PermissionKey {
+  return isModuleKey(value) || POS_PRINT_PERMISSION_KEYS.some((key) => key === value);
+}
+
 export function permissionsForRole(role: UserRole, permissions: readonly string[]) {
   return isAdminRole(role) ? ROLE_DEFAULT_PERMISSIONS[role] : permissions;
 }
@@ -113,6 +117,8 @@ export function canAccessModule(role: UserRole, permissions: readonly string[], 
 
 export function canAccessPage(role: UserRole, permissions: readonly string[], pageKey: string) {
   if (pageKey === 'dashboard' || pageKey === 'help-support') return true;
+  if (pageKey === 'my-print-requests') return true;
+  if (pageKey === 'print-requests') return isAdminRole(role);
   if (pageKey === 'settings' || pageKey === 'trash-bin') return isAdminRole(role);
   if (pageKey === 'manage-users') return canAccessModule(role, permissions, 'manage_users');
   const moduleKey = PAGE_MODULE[pageKey];

@@ -20,6 +20,8 @@ export interface PharmacyMemoSettings {
   numberDigits: number;
 }
 
+export type PharmacyMemoRenderSettings = Omit<PharmacyMemoSettings, 'autoPrint'>;
+
 export interface MemoData {
   kind: MemoKind;
   memoNo: string;
@@ -37,6 +39,8 @@ export interface MemoData {
   roundingPaisa?: number;
   salesTaxPaisa?: number;
   paidPaisa?: number;
+  changePaisa?: number;
+  paymentMode?: string;
   isCredit?: boolean;
   isDuplicate?: boolean;
   cashier: string;
@@ -174,6 +178,7 @@ export interface ReceiptData {
   customerPhone?: string;
   paymentMode: string;
   status: 'PAID' | 'CREDIT' | 'PARTIAL';
+  isDuplicate?: boolean;
   items: Array<{
     name: string;
     company?: string;
@@ -212,6 +217,8 @@ export function buildMemoData(
     })),
     discountPaisa: sale.discountPaisa,
     paidPaisa: sale.paymentMethod === PaymentMethod.CREDIT ? 0 : sale.amountTenderedPaisa,
+    changePaisa: sale.changePaisa,
+    paymentMode: sale.paymentMethod,
     roundingPaisa: sale.roundingPaisa,
     isCredit: sale.paymentMethod === PaymentMethod.CREDIT
       || sale.amountTenderedPaisa < sale.totalPaisa,
@@ -243,6 +250,7 @@ export function buildPaymentMemoData(payment: {
     terminal: payment.terminal ?? DEFAULT_PHARMACY_MEMO_SETTINGS.terminalName,
     amountReceivedPaisa: payment.amountReceivedPaisa,
     balanceAfterPaisa: payment.balanceAfterPaisa,
+    paymentMode: 'PAYMENT',
   };
 }
 
@@ -336,12 +344,13 @@ export function renderReceipt(
   data: ReceiptData
 ): string {
   const article = format === 'a4' ? a4Markup(template, data) : thermalMarkup(template, data);
+  const duplicate = data.isDuplicate ? '<div class="duplicate-label">DUPLICATE</div>' : '';
   const width = format === 'thermal58' ? '58mm' : format === 'thermal80' ? '80mm' : '210mm';
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invoice ${escapeHtml(data.invoiceNo)}</title><style>
     *{box-sizing:border-box}body{margin:0;color:var(--text);font:12px Arial,sans-serif}.thermal{width:${width};padding:4mm;margin:0 auto}.center{text-align:center}.thermal h1{font-size:16px;margin:0 0 3px}.thermal h2{font-size:12px;margin:7px 0}.thermal .meta{margin:7px 0}.thermal .item{padding:5px 0;border-bottom:1px dashed var(--border)}.muted,small,em{color:var(--muted)}.muted{font-size:10px}.row{display:flex;justify-content:space-between;gap:8px;margin:3px 0}.totals{margin-top:7px;border-top:1px solid var(--text);padding-top:4px}.discount{color:var(--primary)}.total{border-top:1px solid var(--text);padding-top:5px;font-size:14px}.status{font-weight:bold;color:var(--primary);text-align:right}.pill{width:max-content;margin:5px auto;padding:3px 8px;border-radius:999px;background:var(--surface);color:var(--primary)}hr{border:0;border-top:1px solid var(--text);margin:7px 0}.dashed{border-top-style:dashed}.double-rule{height:5px;border-top:3px double var(--text);border-bottom:1px solid var(--text);margin:4px 0}.invoice-box{border:1px solid var(--border);padding:5px;text-align:center;margin:5px}.urdu{text-align:center;font-family:serif;font-size:14px;margin:5px 0}footer{text-align:center;border-top:1px solid var(--border);padding-top:7px;margin-top:8px;font-size:10px}.brand-logo{width:22mm;height:22mm;object-fit:contain}.thermal .brand-logo{width:12mm;height:12mm}.brand-heading{display:flex;align-items:center;gap:10px}
-    .a4{width:210mm;min-height:297mm;margin:0 auto;padding:14mm;font-size:12px}.a4 header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:4px 0 16px}.a4 h1{font-size:24px;margin:0 0 5px}.a4 .invoice{text-align:right}.a4 .invoice h2{font-size:20px;margin:5px 0}.a4 .band{margin:-14mm -14mm 14px;padding:14mm;background:var(--text);color:var(--white)}.info{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin:15px 0}.info div{display:flex;flex-direction:column;gap:4px}.info small{font-weight:bold}.a4 table{width:100%;border-collapse:collapse;margin:18px 0}.a4 th{text-align:left;padding:9px;background:var(--text);color:var(--white)}.a4 td{padding:9px;border-bottom:1px solid var(--border);vertical-align:top}.a4 tbody tr:nth-child(even){background:var(--surface)}.a4 td:first-child,.a4 td:nth-child(3){text-align:center}.a4 td:nth-child(n+4),.a4 th:nth-child(n+4){text-align:right}.a4 td small,.a4 td em{display:block;margin-top:3px;font-size:10px}.summary-wrap{display:flex;justify-content:flex-end;gap:16px;align-items:center}.summary{width:280px;padding:12px;border:1px solid var(--border);border-radius:8px}.summary h3{font-size:11px;margin:0 0 8px}.summary .total{background:var(--text);color:var(--white);padding:9px;margin:8px -12px -12px}.stamp{border:2px solid currentColor;border-radius:6px;padding:6px 10px;font-weight:bold;transform:rotate(-8deg)}.paid{color:var(--primary)}.credit{color:var(--warning)}.a4 footer{display:flex;justify-content:space-between;text-align:left;margin-top:35px;padding:12px;background:var(--surface)}.a4 footer .urdu{text-align:left}.signature{width:180px;border-top:1px solid var(--muted);text-align:center;padding-top:5px;margin-top:25px}.simple header{border-bottom:2px solid var(--text)}.classic .band{background:var(--text)}.professional .band{background:linear-gradient(100deg,var(--text),var(--primary))}.modern{border-top:5px solid var(--primary);border-radius:12px}.modern .band{background:var(--white)}.modern-card{border:1px solid var(--border);box-shadow:0 4px 12px color-mix(in srgb,var(--text) 12%,transparent)}
+    .duplicate-label{text-align:center;font-weight:800;margin:0 auto 4mm}.a4{width:210mm;min-height:297mm;margin:0 auto;padding:14mm;font-size:12px}.a4 header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:4px 0 16px}.a4 h1{font-size:24px;margin:0 0 5px}.a4 .invoice{text-align:right}.a4 .invoice h2{font-size:20px;margin:5px 0}.a4 .band{margin:-14mm -14mm 14px;padding:14mm;background:var(--text);color:var(--white)}.info{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin:15px 0}.info div{display:flex;flex-direction:column;gap:4px}.info small{font-weight:bold}.a4 table{width:100%;border-collapse:collapse;margin:18px 0}.a4 th{text-align:left;padding:9px;background:var(--text);color:var(--white)}.a4 td{padding:9px;border-bottom:1px solid var(--border);vertical-align:top}.a4 tbody tr:nth-child(even){background:var(--surface)}.a4 td:first-child,.a4 td:nth-child(3){text-align:center}.a4 td:nth-child(n+4),.a4 th:nth-child(n+4){text-align:right}.a4 td small,.a4 td em{display:block;margin-top:3px;font-size:10px}.summary-wrap{display:flex;justify-content:flex-end;gap:16px;align-items:center}.summary{width:280px;padding:12px;border:1px solid var(--border);border-radius:8px}.summary h3{font-size:11px;margin:0 0 8px}.summary .total{background:var(--text);color:var(--white);padding:9px;margin:8px -12px -12px}.stamp{border:2px solid currentColor;border-radius:6px;padding:6px 10px;font-weight:bold;transform:rotate(-8deg)}.paid{color:var(--primary)}.credit{color:var(--warning)}.a4 footer{display:flex;justify-content:space-between;text-align:left;margin-top:35px;padding:12px;background:var(--surface)}.a4 footer .urdu{text-align:left}.signature{width:180px;border-top:1px solid var(--muted);text-align:center;padding-top:5px;margin-top:25px}.simple header{border-bottom:2px solid var(--text)}.classic .band{background:var(--text)}.professional .band{background:linear-gradient(100deg,var(--text),var(--primary))}.modern{border-top:5px solid var(--primary);border-radius:12px}.modern .band{background:var(--white)}.modern-card{border:1px solid var(--border);box-shadow:0 4px 12px color-mix(in srgb,var(--text) 12%,transparent)}
     @page{size:${format === 'a4' ? 'A4' : `${width} auto`};margin:0}@media print{body{width:100%}.thermal{margin:0}.a4{margin:0;box-shadow:none}}
-  </style></head><body>${article}</body></html>`;
+  </style></head><body>${duplicate}${article}</body></html>`;
 }
 
 function memoDateTime(value: string) {
@@ -374,7 +383,7 @@ function memoMoney(paisa: number, negative = false) {
 
 export function renderPharmacyMemo(
   data: MemoData,
-  settings: PharmacyMemoSettings,
+  settings: PharmacyMemoRenderSettings,
   format: ReceiptFormat
 ): string {
   if (!['thermal58', 'thermal80', 'a4'].includes(format)) throw new Error('Unsupported memo paper format.');
@@ -450,30 +459,45 @@ export function withReceiptTheme(html: string): string {
   return html.replace('</head>', `<style>:root{${variables}}</style></head>`);
 }
 
-export function printReceipt(html: string): void {
-  const frame = document.createElement('iframe');
-  frame.title = 'Print receipt';
-  frame.style.position = 'fixed';
-  frame.style.width = '0';
-  frame.style.height = '0';
-  frame.style.border = '0';
-  frame.style.right = '0';
-  frame.style.bottom = '0';
-  frame.onload = () => {
-    if (!frame.contentWindow) {
+export function printHtmlDocument(html: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    frame.title = 'Print receipt';
+    frame.style.position = 'fixed';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    let finished = false;
+    const fail = (error: Error) => {
+      if (finished) return;
+      finished = true;
       frame.remove();
-      throw new Error('Print frame is unavailable.');
+      reject(error);
+    };
+    frame.onload = () => {
+      try {
+        if (!frame.contentWindow) throw new Error('Print frame is unavailable.');
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+        window.setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          frame.remove();
+          resolve();
+        }, 1000);
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error('The print dialog could not be opened.'));
+      }
+    };
+    document.body.appendChild(frame);
+    if (!frame.contentDocument) {
+      fail(new Error('Print document is unavailable.'));
+      return;
     }
-    frame.contentWindow.focus();
-    frame.contentWindow.print();
-    window.setTimeout(() => frame.remove(), 1000);
-  };
-  document.body.appendChild(frame);
-  if (!frame.contentDocument) {
-    frame.remove();
-    throw new Error('Print document is unavailable.');
-  }
-  frame.contentDocument.open();
-  frame.contentDocument.write(withReceiptTheme(html));
-  frame.contentDocument.close();
+    frame.contentDocument.open();
+    frame.contentDocument.write(withReceiptTheme(html));
+    frame.contentDocument.close();
+  });
 }

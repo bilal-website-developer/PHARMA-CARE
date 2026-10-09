@@ -244,13 +244,13 @@ export const RepositoryReviewView: React.FC = () => {
               <span className="px-2 py-0.5 text-xs font-bold rounded bg-amber-100 text-amber-800">Issue 2</span>
               <span className="text-xs text-emerald-600 font-mono">apps/web/src/pages/pos/POSPage.tsx</span>
             </div>
-            <h4 className="font-bold text-emerald-950 text-sm">Thermal receipt printing uses window.open() which is blocked in browsers/iframes</h4>
+            <h4 className="font-bold text-emerald-950 text-sm">Receipt printing uses the shared approval workflow</h4>
             <p className="text-xs text-emerald-800">
-              <code>printReceipt()</code> calls <code>window.open('', '_blank')</code>. Modern browsers and security sandboxes block popup windows by default, causing silent print failures for cashiers.
+              Sale and payment slips now go through <code>printReceipt(kind, snapshot)</code>, which opens a hidden print frame for permitted users or creates an audited Supabase request. A browser cannot technically prevent a user from printing outside this workflow.
             </p>
             <div className="bg-slate-900 text-slate-100 p-3 rounded-lg text-xs font-mono">
-              <p className="text-emerald-400 font-bold mb-1">// Fix: In-app Printable Modal or hidden iframe print</p>
-              <code>{`// Render an in-app receipt modal with window.print() or hidden iframe:\n<ReceiptModal sale={currentSale} onClose={() => setShowReceipt(false)} />`}</code>
+              <p className="text-emerald-400 font-bold mb-1">// Sale and payment receipts use the same path</p>
+              <code>{`await printReceipt('sale', snapshot, access);`}</code>
             </div>
           </div>
 

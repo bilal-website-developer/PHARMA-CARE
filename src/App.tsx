@@ -56,6 +56,9 @@ import PharmaLogo from './components/PharmaLogo';
 import { HelpSupportView } from './components/HelpSupportView';
 import { StockPurchaseView } from './components/StockPurchaseView';
 import { PurchaseHistoryView } from './components/PurchaseHistoryView';
+import { MyPrintRequestsView } from './components/MyPrintRequestsView';
+import { PrintRequestsAdminView } from './components/PrintRequestsAdminView';
+import { printReceipt, PrintReceiptHandler } from './utils/printWorkflow';
 
 const NAV_PATHS: Record<NavItemKey, string> = {
   dashboard: '/',
@@ -73,6 +76,8 @@ const NAV_PATHS: Record<NavItemKey, string> = {
   expenses: '/expenses',
   reports: '/reports',
   'manage-users': '/users',
+  'my-print-requests': '/my-print-requests',
+  'print-requests': '/print-requests',
   settings: '/settings',
   'trash-bin': '/trash-bin',
   'help-support': '/help',
@@ -273,9 +278,60 @@ function PharmacyWorkspace({
   );
   const [accessMessage, setAccessMessage] = useState('');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [printNotice, setPrintNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const [pendingPrintCount, setPendingPrintCount] = useState(0);
 
   const currentRole = session.role;
   const currentUserName = session.displayName;
+  const handlePrintReceipt: PrintReceiptHandler = React.useCallback(
+    (type, payload, options) => printReceipt(type, payload, {
+      role: currentRole,
+      permissions: session.permissions,
+      onNotice: (text, error = false) => setPrintNotice({ text, error }),
+    }, options),
+    [currentRole, session.permissions],
+  );
+
+  React.useEffect(() => {
+    if (!isAdminRole(currentRole)) {
+      setPendingPrintCount(0);
+      return;
+    }
+    let disposed = false;
+    let failureReported = false;
+    const refreshCount = async () => {
+      if (!supabase) {
+        if (!failureReported && !disposed) {
+          setPrintNotice({ text: 'Supabase is not configured; print request counts are unavailable.', error: true });
+          failureReported = true;
+        }
+        return;
+      }
+      const { data, error } = await supabase.rpc('pending_print_count');
+      if (disposed) return;
+      if (error) {
+        if (!failureReported) setPrintNotice({ text: `Could not refresh pending print requests: ${error.message}`, error: true });
+        failureReported = true;
+      } else if (typeof data === 'number' && Number.isFinite(data)) {
+        failureReported = false;
+        setPendingPrintCount(data);
+      } else {
+        setPrintNotice({ text: 'The server returned an invalid pending print count.', error: true });
+      }
+    };
+    void refreshCount();
+    const interval = window.setInterval(() => { void refreshCount(); }, 20_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [currentRole]);
+
+  React.useEffect(() => {
+    if (!printNotice) return;
+    const timeout = window.setTimeout(() => setPrintNotice(null), printNotice.error ? 9000 : 4500);
+    return () => window.clearTimeout(timeout);
+  }, [printNotice]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(`pharma-care.sidebarCollapsed.${session.displayName}`) === 'true';
@@ -638,6 +694,10 @@ function PharmacyWorkspace({
         return 'BUSINESS ANALYTICS';
       case 'manage-users':
         return 'MANAGE USERS';
+      case 'my-print-requests':
+        return 'MY PRINT REQUESTS';
+      case 'print-requests':
+        return 'PRINT REQUESTS';
       case 'settings':
         return 'SETTINGS';
       case 'trash-bin':
@@ -657,11 +717,13 @@ function PharmacyWorkspace({
         onSelectItem={navigateTo}
         isCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        pendingPrintCount={pendingPrintCount}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {memoMigrationToast && <div role="status" className="fixed right-4 top-4 z-[60] rounded-control border border-primary/30 bg-surface px-4 py-3 text-sm font-semibold text-text shadow-lg">Pharmacy Memo is now your default receipt template. You can change it in Settings.</div>}
+        {printNotice && <div role={printNotice.error ? 'alert' : 'status'} className={`visual-toast fixed bottom-4 right-4 z-[60] max-w-md rounded-control border px-4 py-3 text-sm shadow-lg ${printNotice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-primary/30 bg-white text-text'}`}>{printNotice.text}</div>}
         {authMessage && <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{authMessage}</p>}
         {/* Top Header Strip */}
         <TopNav
@@ -708,11 +770,13 @@ function PharmacyWorkspace({
               products={products}
               customers={customers}
               currentRole={currentRole}
+              permissions={session.permissions}
               currentUserName={currentUserName}
               companyName={companyName}
               billingTemplate={billingPreferences.template}
               receiptFormat={billingPreferences.format}
               memoSettings={memoSettings}
+              onPrintReceipt={handlePrintReceipt}
               onSaleComplete={handleSaleComplete}
               onOpenTemplatePreview={() => openTemplatePreview(billingPreferences.template)}
             />
@@ -745,6 +809,7 @@ function PharmacyWorkspace({
               memoFormat={billingPreferences.format}
               currentUserName={currentUserName}
               currentRole={currentRole}
+              onPrintReceipt={handlePrintReceipt}
               onAddCustomer={(c) => {
                 setCustomers((prev) => [...prev, c]);
                 setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
@@ -761,6 +826,7 @@ function PharmacyWorkspace({
               memoFormat={billingPreferences.format}
               currentUserName={currentUserName}
               currentRole={currentRole}
+              onPrintReceipt={handlePrintReceipt}
               onAddCustomer={(c) => {
                 setCustomers((prev) => [...prev, c]);
                 setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
@@ -803,6 +869,7 @@ function PharmacyWorkspace({
               memoSettings={memoSettings}
               onMemoSettingsChange={updateMemoSettings}
               memoFormat={billingPreferences.format}
+              onPrintReceipt={handlePrintReceipt}
               onMemoFormatChange={(format) => updateBillingPreferences({ ...billingPreferences, format })}
             />
           )}
@@ -818,6 +885,8 @@ function PharmacyWorkspace({
           {activeItem === 'trash-bin' && <DeletedUsersView currentRole={currentRole} />}
 
           {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} onChangePassword={() => setShowPasswordDialog(true)} />}
+          {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}
+          {activeItem === 'print-requests' && <PrintRequestsAdminView onPrintReceipt={handlePrintReceipt} />}
           </>
           )}
         </main>

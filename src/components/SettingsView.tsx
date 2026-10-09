@@ -19,11 +19,11 @@ import {
   PHARMACY_MEMO_TEST_FIXTURE,
   PharmacyMemoSettings,
   ReceiptFormat,
-  printReceipt,
   renderPharmacyMemo,
   renderReceipt,
   withReceiptTheme,
 } from '../utils/receipt';
+import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
 import { CompletedSale, UserRole } from '../types/pharmacy';
 import { PrintSalesReport } from './PrintSalesReport';
 
@@ -76,6 +76,7 @@ interface SettingsViewProps {
   onMemoSettingsChange: (settings: PharmacyMemoSettings) => boolean;
   memoFormat: ReceiptFormat;
   onMemoFormatChange: (format: ReceiptFormat) => void;
+  onPrintReceipt: PrintReceiptHandler;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -92,6 +93,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onMemoSettingsChange,
   memoFormat,
   onMemoFormatChange,
+  onPrintReceipt,
 }) => {
   const [savedShopProfile] = useState(readSavedShopProfile);
   const [shopName, setShopName] = useState(companyName);
@@ -415,16 +417,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Save className="mr-1 inline h-3.5 w-3.5" /> Save memo settings
           </button>
           <button type="button" onClick={() => {
-            try {
-              printReceipt(renderPharmacyMemo(PHARMACY_MEMO_TEST_FIXTURE, { ...memoSettings, storeName: memoSettings.storeName || shopName }, memoFormat));
-            } catch (error) {
-              try {
-                printReceipt(memoPreview.html);
-                window.alert(`Pharmacy Memo test slip failed; the existing Classic receipt was used instead. ${error instanceof Error ? error.message : ''}`);
-              } catch (fallbackError) {
-                window.alert(`Test slip printing failed. ${fallbackError instanceof Error ? fallbackError.message : 'The print document could not be opened.'}`);
-              }
-            }
+            void onPrintReceipt('sale', buildPrintSnapshot(
+              PHARMACY_MEMO_TEST_FIXTURE,
+              { ...memoSettings, storeName: memoSettings.storeName || shopName },
+              memoFormat,
+              'pharmacy-memo',
+            )).catch((error: unknown) => {
+              window.alert(`Test slip printing failed. ${error instanceof Error ? error.message : 'The print document could not be opened.'}`);
+            });
           }} className="rounded-control border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10">
             <Printer className="mr-1 inline h-3.5 w-3.5" /> Print test slip
           </button>

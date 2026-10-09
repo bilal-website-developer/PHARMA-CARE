@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { CompletedSale } from '../types/pharmacy';
-import { printReceipt } from '../utils/receipt';
+import { printHtmlDocument } from '../utils/receipt';
 import {
   renderSalesReport,
   SalesReportFormat,
@@ -55,7 +55,9 @@ export const PrintSalesReport: React.FC<PrintSalesReportProps> = ({
       format,
     });
     const brandedHtml = withSalesReportBranding(html);
-    printReceipt(brandedHtml);
+    void printHtmlDocument(brandedHtml).catch((error: unknown) => {
+      window.alert(`Sales report printing failed. ${error instanceof Error ? error.message : 'The print document could not be opened.'}`);
+    });
   };
 
   return (
