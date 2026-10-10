@@ -337,7 +337,7 @@ function ProductsCatalog({
   const [savedViews, setSavedViews] = useState<SavedProductView[]>(() => readSavedViews(userId));
   const [selectedSavedView, setSelectedSavedView] = useState('');
   const [savedViewName, setSavedViewName] = useState('');
-  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>(['cost', 'margin']);
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>(['cost']);
   const [bulkCategory, setBulkCategory] = useState('');
   const [confirmBulkDeactivate, setConfirmBulkDeactivate] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ medicine: Medicine; active: boolean } | null>(null);
@@ -913,8 +913,8 @@ function ProductsCatalog({
     },
     {
       id: 'category',
-      header: 'Category / manufacturer',
-      render: (medicine) => <>{medicine.category}<span className="block text-xs text-muted">{medicine.company}</span></>,
+      header: 'Category',
+      render: (medicine) => medicine.category,
     },
     {
       id: 'class',
@@ -922,8 +922,8 @@ function ProductsCatalog({
       render: (medicine) => <StatusChip variant={medicine.drug_class === 'CONTROLLED' || medicine.drug_class === 'NARCOTIC' ? 'warning' : 'neutral'}>{medicine.drug_class}</StatusChip>,
     },
     {
-      id: 'unit-mrp',
-      header: 'Unit / MRP',
+      id: 'mrp',
+      header: 'MRP',
       sortable: true,
       sortDirection: sortColumn === 'mrp' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none',
       onSort: () => {
@@ -933,12 +933,12 @@ function ProductsCatalog({
       },
       render: (medicine) => {
         const unit = medicine.units.find((item) => item.is_default_sale_unit);
-        return unit ? <>{unit.name}<span className="block text-xs text-muted">{money(unit.price_paisa)}</span></> : <span className="text-warning">No unit configured</span>;
+        return unit ? money(unit.price_paisa) : <span className="text-warning">No unit configured</span>;
       },
     },
     {
       id: 'stock',
-      header: 'Current stock',
+      header: 'Stock',
       sortable: true,
       sortDirection: sortColumn === 'stock' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none',
       onSort: () => {
@@ -960,11 +960,6 @@ function ProductsCatalog({
       },
       render: (medicine) => <ExpiryChip expiryDate={medicine.nearest_expiry} quantity={medicine.stock} />,
     },
-    {
-      id: 'status',
-      header: 'Status',
-      render: (medicine) => <StatusChip variant={medicine.is_active ? 'ok' : 'neutral'}>{medicine.is_active ? 'Active' : 'Inactive'}</StatusChip>,
-    },
     ...(canViewCost ? [
       {
         id: 'cost',
@@ -977,7 +972,7 @@ function ProductsCatalog({
       {
         id: 'margin',
         header: 'Margin',
-        initiallyHidden: true,
+        initiallyHidden: false,
         render: (medicine: Medicine) => medicine.margin_percent === null
           ? '—'
           : `${medicine.margin_percent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`,
@@ -986,17 +981,13 @@ function ProductsCatalog({
   ];
 
   return (
-    <div className="space-y-4">
-      <section className={`${PANEL} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between`}>
+    <div className="space-y-3.5">
+      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-black text-text">Products</h2>
-          <p className="text-sm text-muted">Track products, active stock, and nearest batch expiry.</p>
+          <h2 className="text-[26px] font-black leading-tight text-text">Products</h2>
+          <p className="mt-0.5 text-[13px] text-muted">Track products, active stock and nearest batch expiry</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={SECONDARY} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
-          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('csv')}><Download size={16} /> Export all CSV</button>
-          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export all XLSX</button>
-          <button type="button" className={SECONDARY} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
           {canEditProducts && <>
             <input
               ref={importInputRef}
@@ -1009,77 +1000,84 @@ function ProductsCatalog({
                 if (file) void prepareImportPreview(file);
               }}
             />
-            <button type="button" className={SECONDARY} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>
             <button type="button" className={SECONDARY} disabled={importing} onClick={() => importInputRef.current?.click()}><FileUp size={16} /> Import CSV</button>
-            {skippedRows.length > 0 && <button type="button" className={SECONDARY} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
           </>}
+          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('csv')}><Download size={16} /> Export</button>
           {canEditProducts && <button type="button" className={BUTTON} onClick={openCreate}><Plus size={16} /> Add product</button>}
+          <details className="relative">
+            <summary className={`${SECONDARY} cursor-pointer list-none`}>More</summary>
+            <div className="absolute right-0 z-20 mt-2 grid min-w-48 gap-1 rounded-control border border-border bg-surface p-2 shadow-lg">
+              <button type="button" className={`${SECONDARY} justify-start`} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
+              <button type="button" className={`${SECONDARY} justify-start`} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export XLSX</button>
+              <button type="button" className={`${SECONDARY} justify-start`} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
+              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>}
+              {skippedRows.length > 0 && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
+            </div>
+          </details>
         </div>
       </section>
 
-      <section aria-label="Saved product views and display options" className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
-        <label className="text-sm font-semibold text-text">Saved views
-          <select aria-label="Saved product views" className={`${FIELD} ml-2 inline-block w-auto min-w-40`} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
-            <option value="">Choose view</option>
-            {savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-          </select>
-        </label>
-        <input aria-label="Saved view name" className={`${FIELD} w-44`} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
-        <button type="button" className={SECONDARY} onClick={saveCurrentView}>Save view</button>
-        {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
-          setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
-          setSelectedSavedView('');
-          setNotice('Saved view removed.');
-        }}>Delete view</button>}
-        <span className="ml-auto inline-flex items-center gap-2">
-          <button type="button" className={displayMode === 'table' ? BUTTON : SECONDARY} aria-pressed={displayMode === 'table'} onClick={() => setDisplayMode('table')}><List size={16} /> Table</button>
-          <button type="button" className={displayMode === 'cards' ? BUTTON : SECONDARY} aria-pressed={displayMode === 'cards'} onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /> Cards</button>
-        </span>
+      <section aria-label="Product summary" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <KpiCard compact label="Total products" value={(overviewStats?.total_active ?? 0).toLocaleString()} detail="active" />
+        <KpiCard compact label="Low stock" value={(overviewStats?.low_stock ?? 0).toLocaleString()} detail="below reorder level" valueClassName="text-warning" />
+        <KpiCard compact label="Out of stock" value={(overviewStats?.out_of_stock ?? 0).toLocaleString()} detail="needs purchase" valueClassName="text-danger" />
+        <KpiCard compact label="Expiring in 90 days" value={(overviewStats?.expiring_90 ?? 0).toLocaleString()} detail="batches" valueClassName="text-warning" />
+        {canViewCost && <KpiCard compact label="Stock value" value={money(overviewStats?.stock_value_cost_paisa ?? 0)} detail="at cost" />}
       </section>
 
-      <section aria-label="Product summary" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Active products" value={(overviewStats?.total_active ?? 0).toLocaleString()} detail="Across all categories" icon={<Package size={18} />} />
-        <KpiCard label="Low stock" value={(overviewStats?.low_stock ?? 0).toLocaleString()} detail="Above zero and at/below reorder level" icon={<AlertTriangle size={18} />} />
-        <KpiCard label="Out of stock" value={(overviewStats?.out_of_stock ?? 0).toLocaleString()} detail="No non-expired stock available" icon={<ShieldAlert size={18} />} />
-        <KpiCard label="Expiring soon" value={(overviewStats?.expiring_90 ?? 0).toLocaleString()} detail="Batches expiring within 90 days" icon={<Clock3 size={18} />} />
-        {canViewCost && <KpiCard label="Stock value at cost" value={money(overviewStats?.stock_value_cost_paisa ?? 0)} detail="Non-expired stock only" />}
-      </section>
-
-      <section aria-label="Product search and filters" className={`${PANEL} space-y-3 p-4`}>
-        <label className="relative block">
+      <section aria-label="Product search and filters" className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
+        <label className="relative min-w-56 flex-1">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
-          <input className={`${FIELD} pl-9`} aria-label="Search products"           placeholder="Search product, strength, code, barcode, or manufacturer" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
+          <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, generic, code or barcode" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
         </label>
-        <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Filter category" className={FIELD + ' w-auto min-w-36'} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
-            <option value="">All categories</option>
-            {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-          </select>
-          <select aria-label="Filter manufacturer" className={FIELD + ' w-auto min-w-40'} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
-            <option value="">All manufacturers</option>
-            {brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-          </select>
-          <select aria-label="Filter medicine class" className={FIELD + ' w-auto min-w-36'} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
-            <option value="">All classes</option>
-            <option value="OTC">OTC</option><option value="RX">Rx</option><option value="CONTROLLED">Controlled (including narcotics)</option>
-          </select>
-          <select aria-label="Filter active status" className={FIELD + ' w-auto min-w-40'} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
-            <option value="active">Active products</option><option value="inactive">Inactive products</option><option value="all">All products</option>
-          </select>
-          <label className="inline-flex items-center gap-2 rounded-control border border-border px-3 py-2 text-sm font-semibold text-text">
-            <input type="checkbox" checked={lowStockOnly} onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }} className="h-4 w-4 accent-green-700" />
-            Low stock only
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm font-semibold text-text">
-            Sort
-            <select aria-label="Sort products" className={FIELD + ' w-auto'} value={sortColumn} onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}>
-              <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
-            </select>
-          </label>
-          <button type="button" className={SECONDARY} aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`} onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}>
-            {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-          </button>
-        </div>
+        <select aria-label="Filter category" className={FIELD + ' w-auto min-w-32'} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
+          <option value="">Category</option>{categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+        </select>
+        <select aria-label="Filter manufacturer" className={FIELD + ' w-auto min-w-36'} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
+          <option value="">Manufacturer</option>{brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+        </select>
+        <select aria-label="Filter medicine class" className={FIELD + ' w-auto min-w-28'} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
+          <option value="">Class</option><option value="OTC">OTC</option><option value="RX">Rx</option><option value="CONTROLLED">Controlled (including narcotics)</option>
+        </select>
+        <select aria-label="Filter active status" className={FIELD + ' w-auto min-w-28'} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
+          <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
+        </select>
+        <label className="inline-flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text">
+          <input type="checkbox" checked={lowStockOnly} onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }} className="h-4 w-4 accent-green-700" />
+          Low stock only
+        </label>
+        <select aria-label="Saved product views" className={FIELD + ' w-auto min-w-32'} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
+          <option value="">Saved views</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
+        </select>
+        <details className="relative">
+          <summary className={`${SECONDARY} cursor-pointer list-none`}>Save view</summary>
+          <div className="absolute right-0 z-20 mt-2 grid min-w-56 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
+            <input aria-label="Saved view name" className={FIELD} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
+            <button type="button" className={BUTTON} onClick={saveCurrentView}>Save view</button>
+            {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
+              setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
+              setSelectedSavedView('');
+              setNotice('Saved view removed.');
+            }}>Delete view</button>}
+          </div>
+        </details>
+        <span className="inline-flex items-center gap-1">
+          <button type="button" className={`${displayMode === 'table' ? BUTTON : SECONDARY} px-2.5`} aria-label="Table view" aria-pressed={displayMode === 'table'} title="Table view" onClick={() => setDisplayMode('table')}><List size={16} /></button>
+          <button type="button" className={`${displayMode === 'cards' ? BUTTON : SECONDARY} px-2.5`} aria-label="Card view" aria-pressed={displayMode === 'cards'} title="Card view" onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /></button>
+        </span>
+        <details className="relative">
+          <summary className={`${SECONDARY} cursor-pointer list-none`}>More filters</summary>
+          <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
+            <label className="grid gap-1 text-xs font-semibold text-muted">Sort products
+              <select aria-label="Sort products" className={FIELD} value={sortColumn} onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}>
+                <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
+              </select>
+            </label>
+            <button type="button" className={SECONDARY} aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`} onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}>
+              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+            </button>
+          </div>
+        </details>
         {(search || categoryFilter || brandFilter || classFilter || activeFilter !== 'active' || lowStockOnly) && (
           <div className="flex flex-wrap gap-2" aria-label="Active filters">
             {search && <FilterChip onRemove={() => { setPage(1); setSearch(''); }}>Search: {search}</FilterChip>}
@@ -1102,6 +1100,7 @@ function ProductsCatalog({
         columns={productColumns}
         getRowId={(medicine) => medicine.id}
         layout={displayMode}
+        compact
         hiddenColumnIds={hiddenColumnIds}
         onHiddenColumnIdsChange={setHiddenColumnIds}
         loading={loading}

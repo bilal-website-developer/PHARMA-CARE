@@ -49,7 +49,7 @@ interface MasterOverview {
 }
 
 const FIELD = 'w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
-const PANEL = 'rounded-xl border border-border bg-surface shadow-xs';
+const PANEL = 'rounded-[14px] border border-border bg-surface shadow-[0_1px_8px_rgba(11,59,42,0.08)]';
 const BUTTON = 'inline-flex items-center justify-center gap-2 rounded-control bg-primary px-3 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50';
 const SECONDARY = 'inline-flex items-center justify-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface/80 disabled:opacity-50';
 const DOT_COLORS = ['bg-primary', 'bg-accent', 'bg-warning', 'bg-danger', 'bg-sky-500', 'bg-violet-500'];
@@ -316,30 +316,47 @@ export function MasterDataView({ onViewProducts }: {
   const isUnitsTab = tab === 'units';
   const unitCount = overview?.summary.unit_count ?? 0;
 
-  return <div className="space-y-4">
-    <section className={`${PANEL} flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5`}>
+  return <div className="space-y-3.5">
+    <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-black text-text"><Layers size={20} aria-hidden="true" /> Categories &amp; master data</h1>
-        <p className="mt-1 text-sm text-muted">Manage product categories, manufacturers, and real medicine units.</p>
+        <h1 className="text-[26px] font-black leading-tight text-text">Categories &amp; master data</h1>
+        <p className="mt-0.5 text-[13px] text-muted">Live category, manufacturer and medicine-unit records</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {canManage && !isUnitsTab && <button type="button" className={BUTTON} onClick={() => openEditor(kind, null)}><Plus size={16} /> Add {kind === 'category' ? 'category' : 'manufacturer'}</button>}
-        <button type="button" aria-label="Refresh master data" className={SECONDARY} onClick={() => void loadOverview()} disabled={loading}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button>
       </div>
     </section>
 
-    <nav aria-label="Master data sections" className={`${PANEL} flex flex-wrap gap-2 p-2`}>
-      {([
-        ['categories', `Categories${overview ? ` (${overview.summary.category_count})` : ''}`],
-        ['brands', `Manufacturers${overview ? ` (${overview.summary.manufacturer_count})` : ''}`],
-        ...(unitCount > 0 ? [['units', `Units (${unitCount})`] as const] : []),
-      ] as const).map(([value, label]) => (
-        <button type="button" key={value} aria-pressed={tab === value} className={tab === value ? BUTTON : SECONDARY} onClick={() => setTab(value)}>
-          {value === 'categories' ? <Layers size={15} /> : value === 'brands' ? <Tag size={15} /> : <ArrowDownWideNarrow size={15} />}
-          {label}
-        </button>
-      ))}
-    </nav>
+    {!isUnitsTab && <section aria-label="Master data navigation, search and sort" className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
+      <nav aria-label="Master data sections" className="flex flex-wrap items-center gap-1">
+        {([
+          ['categories', `Categories${overview ? ` (${overview.summary.category_count})` : ''}`],
+          ['brands', `Manufacturers${overview ? ` (${overview.summary.manufacturer_count})` : ''}`],
+          ...(unitCount > 0 ? [['units', `Units (${unitCount})`] as const] : []),
+        ] as const).map(([value, label]) => (
+          <button type="button" key={value} aria-pressed={tab === value} className={`rounded-full border px-3.5 py-2 text-[13px] font-bold transition-colors ${tab === value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text hover:bg-primary/5'}`} onClick={() => setTab(value)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      <label className="relative ml-1 min-w-52 flex-1 sm:max-w-[340px]">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" aria-hidden="true" />
+        <input className={`${FIELD} pl-9`} aria-label={`Search ${kind === 'category' ? 'categories' : 'manufacturers'}`} placeholder={`Search ${kind === 'category' ? 'categories' : 'manufacturers'}`} value={query} onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      <label className="flex items-center gap-2 text-sm font-semibold text-text">
+        <span className="sr-only">Sort</span>
+        <select aria-label="Sort master data" className={`${FIELD} w-auto min-w-36`} value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
+          <option value="name">Sort: A-Z</option><option value="products">Most products</option><option value="stock">Highest stock value</option>
+        </select>
+      </label>
+      <button type="button" aria-label="Refresh master data" className={`${SECONDARY} ml-auto`} onClick={() => void loadOverview()} disabled={loading}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button>
+    </section>}
+
+    {isUnitsTab && <nav aria-label="Master data sections" className={`${PANEL} flex flex-wrap gap-2 p-2`}>
+      <button type="button" aria-pressed={false} className={SECONDARY} onClick={() => setTab('categories')}>Categories</button>
+      <button type="button" aria-pressed={false} className={SECONDARY} onClick={() => setTab('brands')}>Manufacturers</button>
+      <button type="button" aria-pressed className={BUTTON}>Units ({unitCount})</button>
+    </nav>}
 
     {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button type="button" className={SECONDARY} onClick={() => void loadOverview()} disabled={loading}>Retry</button></div>}
     {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
@@ -347,33 +364,13 @@ export function MasterDataView({ onViewProducts }: {
 
     {!isUnitsTab && (
       <>
-        <section aria-label="Master data overview" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <OverviewCard label="Categories" value={overview?.summary.category_count} />
-          <OverviewCard label="Active categories" value={overview?.summary.active_category_count} />
-          <OverviewCard label="Manufacturers" value={overview?.summary.manufacturer_count} />
-          <OverviewCard label="Active manufacturers" value={overview?.summary.active_manufacturer_count} />
-          <OverviewCard label="Products" value={overview?.summary.product_count} />
-          <OverviewCard label="Units" value={unitCount} />
-        </section>
-        <section aria-label="Search and sort master data" className={`${PANEL} flex flex-col gap-3 p-3 sm:flex-row sm:items-center`}>
-          <label className="relative block flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" aria-hidden="true" />
-            <input className={`${FIELD} pl-9`} aria-label={`Search ${kind === 'category' ? 'categories' : 'manufacturers'}`} placeholder={`Search ${kind === 'category' ? 'categories' : 'manufacturers'}`} value={query} onChange={(event) => setQuery(event.target.value)} />
-          </label>
-          <label className="flex items-center gap-2 text-sm font-semibold text-text">
-            Sort
-            <select aria-label="Sort master data" className={`${FIELD} w-auto min-w-44`} value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
-              <option value="name">A-Z</option><option value="products">Most products</option><option value="stock">Highest stock value</option>
-            </select>
-          </label>
-        </section>
         {similarPairs.length > 0 && (
-          <section aria-label="Similar names" className={`${PANEL} space-y-3 border-warning/40 bg-warning/5 p-4`}>
-            <div className="flex items-start gap-2"><AlertCircle className="mt-0.5 text-warning" size={18} /><div><h2 className="font-bold text-text">Similar names to review</h2><p className="text-sm text-muted">These names normalize to the same value or differ by at most two edits.</p></div></div>
-            <ul className="space-y-2">
-              {similarPairs.map((pair) => <li key={`${pair.first.id}:${pair.second.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm">
-                <span className="text-text"><strong>{pair.first.name}</strong><span className="px-2 text-muted">↔</span><strong>{pair.second.name}</strong></span>
-                {canManage && <button type="button" className={SECONDARY} onClick={() => openPairForReview(pair)}><Merge size={15} /> Review &amp; merge</button>}
+          <section aria-label="Similar names" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-3 text-[13px]">
+            <div className="flex items-center gap-2"><AlertCircle className="shrink-0 text-warning" size={17} /><h2 className="font-bold text-text">{similarPairs.length} similar name{similarPairs.length === 1 ? '' : 's'} found:</h2></div>
+            <ul className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+              {similarPairs.map((pair) => <li key={`${pair.first.id}:${pair.second.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-text"><strong>{pair.first.name}</strong><span className="px-1 text-muted">↔</span><strong>{pair.second.name}</strong></span>
+                {canManage && <button type="button" className="inline-flex items-center gap-1 rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/5" onClick={() => openPairForReview(pair)}><Merge size={13} /> Review &amp; merge</button>}
               </li>)}
             </ul>
           </section>
@@ -387,7 +384,7 @@ export function MasterDataView({ onViewProducts }: {
               <p className="max-w-md text-sm text-muted">{query ? 'Try a different search term.' : 'Add a real record to populate this view.'}</p>
               {!query && canManage && <button type="button" className={BUTTON} onClick={() => openEditor(kind, null)}><Plus size={16} /> Add {kind}</button>}
             </section>
-            : <section aria-label={kind === 'category' ? 'Category cards' : 'Manufacturer cards'} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            : <section aria-label={kind === 'category' ? 'Category cards' : 'Manufacturer cards'} className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
               {visibleItems.map((item) => <MasterDataCard
                 key={item.id}
                 item={item}
@@ -454,12 +451,8 @@ export function MasterDataView({ onViewProducts }: {
   </div>;
 }
 
-function OverviewCard({ label, value }: { label: string; value?: number }) {
-  return <article className={`${PANEL} p-3 sm:p-4`}><p className="text-xs font-semibold text-muted">{label}</p><p className="mt-1 text-xl font-black text-text">{value?.toLocaleString() ?? '—'}</p></article>;
-}
-
 function MasterGridSkeleton() {
-  return <div aria-label="Loading master data" role="status" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+  return <div aria-label="Loading master data" role="status" className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
     {Array.from({ length: 6 }, (_, index) => <div key={index} className={`${PANEL} h-56 animate-pulse bg-surface p-4`}><div className="h-4 w-2/3 rounded bg-border" /><div className="mt-5 h-3 w-1/2 rounded bg-border" /><div className="mt-7 h-8 w-full rounded bg-border" /><span className="sr-only">Loading master data</span></div>)}
   </div>;
 }
@@ -486,33 +479,31 @@ function MasterDataCard({
   onDelete: () => void;
 }) {
   const hasWarnings = item.low_count > 0 || item.expiring_count > 0 || item.out_count > 0;
-  return <article className={`${PANEL} flex min-h-56 flex-col gap-4 p-4 transition-shadow hover:shadow-md sm:p-5`}>
+  return <article className={`${PANEL} flex min-h-0 flex-col gap-3 p-4 transition-shadow hover:shadow-md`}>
     <div className="flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <span className={`h-3.5 w-3.5 shrink-0 rounded-full ${colorClass}`} aria-hidden="true" />
-        <div className="min-w-0"><h2 className="truncate text-lg font-bold text-text" title={item.name}>{item.name}</h2><p className="mt-0.5 text-xs text-muted">{item.is_active ? 'Active' : 'Inactive'}</p></div>
+        <div className="min-w-0"><h2 className="truncate text-base font-bold text-text" title={item.name}>{item.name}</h2><span className="sr-only">{item.is_active ? 'Active' : 'Inactive'}</span></div>
       </div>
       {item.product_count === 0 && <StatChip tone="muted">Unused</StatChip>}
     </div>
-    <div className="grid grid-cols-2 gap-3">
-      <div><p className="text-xs text-muted">Products</p><p className="mt-1 text-xl font-black text-text">{item.product_count.toLocaleString()}</p></div>
-      {item.stock_value_paisa !== null && <div><p className="text-xs text-muted">Stock value</p><p className="mt-1 text-base font-bold text-text">{formatMoney(item.stock_value_paisa)}</p></div>}
-    </div>
+    <p className="my-1 text-[26px] font-black leading-none text-text">{item.product_count.toLocaleString()}<span className="ml-1 text-xs font-semibold text-muted">products</span></p>
+    {item.stock_value_paisa !== null && <p className="text-xs text-muted">Stock value <strong className="font-bold text-text">{formatMoney(item.stock_value_paisa)}</strong></p>}
     <div className="flex min-h-7 flex-wrap gap-2" aria-label={`${item.name} stock indicators`}>
       {item.low_count > 0 && <StatChip tone="warning">Low {item.low_count}</StatChip>}
       {item.expiring_count > 0 && <StatChip tone="warning">Expiring {item.expiring_count}</StatChip>}
       {item.out_count > 0 && <StatChip tone="danger">Out {item.out_count}</StatChip>}
       {!hasWarnings && <StatChip tone="ok"><Check size={13} /> OK</StatChip>}
     </div>
-    <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-3">
-      {canViewProducts && <button type="button" className={SECONDARY} onClick={onViewProducts}><Tag size={14} /> View products</button>}
+    <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs font-bold">
+      {canViewProducts && <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={onViewProducts}><Tag size={13} /> View products</button>}
       {canManage && <>
-        <button type="button" className={SECONDARY} onClick={onRename}><Edit2 size={14} /> Rename</button>
-        <button type="button" className={SECONDARY} onClick={onMerge}><Merge size={14} /> Merge</button>
+        <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={onRename}><Edit2 size={13} /> Rename</button>
+        <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={onMerge}><Merge size={13} /> Merge</button>
         {item.product_count === 0
-          ? <button type="button" className="inline-flex items-center gap-2 rounded-control border border-danger/30 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger/10" onClick={onDelete}><Trash2 size={14} /> Delete</button>
+          ? <button type="button" className="inline-flex items-center gap-1 text-danger hover:underline" onClick={onDelete}><Trash2 size={13} /> Delete</button>
           : <span className="inline-flex items-center" title={`Cannot delete while ${item.product_count} product(s) use this ${kind === 'category' ? 'category' : 'manufacturer'}.`}>
-            <button type="button" className="inline-flex cursor-not-allowed items-center gap-2 rounded-control border border-border px-3 py-2 text-sm font-semibold text-muted opacity-60" disabled aria-describedby={`${kind}-delete-${item.id}`}><Trash2 size={14} /> Delete</button>
+            <button type="button" className="inline-flex cursor-not-allowed items-center gap-1 text-muted opacity-70" disabled aria-describedby={`${kind}-delete-${item.id}`}><Trash2 size={13} /> Delete</button>
             <span id={`${kind}-delete-${item.id}`} className="sr-only">Delete is unavailable because {item.product_count} products use this value.</span>
           </span>}
       </>}

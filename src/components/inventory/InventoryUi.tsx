@@ -10,20 +10,27 @@ export function KpiCard({
   value,
   detail,
   icon,
+  valueClassName = 'text-primary',
+  compact = false,
 }: {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
   icon?: ReactNode;
+  valueClassName?: string;
+  compact?: boolean;
 }) {
+  const cardClassName = compact
+    ? 'rounded-[14px] border border-border bg-surface p-3.5 shadow-[0_1px_8px_rgba(11,59,42,0.08)]'
+    : `${PANEL} p-4`;
   return (
-    <article className={`${PANEL} min-w-0 p-4`}>
+    <article className={`${cardClassName} min-w-0`}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p>
         {icon && <span aria-hidden="true" className="shrink-0 text-primary">{icon}</span>}
       </div>
-      <p className="mt-1 text-2xl font-black text-primary">{value}</p>
-      {detail && <p className="mt-1 text-xs text-muted">{detail}</p>}
+      <p className={`${compact ? 'my-1 text-[23px]' : 'mt-1 text-2xl'} font-black ${valueClassName}`}>{value}</p>
+      {detail && <p className={compact ? 'text-[11px] text-muted' : 'mt-1 text-xs text-muted'}>{detail}</p>}
     </article>
   );
 }
@@ -280,6 +287,7 @@ export function DataTable<Row>({
   layout = 'responsive',
   hiddenColumnIds,
   onHiddenColumnIdsChange,
+  compact = false,
 }: {
   label: string;
   rows: readonly Row[];
@@ -295,6 +303,7 @@ export function DataTable<Row>({
   layout?: 'responsive' | 'table' | 'cards';
   hiddenColumnIds?: readonly string[];
   onHiddenColumnIdsChange?: (ids: string[]) => void;
+  compact?: boolean;
 }) {
   const [internalHiddenColumns, setInternalHiddenColumns] = useState<Set<string>>(
     () => new Set(columns.filter((column) => column.initiallyHidden).map((column) => column.id)),
@@ -324,7 +333,7 @@ export function DataTable<Row>({
   const actionCell = (row: Row) => actions.length > 0 ? <RowActions row={row} actions={actions} /> : null;
 
   return (
-    <section aria-label={label} className={`${PANEL} overflow-hidden`}>
+    <section aria-label={label} className={`${compact ? 'rounded-[14px] border border-border bg-surface p-1.5 shadow-[0_1px_8px_rgba(11,59,42,0.08)]' : PANEL} overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <p className="text-sm font-bold text-text">{label}</p>
         <details className="relative">
@@ -364,7 +373,7 @@ export function DataTable<Row>({
               <thead className="sticky top-0 z-10 bg-surface text-xs font-bold uppercase tracking-wide text-muted">
                 <tr>
                   {onSelectionChange && (
-                    <th scope="col" className="px-4 py-3">
+                    <th scope="col" className={compact ? 'px-2.5 py-2' : 'px-4 py-3'}>
                       <input
                         ref={selectAllRef}
                         type="checkbox"
@@ -384,7 +393,7 @@ export function DataTable<Row>({
                       key={column.id}
                       scope="col"
                       aria-sort={column.sortable ? column.sortDirection ?? 'none' : undefined}
-                      className="whitespace-nowrap px-4 py-3"
+                      className={`whitespace-nowrap ${compact ? 'px-2.5 py-2' : 'px-4 py-3'}`}
                     >
                       {column.sortable && column.onSort ? (
                         <button type="button" onClick={column.onSort} className={`${FOCUS} inline-flex items-center gap-1 rounded text-left`}>
@@ -394,7 +403,7 @@ export function DataTable<Row>({
                       ) : column.header}
                     </th>
                   ))}
-                  {actions.length > 0 && <th scope="col" className="px-4 py-3 text-right">Actions</th>}
+                  {actions.length > 0 && <th scope="col" className={`${compact ? 'px-2.5 py-2' : 'px-4 py-3'} text-right`}>Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -403,12 +412,12 @@ export function DataTable<Row>({
                   return (
                     <tr key={id} className="text-text hover:bg-white/40">
                       {onSelectionChange && (
-                        <td className="px-4 py-3">
+                        <td className={compact ? 'px-2.5 py-2' : 'px-4 py-3'}>
                           <input type="checkbox" aria-label={`Select row ${id}`} checked={selectedIds?.includes(id) ?? false} onChange={(event) => toggleRow(id, event.target.checked)} className="h-4 w-4 accent-green-700" />
                         </td>
                       )}
-                      {visibleColumns.map((column) => <td key={column.id} className="px-4 py-3 align-top">{column.render(row)}</td>)}
-                      {actions.length > 0 && <td className="px-4 py-3 text-right">{actionCell(row)}</td>}
+                      {visibleColumns.map((column) => <td key={column.id} className={`${compact ? 'px-2.5 py-2' : 'px-4 py-3'} align-top`}>{column.render(row)}</td>)}
+                      {actions.length > 0 && <td className={`${compact ? 'px-2.5 py-2' : 'px-4 py-3'} text-right`}>{actionCell(row)}</td>}
                     </tr>
                   );
                 })}
