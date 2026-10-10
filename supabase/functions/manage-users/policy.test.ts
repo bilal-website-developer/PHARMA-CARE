@@ -42,6 +42,46 @@ test('admin cannot create or manage admin users while super_admin can manage adm
   assert.equal(canManageTarget('super_admin', 'root', 'target', 'admin'), true);
 });
 
+test('super_admin edits admin', () => {
+  assert.equal(profileChangeDenial({
+    ...emptyChange,
+    action: 'update',
+    callerRole: 'super_admin',
+    targetRole: 'admin',
+    targetPermissions: ['pos', 'reports'],
+    nextRole: 'admin',
+    nextPermissions: ['pos', 'reports'],
+    nextActive: true,
+  }), null);
+  assert.equal(profileChangeDenial({
+    ...emptyChange,
+    action: 'delete',
+    callerRole: 'super_admin',
+    targetRole: 'admin',
+    targetActive: true,
+    activeAdminCount: 2,
+  }), null);
+});
+
+test('super_admin can edit own profile details but not own role or active status', () => {
+  const ownProfile = {
+    ...emptyChange,
+    action: 'update' as const,
+    callerRole: 'super_admin' as const,
+    callerId: 'root',
+    targetId: 'root',
+    targetRole: 'super_admin' as const,
+    targetPermissions: ['pos', 'reports'],
+    nextRole: 'super_admin' as const,
+    nextPermissions: ['pos', 'reports'],
+    targetActive: true,
+    nextActive: true,
+  };
+  assert.equal(profileChangeDenial(ownProfile), null);
+  assert.match(profileChangeDenial({ ...ownProfile, nextRole: 'admin' }) ?? '', /own role/);
+  assert.match(profileChangeDenial({ ...ownProfile, nextActive: false }) ?? '', /own role/);
+});
+
 test('nobody can change their own role, permissions, or active state', () => {
   assert.match(profileChangeDenial({
     ...emptyChange,
