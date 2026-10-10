@@ -9,7 +9,7 @@
 | 0 — Discovery | Done | Read-only discovery completed from the checked-in app, migrations, baseline schema, and documentation. |
 | 1 — Shared UI pieces | Done | Added reusable inventory UI primitives and pure stock/expiry display logic with unit tests; no database changes. |
 | 2 — Products | Done | Server-backed product catalog with filtered export, saved views, table/card layouts, strength, Code 128 labels, imports, and RPC-only product status changes. Required migrations were run and verified by the user. |
-| 3 — Categories & master data | In progress; database prerequisite | Categories card-grid work follows the Products commit. Any new overview/merge RPC migration will be shown for manual application before the UI relies on it. |
+| 3 — Categories & master data | Done | Responsive category/manufacturer cards, overview metrics, similar-name review, safe delete and merge flows; migration was run and verified by the user. |
 | 4 — Stock Inventory | Pending approval | Not started. |
 | 5 — Reorder suggestions | Pending approval | Not started. |
 | 6 — Returns & stock-take | Gated | Start only after written approval for Phases 1–5. |
@@ -32,6 +32,13 @@
 - Added `can_view_cost()` and server-side cost/margin redaction in product responses. Cost fields are returned only for active admin/super-admin/manager/accountant profiles; client visibility follows the RPC response. Product list/stat/import/bulk RPCs all check active, non-deleted profiles and Products permission. Existing RLS policies and shared permission helpers are unchanged.
 - Added pure CSV parsing/preview tests and included them in `npm test`.
 - Added `supabase/migrations/20261010035000_add_medicine_strength.sql` and `supabase/migrations/20261010040000_products_redesign_rpc.sql`. The user ran and verified both migrations; the strength column and six Products RPCs exist in the live database.
+
+### Phase 3 delivered
+
+- Replaced direct category/manufacturer list aggregation with `master_data_overview`; real medicine units remain available on the Units tab when any exist.
+- Added searchable, sortable responsive cards with product/stock indicators, permission-aware cost values, saved records/actions, duplicate-name review and RPC-based merge handling. Category/brand CRUD remains on the existing functions.
+- Added normalized similar-name and edit-distance tests. The user ran and verified `master_data_overview`, `merge_categories`, and `merge_brands` from `supabase/migrations/20261010050000_master_data_overview_merge.sql`.
+- Validation: `npm run lint`, `npm test` (75 tests), and `npm run build` pass. Build retains the known config-loader, XLSX dynamic-import, and large-chunk warnings.
 
 ## Safe demo login
 

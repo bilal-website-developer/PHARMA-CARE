@@ -13,11 +13,12 @@
     "test:receipt": "tsx --test src/utils/receipt.test.ts",
     "test:inventory-ui": "tsx --test src/components/inventory/inventoryUiLogic.test.ts",
     "test:inventory-products": "tsx --test src/components/inventory/productImportLogic.test.ts",
+    "test:master-data": "tsx --test src/components/masterDataSimilarity.test.ts",
     "test:print-snapshot": "tsx --test src/utils/printSnapshot.test.ts",
     "test:report": "tsx --test src/utils/salesReport.test.ts",
     "test:permissions": "tsx --test src/permissions.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:inventory-products && npm run test:print-snapshot && npm run test:report && npm run test:permissions && npm run test:manage-users-policy"
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:inventory-products && npm run test:master-data && npm run test:print-snapshot && npm run test:report && npm run test:permissions && npm run test:manage-users-policy"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
