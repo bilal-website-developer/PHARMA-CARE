@@ -8,12 +8,15 @@ import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 import {
-  BulkActionBar, ConfirmDialog, DataTable, ExpiryChip, FilterChip, KpiCard, StockBar, StatusChip,
+  BulkActionBar, ConfirmDialog, DataTable, EmptyState, ExpiryChip, FilterChip, KpiCard,
+  SegmentedTabs, Skeleton, StockBar, StatusChip,
+  type DataTableAction,
   type DataTableColumn,
 } from './inventory/InventoryUi';
 import {
   parseProductCsv, previewProductCsv, type ProductImportPreviewRow,
 } from './inventory/productImportLogic';
+import { StockInventory } from './inventory/StockInventory';
 
 const PAGE_SIZE = 25;
 const NEAR_EXPIRY_DAYS = 90;
@@ -101,20 +104,6 @@ interface ProductFormValues {
     price_paisa: string;
     barcode: string;
   }>;
-}
-
-interface BatchRow {
-  id: string;
-  medicine_id: string;
-  batch_number: string;
-  expiry_date: string;
-  received_date: string;
-  cost_paisa_per_base_unit: number;
-  mrp_paisa_per_base_unit: number;
-  quantity_remaining: number;
-  status: string;
-  medicine?: Pick<Medicine, 'brand_name' | 'generic_name' | 'code' | 'min_stock_alert'>;
-  supplier?: { name: string } | null;
 }
 
 type ProductListRpcRow = Omit<Medicine, 'units'>;
@@ -1237,188 +1226,4 @@ function ProductsCatalog({
       </div>}
     </div>
   );
-}
-
-function StockInventory({
-  initialMedicineId,
-  onClearMedicineFilter,
-}: {
-  initialMedicineId: string | null;
-  onClearMedicineFilter?: () => void;
-}) {
-  const { can } = usePermissions();
-  const canAdjust = can('stock_inventory');
-  const canSeeCost = can('products');
-  const [batches, setBatches] = useState<BatchRow[]>([]);
-  const [products, setProducts] = useState<Array<Pick<Medicine, 'id' | 'min_stock_alert'>>>([]);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'near-expiry' | 'low-stock'>('all');
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [adjusting, setAdjusting] = useState<BatchRow | null>(null);
-  const [delta, setDelta] = useState('');
-  const [reason, setReason] = useState('damage');
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    const client = supabase;
-    if (!client) {
-      setError('Supabase is not configured.');
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const [batchRows, productRows] = await Promise.all([
-        fetchAllSupabaseRows((from, to) => {
-          let query = client.from('stock_batches')
-          .select('id,medicine_id,batch_number,expiry_date,received_date,cost_paisa_per_base_unit,mrp_paisa_per_base_unit,quantity_remaining,status,supplier_id')
-          .order('expiry_date').order('batch_number').order('id');
-          if (initialMedicineId) query = query.eq('medicine_id', initialMedicineId);
-          return query.range(from, to);
-        }),
-        fetchAllSupabaseRows((from, to) => {
-          let query = client.from('medicines')
-          .select('id,brand_name,generic_name,code,min_stock_alert,is_active')
-          .order('id');
-          if (initialMedicineId) query = query.eq('id', initialMedicineId);
-          return query.range(from, to);
-        }),
-      ]);
-      const medicineRows = productRows;
-      const supplierIds = Array.from(new Set(batchRows.map((batch) => batch.supplier_id).filter((id): id is string => Boolean(id))));
-      const supplierLookup = new Map<string, { name: string }>();
-      if (supplierIds.length) {
-        for (let index = 0; index < supplierIds.length; index += 500) {
-          const { data: supplierRows, error: supplierError } = await client.from('suppliers').select('id,name').in('id', supplierIds.slice(index, index + 500));
-          if (supplierError) throw supplierError;
-          for (const supplier of supplierRows ?? []) supplierLookup.set(supplier.id, { name: supplier.name });
-        }
-      }
-      const medicineLookup = new Map(medicineRows.map((medicine) => [medicine.id, medicine]));
-      setProducts(medicineRows);
-      setBatches(batchRows.map((batch) => ({
-        ...batch,
-        medicine: medicineLookup.get(batch.medicine_id),
-        supplier: batch.supplier_id ? supplierLookup.get(batch.supplier_id) ?? null : null,
-      })).filter((batch) => batch.medicine));
-    } catch (caught) {
-      setError(messageFor(caught, 'Could not load stock inventory.'));
-      setBatches([]);
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [initialMedicineId]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const lowStockIds = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const batch of batches) {
-      if (batch.expiry_date >= today()) {
-        totals.set(batch.medicine_id, (totals.get(batch.medicine_id) ?? 0) + batch.quantity_remaining);
-      }
-    }
-    return new Set(products.filter((product) => (totals.get(product.id) ?? 0) <= product.min_stock_alert).map((product) => product.id));
-  }, [batches, products]);
-
-  const filteredBatches = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const nearCutoff = new Date();
-    nearCutoff.setDate(nearCutoff.getDate() + NEAR_EXPIRY_DAYS);
-    const cutoff = nearCutoff.toISOString().slice(0, 10);
-    return batches.filter((batch) => {
-      const nearExpiry = batch.expiry_date >= today() && batch.expiry_date <= cutoff;
-      const isLow = lowStockIds.has(batch.medicine_id);
-      const matchesFilter = filter === 'all' || (filter === 'near-expiry' && nearExpiry) || (filter === 'low-stock' && isLow);
-      const matchesSearch = !query || [batch.batch_number, batch.medicine?.brand_name ?? '', batch.medicine?.generic_name ?? '', batch.medicine?.code ?? '', batch.supplier?.name ?? ''].some((value) => value.toLowerCase().includes(query));
-      return matchesFilter && matchesSearch;
-    });
-  }, [batches, filter, lowStockIds, search]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE));
-  const pagedBatches = filteredBatches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const saveAdjustment = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!supabase || !adjusting) return;
-    const quantityDelta = Number(delta);
-    if (!Number.isSafeInteger(quantityDelta) || quantityDelta === 0 || Math.abs(quantityDelta) > 2147483647) {
-      setError('Enter a non-zero whole-number quantity adjustment.');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const { error: rpcError } = await supabase.rpc('adjust_stock', {
-        p_batch_id: adjusting.id,
-        p_quantity_delta: quantityDelta,
-        p_reason: reason,
-      });
-      if (rpcError) throw rpcError;
-      setAdjusting(null);
-      setDelta('');
-      setNotice('Stock adjustment recorded.');
-      await load();
-    } catch (caught) {
-      setError(messageFor(caught, 'Could not adjust stock.'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const statusFor = (batch: BatchRow) => {
-    if (batch.expiry_date < today()) return { label: 'Expired', classes: 'bg-danger/10 text-danger' };
-    const threshold = new Date();
-    threshold.setDate(threshold.getDate() + NEAR_EXPIRY_DAYS);
-    if (batch.expiry_date <= threshold.toISOString().slice(0, 10)) return { label: 'Near-expiry', classes: 'bg-warning/15 text-warning' };
-    return { label: 'Active', classes: 'bg-primary/10 text-primary' };
-  };
-
-  return <div className="space-y-4">
-    <section className={`${PANEL} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between`}>
-      <div><h2 className="text-lg font-black text-text">Stock Inventory</h2><p className="text-sm text-muted">Live batch balances from purchases and stock movements.</p></div>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-52 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" /><input className={`${FIELD} pl-9`} aria-label="Search batch inventory" placeholder="Search medicine or batch" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} /></label>
-        <select aria-label="Stock filter" className={FIELD} value={filter} onChange={(event) => { setPage(1); setFilter(event.target.value as typeof filter); }}><option value="all">All batches</option><option value="near-expiry">Near expiry (90 days)</option><option value="low-stock">Low-stock medicines</option></select>
-        <button type="button" aria-label="Refresh stock" className={SECONDARY} onClick={() => void load()} disabled={loading}><RefreshCw size={16} /></button>
-      </div>
-    </section>
-    {initialMedicineId && <div className="flex flex-wrap items-center gap-2 rounded-control border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-text"><span>Showing batches for the selected product.</span><button type="button" className={SECONDARY} onClick={onClearMedicineFilter}>Show all products</button></div>}
-    {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button type="button" className={SECONDARY} disabled={loading} onClick={() => void load()}>Retry stock</button></div>}
-    {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
-    <section className={`${PANEL} overflow-hidden`}>
-      {loading ? <p className="p-8 text-center text-sm text-muted">Loading stock batches…</p>
-        : error ? <p className="p-8 text-center text-sm text-muted">Stock data is unavailable. Retry after resolving the error.</p>
-          : pagedBatches.length === 0 ? <p className="p-8 text-center text-sm text-muted">No stock batches match this filter.</p>
-            : <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-left text-sm">
-              <thead className="bg-surface text-xs font-bold uppercase text-muted"><tr><th className="px-4 py-3">Medicine</th><th className="px-4 py-3">Batch</th><th className="px-4 py-3">Expiry</th><th className="px-4 py-3">Qty remaining</th>{canSeeCost && <th className="px-4 py-3">Cost / base unit</th>}<th className="px-4 py-3">MRP / base unit</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Supplier</th>{canAdjust && <th className="px-4 py-3 text-right">Action</th>}</tr></thead>
-              <tbody className="divide-y divide-border">{pagedBatches.map((batch) => {
-                const status = statusFor(batch);
-                return <tr key={batch.id} className="hover:bg-surface/70">
-                  <td className="px-4 py-3"><strong className="block text-text">{batch.medicine?.brand_name}</strong><span className="text-xs text-muted">{batch.medicine?.generic_name} · {batch.medicine?.code}</span></td>
-                  <td className="px-4 py-3 font-mono">{batch.batch_number}</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1"><Clock3 size={14} />{batch.expiry_date}</span></td>
-                  <td className="px-4 py-3 font-bold">{batch.quantity_remaining.toLocaleString()}{lowStockIds.has(batch.medicine_id) && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-warning"><AlertTriangle size={13} />Low</span>}</td>
-                  {canSeeCost && <td className="px-4 py-3">{money(batch.cost_paisa_per_base_unit)}</td>}<td className="px-4 py-3">{money(batch.mrp_paisa_per_base_unit)}</td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${status.classes}`}>{status.label}</span></td><td className="px-4 py-3">{batch.supplier?.name ?? '—'}</td>
-                  {canAdjust && <td className="px-4 py-3 text-right"><button type="button" className={SECONDARY} onClick={() => { setAdjusting(batch); setDelta(''); setReason('damage'); setError(''); }}><SlidersHorizontal size={14} /> Adjust</button></td>}
-                </tr>;
-              })}</tbody>
-            </table></div>}
-      {!loading && filteredBatches.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-muted"><span>{filteredBatches.length} batches · Page {page} of {pageCount}</span><div className="flex gap-2"><button type="button" className={SECONDARY} aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={16} /></button><button type="button" className={SECONDARY} aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}><ChevronRight size={16} /></button></div></div>}
-    </section>
-
-    {adjusting && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><form onSubmit={(event) => void saveAdjustment(event)} className={`${PANEL} w-full max-w-md space-y-4 p-5`}>
-      <div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-black text-text">Adjust batch stock</h3><p className="text-sm text-muted">{adjusting.medicine?.brand_name} · {adjusting.batch_number} · current {adjusting.quantity_remaining}</p></div><button type="button" aria-label="Close stock adjustment" className={SECONDARY} onClick={() => setAdjusting(null)}><X size={16} /></button></div>
-      <label className="block text-sm text-text">Quantity change *<span className="mt-1 block text-xs text-muted">Use a negative number to remove stock and a positive number to add stock.</span><input className={`${FIELD} mt-2`} type="number" step="1" required value={delta} onChange={(event) => setDelta(event.target.value)} /></label>
-      <label className="block text-sm text-text">Reason *<select className={`${FIELD} mt-1`} required value={reason} onChange={(event) => setReason(event.target.value)}><option value="damage">Damage</option><option value="expired">Expired</option><option value="counting error">Counting error</option><option value="theft">Theft</option><option value="other">Other</option></select></label>
-      {error && <p role="alert" className="flex items-center gap-2 text-sm text-danger"><ShieldAlert size={16} />{error}</p>}
-      <div className="flex justify-end gap-2"><button type="button" className={SECONDARY} onClick={() => setAdjusting(null)}>Cancel</button><button type="submit" className={BUTTON} disabled={saving}>{saving ? 'Saving…' : 'Record adjustment'}</button></div>
-    </form></div>}
-  </div>;
 }
