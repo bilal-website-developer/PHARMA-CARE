@@ -1,0 +1,14 @@
+#!/bin/sh
+
+npm run context:update || echo "Warning: project context update failed; allowing commit."
+git add -- docs/PROJECT_CONTEXT.md || echo "Warning: could not stage docs/PROJECT_CONTEXT.md; allowing commit."
+
+if git diff --cached --name-only -- src/ | grep -q .; then
+  current_changelog=$(awk '/^## Changelog$/{in_changelog=1} in_changelog{print} in_changelog && /^## / && $0 != "## Changelog"{exit}' docs/PROJECT_CONTEXT.md 2>/dev/null)
+  previous_changelog=$(git show HEAD:docs/PROJECT_CONTEXT.md 2>/dev/null | awk '/^## Changelog$/{in_changelog=1} in_changelog{print} in_changelog && /^## / && $0 != "## Changelog"{exit}')
+  if [ "$current_changelog" = "$previous_changelog" ]; then
+    echo "Warning: src/ changed but the PROJECT_CONTEXT.md Changelog section did not."
+  fi
+fi
+
+exit 0

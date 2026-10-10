@@ -105,15 +105,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-10T12:41:22.043Z
+Generated at (UTC): 2026-10-10T12:41:31.511Z
 Git branch: project-context
 
 Last 5 commit subjects:
+- Docs: add project context
 - feat: rebuild stock inventory page
 - style: align inventory pages with design reference
 - feat: build categories master data card grid
 - feat: complete products inventory redesign
-- chore: stop tracking supabase/.temp
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

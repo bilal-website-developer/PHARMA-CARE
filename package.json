@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "prepare": "node scripts/setup-hooks.mjs",
+    "context:update": "node scripts/update-context.mjs",
     "lint": "tsc --noEmit",
     "test:fefo": "tsx --test src/utils/fefo.test.ts",
     "test:receipt": "tsx --test src/utils/receipt.test.ts",
