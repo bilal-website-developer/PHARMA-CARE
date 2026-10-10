@@ -1,7 +1,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Download, FileUp, Package, Plus, Printer, RefreshCw,
-  Search, ShieldAlert, SlidersHorizontal, X,
+  AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Download, FileUp, Grid2X2, List, Package,
+  Plus, Printer, RefreshCw, Search, ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
@@ -26,6 +26,21 @@ type ViewMode = 'products' | 'stock';
 export type ProductFilter = { field: 'category' | 'company'; value: string } | null;
 type DrugClass = 'OTC' | 'RX' | 'CONTROLLED' | 'NARCOTIC';
 type StorageCondition = 'ROOM_TEMPERATURE' | 'COOL' | 'COLD_REFRIGERATED';
+type ProductsDisplayMode = 'table' | 'cards';
+
+interface SavedProductView {
+  id: string;
+  name: string;
+  search: string;
+  category: string;
+  manufacturer: string;
+  drugClass: string;
+  status: 'active' | 'inactive' | 'all';
+  lowStockOnly: boolean;
+  sortColumn: 'name' | 'stock' | 'expiry' | 'mrp';
+  sortDirection: 'asc' | 'desc';
+  hiddenColumns: string[];
+}
 
 interface MedicineUnit {
   id: string;
@@ -42,6 +57,7 @@ interface Medicine {
   barcode: string | null;
   brand_name: string;
   generic_name: string;
+  strength: string | null;
   category: string;
   company: string;
   drug_class: DrugClass;
@@ -69,6 +85,7 @@ interface ProductFormValues {
   barcode: string;
   brand_name: string;
   generic_name: string;
+  strength: string;
   category: string;
   company: string;
   drug_class: DrugClass;
@@ -133,6 +150,7 @@ function isProductsListResponse(value: unknown): value is ProductsListResponse {
       && (typeof row.barcode === 'string' || row.barcode === null)
       && typeof row.brand_name === 'string'
       && typeof row.generic_name === 'string'
+      && (typeof row.strength === 'string' || row.strength === null)
       && typeof row.category === 'string'
       && typeof row.company === 'string'
       && ['OTC', 'RX', 'CONTROLLED', 'NARCOTIC'].includes(String(row.drug_class))
@@ -171,6 +189,50 @@ function csvCell(value: string | number | boolean | null | undefined) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function downloadCsv(filename: string, headers: readonly string[], rows: readonly (readonly (string | number | boolean | null | undefined)[])[]) {
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function savedViewsStorageKey(userId: string) {
+  return `pharma-care.products.saved-views.${userId}`;
+}
+
+function viewModeStorageKey(userId: string) {
+  return `pharma-care.products.view-mode.${userId}`;
+}
+
+function readSavedViews(userId: string): SavedProductView[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(savedViewsStorageKey(userId)) ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is SavedProductView => isRecord(item)
+      && typeof item.id === 'string'
+      && typeof item.name === 'string'
+      && typeof item.search === 'string'
+      && typeof item.category === 'string'
+      && typeof item.manufacturer === 'string'
+      && typeof item.drugClass === 'string'
+      && ['active', 'inactive', 'all'].includes(String(item.status))
+      && typeof item.lowStockOnly === 'boolean'
+      && ['name', 'stock', 'expiry', 'mrp'].includes(String(item.sortColumn))
+      && ['asc', 'desc'].includes(String(item.sortDirection))
+      && Array.isArray(item.hiddenColumns)
+      && item.hiddenColumns.every((column) => typeof column === 'string'));
+  } catch {
+    return [];
+  }
+}
+
+function readDisplayMode(userId: string): ProductsDisplayMode {
+  return localStorage.getItem(viewModeStorageKey(userId)) === 'cards' ? 'cards' : 'table';
+}
+
 function safePrintText(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -183,6 +245,7 @@ function initialProductForm(medicine?: Medicine): ProductFormValues {
     barcode: medicine.barcode ?? '',
     brand_name: medicine.brand_name,
     generic_name: medicine.generic_name,
+    strength: medicine.strength ?? '',
     category: medicine.category,
     company: medicine.company,
     drug_class: medicine.drug_class,
@@ -203,6 +266,7 @@ function initialProductForm(medicine?: Medicine): ProductFormValues {
     barcode: '',
     brand_name: '',
     generic_name: '',
+    strength: '',
     category: '',
     company: '',
     drug_class: 'OTC',
@@ -217,28 +281,46 @@ function initialProductForm(medicine?: Medicine): ProductFormValues {
 export function InventoryScreen({
   mode,
   currentRole: _currentRole,
+  currentUserId,
   initialFilter = null,
+  initialMedicineId = null,
   onFilterApplied,
+  onViewBatches,
+  onClearMedicineFilter,
 }: {
   mode: ViewMode;
   currentRole: string;
+  currentUserId?: string;
   initialFilter?: ProductFilter;
+  initialMedicineId?: string | null;
   onFilterApplied?: () => void;
+  onViewBatches?: (medicineId: string) => void;
+  onClearMedicineFilter?: () => void;
 }) {
   return mode === 'products'
-    ? <ProductsCatalog initialFilter={initialFilter} onFilterApplied={onFilterApplied} />
-    : <StockInventory />;
+    ? <ProductsCatalog
+      initialFilter={initialFilter}
+      userId={currentUserId ?? 'unknown'}
+      onFilterApplied={onFilterApplied}
+      onViewBatches={onViewBatches}
+    />
+    : <StockInventory initialMedicineId={initialMedicineId} onClearMedicineFilter={onClearMedicineFilter} />;
 }
 
 function ProductsCatalog({
   initialFilter,
+  userId,
   onFilterApplied,
+  onViewBatches,
 }: {
   initialFilter: ProductFilter;
+  userId: string;
   onFilterApplied?: () => void;
+  onViewBatches?: (medicineId: string) => void;
 }) {
   const { can } = usePermissions();
   const canEditProducts = can('products');
+  const canViewStockInventory = can('stock_inventory');
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [brands, setBrands] = useState<CategoryOption[]>([]);
@@ -251,10 +333,19 @@ function ProductsCatalog({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortColumn, setSortColumn] = useState<'name' | 'stock' | 'expiry' | 'mrp'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [displayMode, setDisplayMode] = useState<ProductsDisplayMode>(() => readDisplayMode(userId));
+  const [savedViews, setSavedViews] = useState<SavedProductView[]>(() => readSavedViews(userId));
+  const [selectedSavedView, setSelectedSavedView] = useState('');
+  const [savedViewName, setSavedViewName] = useState('');
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>(['cost', 'margin']);
   const [bulkCategory, setBulkCategory] = useState('');
   const [confirmBulkDeactivate, setConfirmBulkDeactivate] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ medicine: Medicine; active: boolean } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [importPreview, setImportPreview] = useState<ProductImportPreviewRow[] | null>(null);
+  const [skippedRows, setSkippedRows] = useState<ProductImportPreviewRow[]>([]);
+  const [skippedLines, setSkippedLines] = useState<number[]>([]);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [overviewStats, setOverviewStats] = useState<ProductsOverviewStats | null>(null);
@@ -268,6 +359,19 @@ function ProductsCatalog({
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<ProductFormValues>(() => initialProductForm());
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSavedViews(readSavedViews(userId));
+    setDisplayMode(readDisplayMode(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    localStorage.setItem(viewModeStorageKey(userId), displayMode);
+  }, [displayMode, userId]);
+
+  useEffect(() => {
+    localStorage.setItem(savedViewsStorageKey(userId), JSON.stringify(savedViews));
+  }, [savedViews, userId]);
 
   useEffect(() => {
     if (!initialFilter) return;
@@ -377,41 +481,173 @@ function ProductsCatalog({
     await Promise.all([optionsLoad, loadProducts()]);
   }, [loadOptions, loadProducts]);
 
+  const saveCurrentView = () => {
+    const name = savedViewName.trim();
+    if (!name) {
+      setNotice('Enter a name for this saved view.');
+      return;
+    }
+    const view: SavedProductView = {
+      id: crypto.randomUUID(),
+      name,
+      search,
+      category: categoryFilter,
+      manufacturer: brandFilter,
+      drugClass: classFilter,
+      status: activeFilter,
+      lowStockOnly,
+      sortColumn,
+      sortDirection,
+      hiddenColumns: hiddenColumnIds,
+    };
+    setSavedViews((current) => [...current.filter((item) => item.name.toLowerCase() !== name.toLowerCase()), view]);
+    setSelectedSavedView(view.id);
+    setSavedViewName('');
+    setNotice(`Saved view “${name}”.`);
+  };
+
+  const applySavedView = (id: string) => {
+    const view = savedViews.find((item) => item.id === id);
+    if (!view) return;
+    setSearch(view.search);
+    setCategoryFilter(view.category);
+    setBrandFilter(view.manufacturer);
+    setClassFilter(view.drugClass);
+    setActiveFilter(view.status);
+    setLowStockOnly(view.lowStockOnly);
+    setSortColumn(view.sortColumn);
+    setSortDirection(view.sortDirection);
+    setHiddenColumnIds(view.hiddenColumns);
+    setPage(1);
+    setSelectedSavedView(id);
+  };
+
   const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const visibleMedicines = medicines;
 
-  const exportProducts = () => {
-    const productsToExport = selectedIds.length
-      ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
-      : visibleMedicines;
-    if (!productsToExport.length) {
-      setNotice('There are no products on this page to export.');
-      return;
+  const listArguments = (requestedPage: number, pageSize: number) => ({
+    p_search: search.trim() || null,
+    p_category: categoryFilter || null,
+    p_manufacturer: brandFilter || null,
+    p_class: classFilter || null,
+    p_status: activeFilter,
+    p_low_only: lowStockOnly,
+    p_sort_col: sortColumn,
+    p_sort_dir: sortDirection,
+    p_page: requestedPage,
+    p_page_size: pageSize,
+  });
+
+  const loadFilteredProductsForExport = async () => {
+    const client = supabase;
+    if (!client) throw new Error('Supabase is not configured.');
+    const rows: Medicine[] = [];
+    let requestedPage = 1;
+    let expectedCount = 0;
+    do {
+      const { data, error: queryError } = await client.rpc('products_list', listArguments(requestedPage, 200));
+      if (queryError) throw queryError;
+      if (!isProductsListResponse(data)) throw new Error('The product export service returned an invalid response.');
+      if (requestedPage === 1) expectedCount = data.total_count;
+      if (data.total_count !== expectedCount) throw new Error('Products changed while the export was being prepared. Retry the export.');
+      const productRows = data.rows;
+      if (productRows.length === 0 && rows.length < expectedCount) {
+        throw new Error('The product export ended before all filtered rows were returned.');
+      }
+      if (productRows.length) {
+        const ids = productRows.map((medicine) => medicine.id);
+        const units = await fetchAllSupabaseRows((from, to) => client.from('medicine_units')
+          .select('id,medicine_id,name,conversion_factor,is_default_sale_unit,price_paisa,barcode')
+          .in('medicine_id', ids)
+          .order('is_default_sale_unit', { ascending: false })
+          .order('id')
+          .range(from, to));
+        const unitsByMedicine = new Map<string, MedicineUnit[]>();
+        for (const unit of units) {
+          const current = unitsByMedicine.get(unit.medicine_id) ?? [];
+          current.push(unit);
+          unitsByMedicine.set(unit.medicine_id, current);
+        }
+        rows.push(...productRows.map((medicine) => ({
+          ...medicine,
+          units: unitsByMedicine.get(medicine.id) ?? [],
+        })));
+      }
+      requestedPage += 1;
+    } while (rows.length < expectedCount);
+    return rows;
+  };
+
+  const exportHeaders = (includeCost: boolean) => [
+    'code', 'barcode', 'brand_name', 'generic_name', 'strength', 'category', 'company',
+    'drug_class', 'storage_condition', 'rack_location', 'min_stock_alert', 'stock',
+    'nearest_expiry', 'requires_prescription', 'is_active', 'unit_name', 'conversion_factor',
+    'price_paisa', 'unit_barcode',
+    ...(includeCost ? ['latest_cost_paisa', 'margin_percent'] : []),
+  ];
+
+  const exportValues = (productsToExport: readonly Medicine[], includeCost: boolean) => productsToExport.map((medicine) => {
+    const unit = medicine.units.find((item) => item.is_default_sale_unit);
+    return [
+      medicine.code, medicine.barcode, medicine.brand_name, medicine.generic_name,
+      medicine.strength, medicine.category, medicine.company, medicine.drug_class,
+      medicine.storage_condition, medicine.rack_location, medicine.min_stock_alert,
+      medicine.stock, medicine.nearest_expiry, medicine.requires_prescription,
+      medicine.is_active, unit?.name ?? '', unit?.conversion_factor ?? '',
+      unit?.price_paisa ?? '', unit?.barcode ?? '',
+      ...(includeCost ? [medicine.latest_cost_paisa, medicine.margin_percent] : []),
+    ];
+  });
+
+  const exportProducts = async (format: 'csv' | 'xlsx', selectedOnly = false) => {
+    if (exporting) return;
+    setExporting(true);
+    setNotice('');
+    try {
+      const productsToExport = selectedOnly
+        ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
+        : await loadFilteredProductsForExport();
+      if (!productsToExport.length) {
+        setNotice(selectedOnly ? 'Select products on this page before exporting.' : 'There are no products matching these filters to export.');
+        return;
+      }
+      const headers = exportHeaders(canViewCost);
+      const rows = exportValues(productsToExport, canViewCost);
+      const dateStamp = today();
+      if (format === 'csv') {
+        downloadCsv(`pharma-care-products-${dateStamp}.csv`, headers, rows);
+      } else {
+        const XLSX = await import('@e965/xlsx');
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+        XLSX.writeFile(workbook, `pharma-care-products-${dateStamp}.xlsx`);
+      }
+      setNotice(`Exported ${productsToExport.length} product${productsToExport.length === 1 ? '' : 's'} to ${format.toUpperCase()}.`);
+    } catch (caught) {
+      setNotice(messageFor(caught, 'Could not export products.'));
+    } finally {
+      setExporting(false);
     }
-    const headers = [
-      'code', 'barcode', 'brand_name', 'generic_name', 'category', 'company',
+  };
+
+  const downloadImportTemplate = () => {
+    downloadCsv('pharma-care-products-template.csv', [
+      'code', 'barcode', 'brand_name', 'generic_name', 'strength', 'category', 'company',
       'drug_class', 'storage_condition', 'rack_location', 'min_stock_alert',
       'requires_prescription', 'is_active', 'unit_name', 'conversion_factor',
       'price_paisa', 'unit_barcode',
-    ];
-    const rows = productsToExport.map((medicine) => {
-      const unit = medicine.units.find((item) => item.is_default_sale_unit);
-      return [
-        medicine.code, medicine.barcode, medicine.brand_name, medicine.generic_name,
-        medicine.category, medicine.company, medicine.drug_class, medicine.storage_condition,
-        medicine.rack_location, medicine.min_stock_alert, medicine.requires_prescription,
-        medicine.is_active, unit?.name ?? '', unit?.conversion_factor ?? '',
-        unit?.price_paisa ?? '', unit?.barcode ?? '',
-      ];
-    });
-    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pharma-care-products-page-${page}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setNotice(`Exported ${productsToExport.length} product${productsToExport.length === 1 ? '' : 's'} from this page.`);
+    ], []);
+  };
+
+  const downloadSkippedRows = (rows = skippedRows) => {
+    if (!rows.length) return setNotice('There are no skipped rows to download.');
+    const headers = Object.keys(rows[0].values);
+    downloadCsv(
+      `pharma-care-products-skipped-${today()}.csv`,
+      [...headers, 'import_errors'],
+      rows.map((row) => [...headers.map((header) => row.values[header] ?? ''), row.errors.join('; ')]),
+    );
   };
 
   const prepareImportPreview = async (file: File) => {
@@ -423,6 +659,7 @@ function ProductsCatalog({
     setNotice('');
     try {
       const parsedRows = parseProductCsv(await file.text());
+      if (parsedRows.length > 2000) throw new Error('CSV import is limited to 2000 product rows.');
       const localPreview = previewProductCsv(parsedRows, []);
       const { data, error: previewError } = await supabase.rpc('products_import_preview', {
         rows: localPreview.map(({ line, values }) => ({ ...values, line })),
@@ -438,10 +675,11 @@ function ProductsCatalog({
           databaseDuplicates.add(row.line);
         }
       }
+      setSkippedLines([]);
       setImportPreview(localPreview.map((row) => ({
         ...row,
         errors: databaseDuplicates.has(row.line)
-          ? [...row.errors, 'This product already exists in the database.']
+          ? [...row.errors, 'This product duplicates a database record.']
           : row.errors,
       })));
     } catch (caught) {
@@ -455,9 +693,18 @@ function ProductsCatalog({
 
   const importProducts = async () => {
     if (!supabase || !importPreview) return;
-    const validRows = importPreview.filter((row) => row.errors.length === 0);
+    const validRows = importPreview.filter((row) => !skippedLines.includes(row.line) && row.errors.length === 0);
+    const rowsToSkip = importPreview.filter((row) => skippedLines.includes(row.line) || row.errors.length > 0)
+      .map((row) => skippedLines.includes(row.line) && row.errors.length === 0
+        ? { ...row, errors: ['Skipped by user.'] }
+        : row);
     if (validRows.length === 0) {
-      setNotice('There are no valid rows to import. Correct the CSV errors and try again.');
+      if (rowsToSkip.length) {
+        setSkippedRows(rowsToSkip);
+        setNotice('No rows were imported. Download the skipped rows, correct the file, and try again.');
+      } else {
+        setNotice('There are no valid rows to import. Correct the CSV errors and try again.');
+      }
       return;
     }
     setImporting(true);
@@ -470,10 +717,12 @@ function ProductsCatalog({
       if (!isRecord(data) || typeof data.imported_count !== 'number') {
         throw new Error('The import service returned an invalid response.');
       }
+      setSkippedRows(rowsToSkip);
       await loadProducts();
       setSelectedIds([]);
-      setNotice(`Imported ${data.imported_count} product${data.imported_count === 1 ? '' : 's'} in one transaction. ${importPreview.length - validRows.length} row(s) were skipped because of preview errors.`);
+      setNotice(`Imported ${data.imported_count} product${data.imported_count === 1 ? '' : 's'}; skipped ${rowsToSkip.length} row${rowsToSkip.length === 1 ? '' : 's'}.`);
       setImportPreview(null);
+      setSkippedLines([]);
     } catch (caught) {
       setNotice(messageFor(caught, 'Could not import products. No rows were imported.'));
     } finally {
@@ -517,13 +766,24 @@ function ProductsCatalog({
       setNotice('The barcode-label window was blocked. Allow pop-ups for this site and try again.');
       return;
     }
-    const labels = productsToPrint.map((medicine) => {
-      const barcodeValue = medicine.barcode || medicine.code;
-      return `<article class="label"><strong>${safePrintText(medicine.brand_name)}</strong><span>${safePrintText(medicine.code)}</span><div class="barcode-value">${safePrintText(barcodeValue)}</div></article>`;
-    }).join('');
-    printWindow.document.write(`<!doctype html><html><head><title>Product barcode labels</title><style>body{font-family:Arial,sans-serif;margin:12mm;color:#111}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}.label{height:27mm;border:1px dashed #777;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2mm;text-align:center;padding:2mm;overflow:hidden}.label strong{font-size:11pt}.label span{font-size:8pt}.barcode-value{font-family:monospace;font-size:12pt;letter-spacing:2px}@media print{.label{break-inside:avoid}}</style></head><body><main class="sheet">${labels}</main><script>window.onload=()=>window.print()</script></body></html>`);
-    printWindow.document.close();
-    setNotice(`Prepared ${productsToPrint.length} barcode label${productsToPrint.length === 1 ? '' : 's'} using each product barcode (or product code if none is set).`);
+    void (async () => {
+      try {
+        const { default: JsBarcode } = await import('jsbarcode');
+        const labels = productsToPrint.map((medicine) => {
+          const barcodeValue = medicine.barcode || medicine.code;
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          JsBarcode(svg, barcodeValue, { format: 'CODE128', displayValue: true, height: 42, margin: 4 });
+          const unit = medicine.units.find((item) => item.is_default_sale_unit);
+          return `<article class="label"><strong>${safePrintText(medicine.brand_name)}${medicine.strength ? ` · ${safePrintText(medicine.strength)}` : ''}</strong><span>${safePrintText(medicine.code)}</span>${svg.outerHTML}<strong>MRP ${safePrintText(unit ? money(unit.price_paisa) : 'Not set')}</strong></article>`;
+        }).join('');
+        printWindow.document.write(`<!doctype html><html><head><title>Product barcode labels</title><style>body{font-family:Arial,sans-serif;margin:12mm;color:#111}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}.label{min-height:34mm;border:1px dashed #777;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm;text-align:center;padding:2mm;overflow:hidden}.label strong{font-size:9pt}.label span{font-size:8pt}.label svg{max-width:100%;height:auto}@media print{.label{break-inside:avoid}}</style></head><body><main class="sheet">${labels}</main><script>window.onload=()=>window.print()</script></body></html>`);
+        printWindow.document.close();
+        setNotice(`Prepared ${productsToPrint.length} scannable Code 128 barcode label${productsToPrint.length === 1 ? '' : 's'}.`);
+      } catch (caught) {
+        printWindow.close();
+        setNotice(messageFor(caught, 'Could not generate Code 128 barcode labels.'));
+      }
+    })();
   };
 
   const openCreate = () => {
@@ -584,6 +844,7 @@ function ProductsCatalog({
           barcode: form.barcode.trim() || null,
           brand_name: form.brand_name.trim(),
           generic_name: form.generic_name.trim(),
+          strength: form.strength.trim() || null,
           category: form.category,
           company: form.company,
           drug_class: form.drug_class,
@@ -606,19 +867,27 @@ function ProductsCatalog({
     }
   };
 
-  const deactivate = async (medicine: Medicine) => {
-    if (!supabase) return setError('Supabase is not configured.');
-    if (!window.confirm(`Deactivate ${medicine.brand_name}? It will remain in historical records and become unavailable for new purchases.`)) return;
-    setError('');
+  const changeProductStatus = async (medicine: Medicine, active: boolean) => {
+    if (!supabase) {
+      setNotice('Supabase is not configured.');
+      return;
+    }
+    setImporting(true);
+    setNotice('');
     try {
-      const { error: updateError } = await supabase.from('medicines')
-        .update({ is_active: false })
-        .eq('id', medicine.id);
+      const { error: updateError } = await supabase.rpc('products_bulk_update', {
+        ids: [medicine.id],
+        action: active ? 'activate' : 'deactivate',
+        value: null,
+      });
       if (updateError) throw updateError;
-      setNotice(`${medicine.brand_name} deactivated.`);
+      setPendingStatusChange(null);
+      setNotice(`${medicine.brand_name} ${active ? 'activated' : 'deactivated'}.`);
       await loadProducts();
     } catch (caught) {
-      setError(messageFor(caught, 'Could not deactivate product.'));
+      setNotice(messageFor(caught, `Could not ${active ? 'activate' : 'deactivate'} product.`));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -636,7 +905,8 @@ function ProductsCatalog({
       render: (medicine) => (
         <div className="min-w-44">
           <strong className="block text-text">{medicine.brand_name}</strong>
-          <span className="text-xs text-muted">{medicine.generic_name} · {medicine.code}</span>
+          <span className="block text-xs text-muted">{medicine.generic_name}{medicine.strength ? ` · ${medicine.strength}` : ''}</span>
+          <span className="text-xs text-muted">{medicine.code}</span>
           {medicine.barcode && <span className="mt-1 flex items-center gap-1 text-xs text-muted"><Barcode size={13} />{medicine.barcode}</span>}
         </div>
       ),
@@ -719,12 +989,13 @@ function ProductsCatalog({
     <div className="space-y-4">
       <section className={`${PANEL} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between`}>
         <div>
-          <h2 className="text-xl font-black text-text">Inventory Management</h2>
+          <h2 className="text-xl font-black text-text">Products</h2>
           <p className="text-sm text-muted">Track products, active stock, and nearest batch expiry.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={SECONDARY} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
-          <button type="button" className={SECONDARY} onClick={exportProducts}><Download size={16} /> Export page</button>
+          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('csv')}><Download size={16} /> Export all CSV</button>
+          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export all XLSX</button>
           <button type="button" className={SECONDARY} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
           {canEditProducts && <>
             <input
@@ -738,10 +1009,32 @@ function ProductsCatalog({
                 if (file) void prepareImportPreview(file);
               }}
             />
+            <button type="button" className={SECONDARY} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>
             <button type="button" className={SECONDARY} disabled={importing} onClick={() => importInputRef.current?.click()}><FileUp size={16} /> Import CSV</button>
+            {skippedRows.length > 0 && <button type="button" className={SECONDARY} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
           </>}
           {canEditProducts && <button type="button" className={BUTTON} onClick={openCreate}><Plus size={16} /> Add product</button>}
         </div>
+      </section>
+
+      <section aria-label="Saved product views and display options" className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
+        <label className="text-sm font-semibold text-text">Saved views
+          <select aria-label="Saved product views" className={`${FIELD} ml-2 inline-block w-auto min-w-40`} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
+            <option value="">Choose view</option>
+            {savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
+          </select>
+        </label>
+        <input aria-label="Saved view name" className={`${FIELD} w-44`} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
+        <button type="button" className={SECONDARY} onClick={saveCurrentView}>Save view</button>
+        {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
+          setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
+          setSelectedSavedView('');
+          setNotice('Saved view removed.');
+        }}>Delete view</button>}
+        <span className="ml-auto inline-flex items-center gap-2">
+          <button type="button" className={displayMode === 'table' ? BUTTON : SECONDARY} aria-pressed={displayMode === 'table'} onClick={() => setDisplayMode('table')}><List size={16} /> Table</button>
+          <button type="button" className={displayMode === 'cards' ? BUTTON : SECONDARY} aria-pressed={displayMode === 'cards'} onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /> Cards</button>
+        </span>
       </section>
 
       <section aria-label="Product summary" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -755,7 +1048,7 @@ function ProductsCatalog({
       <section aria-label="Product search and filters" className={`${PANEL} space-y-3 p-4`}>
         <label className="relative block">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
-          <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, code, barcode, or manufacturer" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
+          <input className={`${FIELD} pl-9`} aria-label="Search products"           placeholder="Search product, strength, code, barcode, or manufacturer" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
         </label>
         <div className="flex flex-wrap items-center gap-2">
           <select aria-label="Filter category" className={FIELD + ' w-auto min-w-36'} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
@@ -768,7 +1061,7 @@ function ProductsCatalog({
           </select>
           <select aria-label="Filter medicine class" className={FIELD + ' w-auto min-w-36'} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
             <option value="">All classes</option>
-            <option value="OTC">OTC</option><option value="RX">RX</option><option value="CONTROLLED">Controlled</option><option value="NARCOTIC">Narcotic</option>
+            <option value="OTC">OTC</option><option value="RX">Rx</option><option value="CONTROLLED">Controlled (including narcotics)</option>
           </select>
           <select aria-label="Filter active status" className={FIELD + ' w-auto min-w-40'} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
             <option value="active">Active products</option><option value="inactive">Inactive products</option><option value="all">All products</option>
@@ -799,8 +1092,8 @@ function ProductsCatalog({
         )}
       </section>
 
-      {error && <div role="alert" className="rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
-      {optionsError && <div role="alert" className="rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{optionsError}</div>}
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button type="button" className={SECONDARY} disabled={loading} onClick={() => void loadProducts()}>Retry products</button></div>}
+      {optionsError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{optionsError}</span><button type="button" className={SECONDARY} onClick={() => void loadOptions().catch((caught) => setOptionsError(messageFor(caught, 'Could not load categories and manufacturers.')))}>Retry filters</button></div>}
       {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
 
       <DataTable
@@ -808,9 +1101,12 @@ function ProductsCatalog({
         rows={medicines}
         columns={productColumns}
         getRowId={(medicine) => medicine.id}
+        layout={displayMode}
+        hiddenColumnIds={hiddenColumnIds}
+        onHiddenColumnIdsChange={setHiddenColumnIds}
         loading={loading}
         emptyTitle={error ? 'Product data unavailable' : 'No products match these filters'}
-        emptyDescription={error ? 'Retry after resolving the data error.' : 'Try changing the filters or add a product.'}
+        emptyDescription={error ? 'Use Retry products above to reload.' : 'Try changing the filters or add a product.'}
         selectedIds={canEditProducts ? selectedIds : undefined}
         onSelectionChange={canEditProducts ? setSelectedIds : undefined}
         pagination={{
@@ -822,10 +1118,14 @@ function ProductsCatalog({
             setPage(nextPage);
           },
         }}
-        actions={canEditProducts ? [
-          { label: 'Edit product', onSelect: openEdit },
-          { label: 'Deactivate product', onSelect: (medicine) => void deactivate(medicine), disabled: (medicine) => !medicine.is_active },
-        ] : []}
+        actions={[
+          ...(canEditProducts ? [{ label: 'Edit product', onSelect: openEdit }] : []),
+          ...(canViewStockInventory && onViewBatches ? [{ label: 'View batches', onSelect: (medicine: Medicine) => onViewBatches(medicine.id) }] : []),
+          ...(canEditProducts ? [
+            { label: 'Deactivate product', onSelect: (medicine: Medicine) => setPendingStatusChange({ medicine, active: false }), disabled: (medicine: Medicine) => !medicine.is_active },
+            { label: 'Activate product', onSelect: (medicine: Medicine) => setPendingStatusChange({ medicine, active: true }), disabled: (medicine: Medicine) => medicine.is_active },
+          ] : []),
+        ]}
       />
       {canEditProducts && selectedIds.length > 0 && (
         <div className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
@@ -842,6 +1142,8 @@ function ProductsCatalog({
         actions={[
           { label: 'Update category', onClick: () => bulkCategory ? void applyBulkUpdate('category', bulkCategory) : setNotice('Choose a category before applying the bulk action.'), disabled: importing },
           { label: 'Deactivate selected', onClick: () => setConfirmBulkDeactivate(true), disabled: importing },
+          { label: 'Export selected CSV', onClick: () => void exportProducts('csv', true), disabled: exporting },
+          { label: 'Export selected XLSX', onClick: () => void exportProducts('xlsx', true), disabled: exporting },
         ]}
       />
       <ConfirmDialog
@@ -853,13 +1155,24 @@ function ProductsCatalog({
         onCancel={() => setConfirmBulkDeactivate(false)}
         onConfirm={() => void applyBulkUpdate('deactivate')}
       />
+      <ConfirmDialog
+        open={pendingStatusChange !== null}
+        title={`${pendingStatusChange?.active ? 'Activate' : 'Deactivate'} product?`}
+        description={pendingStatusChange?.active
+          ? `${pendingStatusChange.medicine.brand_name} will become available for new purchases.`
+          : `${pendingStatusChange?.medicine.brand_name ?? 'This product'} will remain in history but become unavailable for new purchases.`}
+        confirmLabel={pendingStatusChange?.active ? 'Activate' : 'Deactivate'}
+        destructive={!pendingStatusChange?.active}
+        onCancel={() => setPendingStatusChange(null)}
+        onConfirm={() => pendingStatusChange && void changeProductStatus(pendingStatusChange.medicine, pendingStatusChange.active)}
+      />
       {importPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <section role="dialog" aria-modal="true" aria-labelledby="product-import-title" className={`${PANEL} w-full max-w-3xl space-y-4 p-5`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 id="product-import-title" className="text-lg font-black text-text">Review product CSV</h2>
-                <p className="text-sm text-muted">{importPreview.filter((row) => !row.errors.length).length} valid of {importPreview.length} row(s). Import runs as one transaction.</p>
+                <p className="text-sm text-muted">{importPreview.filter((row) => !row.errors.length && !skippedLines.includes(row.line)).length} ready of {importPreview.length} row(s). Valid rows import in one transaction.</p>
               </div>
               <button type="button" className={SECONDARY} aria-label="Close import preview" onClick={() => setImportPreview(null)}><X size={16} /></button>
             </div>
@@ -870,14 +1183,19 @@ function ProductsCatalog({
               {importPreview.map((row) => (
                 <article key={row.line} className="rounded-control border border-border p-3 text-sm">
                   <strong>Line {row.line}: {row.values.brand_name || 'Unnamed product'}</strong>
+                  <p className="text-xs text-muted">{row.values.generic_name}{row.values.strength ? ` · ${row.values.strength}` : ''} · {row.values.company} · {row.values.drug_class || 'OTC'}</p>
                   {row.errors.length > 0 && <ul className="mt-1 list-disc pl-5 text-danger">{row.errors.map((message) => <li key={message}>{message}</li>)}</ul>}
                   {row.errors.length === 0 && <p className="mt-1 text-emerald-700">Ready to import</p>}
+                  <button type="button" className={`${SECONDARY} mt-2`} onClick={() => setSkippedLines((current) => current.includes(row.line) ? current.filter((line) => line !== row.line) : [...current, row.line])}>
+                    {skippedLines.includes(row.line) ? 'Include row' : 'Skip row'}
+                  </button>
                 </article>
               ))}
             </div>
             <div className="flex justify-end gap-2">
+              <button type="button" className={SECONDARY} onClick={() => downloadSkippedRows(importPreview.filter((row) => row.errors.length > 0 || skippedLines.includes(row.line)).map((row) => skippedLines.includes(row.line) && row.errors.length === 0 ? { ...row, errors: ['Skipped by user.'] } : row))}>Download skipped rows</button>
               <button type="button" className={SECONDARY} onClick={() => setImportPreview(null)}>Cancel</button>
-              <button type="button" className={BUTTON} disabled={importing || !importPreview.some((row) => row.errors.length === 0)} onClick={() => void importProducts()}>
+              <button type="button" className={BUTTON} disabled={importing || !importPreview.some((row) => row.errors.length === 0 && !skippedLines.includes(row.line))} onClick={() => void importProducts()}>
                 {importing ? 'Importing…' : 'Import valid rows'}
               </button>
             </div>
@@ -894,6 +1212,7 @@ function ProductsCatalog({
             <label className="text-sm text-text">Product code *<input className={`${FIELD} mt-1`} required maxLength={80} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} /></label>
             <label className="text-sm text-text">Brand / medicine name *<input className={`${FIELD} mt-1`} required maxLength={160} value={form.brand_name} onChange={(event) => setForm({ ...form, brand_name: event.target.value })} /></label>
             <label className="text-sm text-text">Generic name *<input className={`${FIELD} mt-1`} required maxLength={160} value={form.generic_name} onChange={(event) => setForm({ ...form, generic_name: event.target.value })} /></label>
+            <label className="text-sm text-text">Strength<input className={`${FIELD} mt-1`} maxLength={100} value={form.strength} onChange={(event) => setForm({ ...form, strength: event.target.value })} placeholder="e.g. 500 mg" /></label>
             <label className="text-sm text-text">Category *<select className={`${FIELD} mt-1`} required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Select category</option>{categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
             <label className="text-sm text-text">Manufacturer / brand *<select className={`${FIELD} mt-1`} required value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })}><option value="">Select manufacturer</option>{brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
             <label className="text-sm text-text">Barcode<input className={`${FIELD} mt-1`} maxLength={100} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} /></label>
@@ -921,7 +1240,13 @@ function ProductsCatalog({
   );
 }
 
-function StockInventory() {
+function StockInventory({
+  initialMedicineId,
+  onClearMedicineFilter,
+}: {
+  initialMedicineId: string | null;
+  onClearMedicineFilter?: () => void;
+}) {
   const { can } = usePermissions();
   const canAdjust = can('stock_inventory');
   const canSeeCost = can('products');
@@ -949,14 +1274,20 @@ function StockInventory() {
     setError('');
     try {
       const [batchRows, productRows] = await Promise.all([
-        fetchAllSupabaseRows((from, to) => client.from('stock_batches')
+        fetchAllSupabaseRows((from, to) => {
+          let query = client.from('stock_batches')
           .select('id,medicine_id,batch_number,expiry_date,received_date,cost_paisa_per_base_unit,mrp_paisa_per_base_unit,quantity_remaining,status,supplier_id')
-          .order('expiry_date').order('batch_number').order('id')
-          .range(from, to)),
-        fetchAllSupabaseRows((from, to) => client.from('medicines')
+          .order('expiry_date').order('batch_number').order('id');
+          if (initialMedicineId) query = query.eq('medicine_id', initialMedicineId);
+          return query.range(from, to);
+        }),
+        fetchAllSupabaseRows((from, to) => {
+          let query = client.from('medicines')
           .select('id,brand_name,generic_name,code,min_stock_alert,is_active')
-          .order('id')
-          .range(from, to)),
+          .order('id');
+          if (initialMedicineId) query = query.eq('id', initialMedicineId);
+          return query.range(from, to);
+        }),
       ]);
       const medicineRows = productRows;
       const supplierIds = Array.from(new Set(batchRows.map((batch) => batch.supplier_id).filter((id): id is string => Boolean(id))));
@@ -982,7 +1313,7 @@ function StockInventory() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initialMedicineId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1059,7 +1390,8 @@ function StockInventory() {
         <button type="button" aria-label="Refresh stock" className={SECONDARY} onClick={() => void load()} disabled={loading}><RefreshCw size={16} /></button>
       </div>
     </section>
-    {error && <div role="alert" className="rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
+    {initialMedicineId && <div className="flex flex-wrap items-center gap-2 rounded-control border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-text"><span>Showing batches for the selected product.</span><button type="button" className={SECONDARY} onClick={onClearMedicineFilter}>Show all products</button></div>}
+    {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button type="button" className={SECONDARY} disabled={loading} onClick={() => void load()}>Retry stock</button></div>}
     {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
     <section className={`${PANEL} overflow-hidden`}>
       {loading ? <p className="p-8 text-center text-sm text-muted">Loading stock batches…</p>

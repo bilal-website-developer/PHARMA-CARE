@@ -401,9 +401,14 @@ function PharmacyWorkspace({
   }, [canPage]);
 
   const [productFilter, setProductFilter] = React.useState<ProductFilter>(null);
+  const [stockMedicineId, setStockMedicineId] = React.useState<string | null>(null);
   const viewFilteredProducts = React.useCallback((filter: Exclude<ProductFilter, null>) => {
     setProductFilter(filter);
     navigateTo('products');
+  }, [navigateTo]);
+  const viewProductBatches = React.useCallback((medicineId: string) => {
+    setStockMedicineId(medicineId);
+    navigateTo('stock-inventory');
   }, [navigateTo]);
 
   // Main Datasets
@@ -786,8 +791,10 @@ function PharmacyWorkspace({
             <InventoryScreen
               mode="products"
               currentRole={currentRole}
+              currentUserId={session.userId}
               initialFilter={productFilter}
               onFilterApplied={() => setProductFilter(null)}
+              onViewBatches={viewProductBatches}
             />
           )}
 
@@ -797,6 +804,8 @@ function PharmacyWorkspace({
             <InventoryScreen
               mode="stock"
               currentRole={currentRole}
+              initialMedicineId={stockMedicineId}
+              onClearMedicineFilter={() => setStockMedicineId(null)}
             />
           )}
 

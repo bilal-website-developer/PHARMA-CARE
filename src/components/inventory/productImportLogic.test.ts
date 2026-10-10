@@ -16,11 +16,11 @@ test('rejects malformed CSV and missing required headers', () => {
   assert.throws(() => parseProductCsv('code,brand_name\nP-1,Brand'), /missing the required "generic_name" column/);
 });
 
-test('preview reports invalid numeric values and duplicate products', () => {
+test('preview reports invalid numeric values and duplicate rows by name and manufacturer', () => {
   const rows = parseProductCsv([
     headers,
     'P-1,,Brand,Generic,Tablets,Maker,Box,10,500',
-    'P-1,,Other,Other,Tablets,Maker,Box,10,500',
+    'P-2,, brand ,Different generic,Tablets, maker ,Box,10,500',
     'P-2,,Brand  ,Generic,Tablets,Maker,Box,0,-1',
   ].join('\n'));
   const preview = previewProductCsv(rows, []);
@@ -30,7 +30,7 @@ test('preview reports invalid numeric values and duplicate products', () => {
   assert.match(preview[2].errors.join(' '), /Price/);
 });
 
-test('preview identifies products already in the database by code, barcode, or name tuple', () => {
+test('preview identifies products by barcode first or the fallback name and manufacturer tuple', () => {
   const rows = parseProductCsv([
     headers,
     'P-1,,Other,Generic,Tablets,Maker,Box,10,500',
@@ -42,5 +42,23 @@ test('preview identifies products already in the database by code, barcode, or n
     { code: 'P-0', barcode: '123', brand_name: 'Old', generic_name: 'Other', company: 'Maker' },
     { code: 'P-0', barcode: null, brand_name: 'Brand', generic_name: 'Generic', company: 'Maker' },
   ]);
-  assert.ok(preview.every((row) => row.errors.some((error) => error.includes('duplicates'))));
+  assert.ok(!preview[0].errors.some((error) => error.includes('duplicates')));
+  assert.ok(preview[1].errors.some((error) => error.includes('duplicates')));
+  assert.ok(preview[2].errors.some((error) => error.includes('duplicates')));
+});
+
+test('strength differentiates fallback duplicates only when the incoming CSV includes strength', () => {
+  const existing = [{
+    code: 'P-1',
+    barcode: null,
+    brand_name: 'Brand',
+    generic_name: 'Generic',
+    company: 'Maker',
+    strength: '500 mg',
+  }];
+  const withStrength = parseProductCsv(`${headers},strength\nP-2,,Brand,Other,Tablets,Maker,Box,10,500,250 mg`);
+  const withoutStrength = parseProductCsv(`${headers}\nP-3,,Brand,Other,Tablets,Maker,Box,10,500`);
+
+  assert.equal(previewProductCsv(withStrength, existing)[0].errors.length, 0);
+  assert.match(previewProductCsv(withoutStrength, existing)[0].errors.join(' '), /duplicates/);
 });

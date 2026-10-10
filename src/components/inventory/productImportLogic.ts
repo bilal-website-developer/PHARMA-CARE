@@ -9,6 +9,8 @@ export interface ProductDuplicateIdentity {
   brand_name: string;
   generic_name: string;
   company: string;
+  strength?: string | null;
+  strength_present?: boolean;
 }
 
 export interface ProductImportPreviewRow extends ParsedProductCsvRow {
@@ -84,13 +86,14 @@ function duplicateIdentity(
   candidate: ProductDuplicateIdentity,
   existing: ProductDuplicateIdentity,
 ) {
-  if (normalized(candidate.code) === normalized(existing.code)) return true;
-  if (candidate.barcode && existing.barcode
-    && normalized(candidate.barcode) === normalized(existing.barcode)) return true;
-  return !candidate.barcode && !existing.barcode
-    && normalized(candidate.brand_name) === normalized(existing.brand_name)
-    && normalized(candidate.generic_name) === normalized(existing.generic_name)
-    && normalized(candidate.company) === normalized(existing.company);
+  if (candidate.barcode) {
+    return Boolean(existing.barcode)
+      && normalized(candidate.barcode) === normalized(existing.barcode);
+  }
+  return normalized(candidate.brand_name) === normalized(existing.brand_name)
+    && normalized(candidate.company) === normalized(existing.company)
+    && (!candidate.strength_present
+      || normalized(candidate.strength) === normalized(existing.strength));
 }
 
 export function previewProductCsv(
@@ -106,6 +109,8 @@ export function previewProductCsv(
       brand_name: values.brand_name ?? '',
       generic_name: values.generic_name ?? '',
       company: values.company ?? '',
+      strength: values.strength ?? null,
+      strength_present: Object.prototype.hasOwnProperty.call(values, 'strength'),
     };
 
     if (Object.values(product).some((value) => typeof value === 'string' && !value.trim())) {

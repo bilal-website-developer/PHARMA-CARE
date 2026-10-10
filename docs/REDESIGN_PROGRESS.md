@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | 0 — Discovery | Done | Read-only discovery completed from the checked-in app, migrations, baseline schema, and documentation. |
 | 1 — Shared UI pieces | Done | Added reusable inventory UI primitives and pure stock/expiry display logic with unit tests; no database changes. |
-| 2 — Products | Implemented; migration awaits manual application | Server-backed paginated product list, filters/sorting, summary stats, cost redaction, bulk actions and transactional CSV import; strength is unavailable in the current schema. |
-| 3 — Categories & master data | Pending approval | Not started. |
+| 2 — Products | Done | Server-backed product catalog with filtered export, saved views, table/card layouts, strength, Code 128 labels, imports, and RPC-only product status changes. Required migrations were run and verified by the user. |
+| 3 — Categories & master data | In progress; database prerequisite | Categories card-grid work follows the Products commit. Any new overview/merge RPC migration will be shown for manual application before the UI relies on it. |
 | 4 — Stock Inventory | Pending approval | Not started. |
 | 5 — Reorder suggestions | Pending approval | Not started. |
 | 6 — Returns & stock-take | Gated | Start only after written approval for Phases 1–5. |
@@ -21,15 +21,17 @@
 - Registered the focused test suite in the existing `npm test` runner. No dependencies, database objects, or live data were changed.
 - Validation: `npm run lint`, `npm test` (67 tests), and `npm run build` pass. Vite still reports its existing config-loader and large-chunk warnings.
 
-### Phase 2 delivered (migration not applied)
+### Phase 2 delivered
 
 - Replaced the Products page's client-side batch aggregation with server-side product list and summary RPCs. Search, active/class/category/manufacturer filters, low-stock-only, stable sorting, and pagination are applied before rows reach the browser.
-- Reused the Phase 1 responsive table, stock/expiry/status display, KPI cards, selection, bulk actions, and confirmation dialog. Export and barcode print remain limited to the current page or its selected rows.
+- Reused the Phase 1 responsive table, stock/expiry/status display, KPI cards, selection, bulk actions, and confirmation dialog. Added per-user saved views and remembered table/card layouts. Filtering, sorting, and pagination stay server-side.
+- Added all-filtered-row CSV/XLSX export, with cost fields only when the server says the user can view cost; selected-page CSV/XLSX export is also available. XLSX and JsBarcode are dynamically imported. Code 128 labels show the product name, code, and MRP.
 - Added server-checked category reassignment/deactivation for selected products and one-transaction CSV import after a row-by-row preview. The preview flags local/database duplicates and invalid values. New categories/manufacturers still use the existing category/brand RPCs and therefore require Categories permission when values are missing.
-- Added `can_view_cost()` and server-side cost/margin redaction in product responses. Cost fields are returned only for active admin/super-admin/accountant profiles; client visibility follows the RPC response. Product list/stat/import/bulk RPCs all check active, non-deleted profiles and Products permission. Existing RLS policies and shared permission helpers are unchanged.
+- Added a downloadable import template, row-level skip/include controls, and skipped-row export. Strength appears in the list, form, import, and exports. CONTROLLED and NARCOTIC share the Controlled filter while preserving their exact stored class in rows, form, import, and export.
+- Single-product activate/deactivate now calls `products_bulk_update`; there are no browser-side `medicines` writes in the Products page. The View batches action routes to Stock Inventory with a server-side medicine-id filter.
+- Added `can_view_cost()` and server-side cost/margin redaction in product responses. Cost fields are returned only for active admin/super-admin/manager/accountant profiles; client visibility follows the RPC response. Product list/stat/import/bulk RPCs all check active, non-deleted profiles and Products permission. Existing RLS policies and shared permission helpers are unchanged.
 - Added pure CSV parsing/preview tests and included them in `npm test`.
-- No strength column exists in the current checked-in schema, so product lists and import matching do not invent or infer medicine strength.
-- Migration file: `supabase/migrations/20261010040000_products_redesign_rpc.sql`. It has **not** been run; apply it manually before the Products page can use these RPCs. No live data or database was changed.
+- Added `supabase/migrations/20261010035000_add_medicine_strength.sql` and `supabase/migrations/20261010040000_products_redesign_rpc.sql`. The user ran and verified both migrations; the strength column and six Products RPCs exist in the live database.
 
 ## Safe demo login
 
@@ -111,5 +113,7 @@
 - Shared settings across multiple counters: Pharmacy Memo settings currently use browser-local storage and are not shared between terminals.
 - Return slips and Sales History reprints: the renderer supports RETURN memos and admins can reprint approved requests, but there is no end-to-end return workflow or Sales History reprint path to connect yet.
 - Later server work: server-built receipt data and shared/server-enforced settings require persisted receipt and settings models; add API/RPC integration tests when a Supabase test environment is available.
+- Supplier contact writes in `src/components/SuppliersView.tsx` still go directly from the browser to the `suppliers` table (insert, update, deactivate). Leave them for later; consider moving them to permission-checked RPCs.
+- Phase 4 cost-privacy plan (analysis only; no policy changes made): after Stock Inventory reads batches through server functions, revoke direct `stock_batches` SELECT for `authenticated` and return only non-cost batch fields to inventory-authorized callers. Keep cost access inside permission-checked server functions and return NULL for cost fields to callers outside admin, super_admin, manager, and accountant. Review `purchase_catalog`, `purchase_history`, and `purchase_detail` together and make each mask cost, totals derived from cost, and margin for callers without `can_view_cost()`; do not change purchase write/FEFO behavior. The impact is that Purchases, POS, Purchase History, and Stock Inventory must consume the RPCs rather than reading batch cost columns directly. Present the exact policy/function migration for approval before applying it.
 - ESC/POS: direct printer-driver support is not part of this frontend implementation.
 - Link print requests to persisted sales once POS sales are stored in the database; current request snapshots are intentionally self-contained.

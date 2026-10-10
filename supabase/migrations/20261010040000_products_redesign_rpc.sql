@@ -13,7 +13,7 @@ as $function$
     where id = auth.uid()
       and is_active = true
       and deleted_at is null
-      and role in ('admin', 'super_admin', 'accountant')
+      and role in ('admin', 'super_admin', 'manager', 'accountant')
   );
 $function$;
 
@@ -127,6 +127,7 @@ begin
       medicine.barcode,
       medicine.brand_name,
       medicine.generic_name,
+      medicine.strength,
       medicine.category,
       medicine.company,
       medicine.drug_class,
@@ -173,11 +174,16 @@ begin
     where (p_status = 'all' or medicine.is_active = (p_status = 'active'))
       and (p_category is null or p_category = '' or medicine.category = p_category)
       and (p_manufacturer is null or p_manufacturer = '' or medicine.company = p_manufacturer)
-      and (p_class is null or medicine.drug_class = p_class)
+      and (
+        p_class is null
+        or (p_class = 'CONTROLLED' and medicine.drug_class in ('CONTROLLED', 'NARCOTIC'))
+        or (p_class <> 'CONTROLLED' and medicine.drug_class = p_class)
+      )
       and (
         p_search is null or btrim(p_search) = ''
         or medicine.brand_name ilike '%' || btrim(p_search) || '%'
         or medicine.generic_name ilike '%' || btrim(p_search) || '%'
+        or coalesce(medicine.strength, '') ilike '%' || btrim(p_search) || '%'
         or medicine.code ilike '%' || btrim(p_search) || '%'
         or medicine.category ilike '%' || btrim(p_search) || '%'
         or coalesce(medicine.barcode, '') ilike '%' || btrim(p_search) || '%'
@@ -198,6 +204,7 @@ begin
       medicine.barcode,
       medicine.brand_name,
       medicine.generic_name,
+      medicine.strength,
       medicine.category,
       medicine.company,
       medicine.drug_class,
@@ -244,11 +251,16 @@ begin
     where (p_status = 'all' or medicine.is_active = (p_status = 'active'))
       and (p_category is null or p_category = '' or medicine.category = p_category)
       and (p_manufacturer is null or p_manufacturer = '' or medicine.company = p_manufacturer)
-      and (p_class is null or medicine.drug_class = p_class)
+      and (
+        p_class is null
+        or (p_class = 'CONTROLLED' and medicine.drug_class in ('CONTROLLED', 'NARCOTIC'))
+        or (p_class <> 'CONTROLLED' and medicine.drug_class = p_class)
+      )
       and (
         p_search is null or btrim(p_search) = ''
         or medicine.brand_name ilike '%' || btrim(p_search) || '%'
         or medicine.generic_name ilike '%' || btrim(p_search) || '%'
+        or coalesce(medicine.strength, '') ilike '%' || btrim(p_search) || '%'
         or medicine.code ilike '%' || btrim(p_search) || '%'
         or medicine.category ilike '%' || btrim(p_search) || '%'
         or coalesce(medicine.barcode, '') ilike '%' || btrim(p_search) || '%'
@@ -318,15 +330,19 @@ begin
     v_line := coalesce(nullif(v_row->>'line', '')::integer, v_line);
     select exists (
       select 1 from public.medicines medicine
-      where lower(btrim(medicine.code)) = lower(btrim(v_row->>'code'))
-        or (nullif(btrim(v_row->>'barcode'), '') is not null
-          and medicine.barcode = btrim(v_row->>'barcode'))
-        or (
-          nullif(btrim(v_row->>'barcode'), '') is null
-          and lower(btrim(medicine.brand_name)) = lower(btrim(v_row->>'brand_name'))
-          and lower(btrim(medicine.generic_name)) = lower(btrim(v_row->>'generic_name'))
-          and lower(btrim(medicine.company)) = lower(btrim(v_row->>'company'))
+      where (
+        nullif(btrim(v_row->>'barcode'), '') is not null
+        and medicine.barcode = btrim(v_row->>'barcode')
+      ) or (
+        nullif(btrim(v_row->>'barcode'), '') is null
+        and lower(btrim(medicine.brand_name)) = lower(btrim(v_row->>'brand_name'))
+        and lower(btrim(medicine.company)) = lower(btrim(v_row->>'company'))
+        and (
+          not (v_row ? 'strength')
+          or lower(btrim(coalesce(medicine.strength, '')))
+             = lower(btrim(coalesce(v_row->>'strength', '')))
         )
+      )
     ) into v_duplicate;
     v_results := v_results || jsonb_build_array(jsonb_build_object(
       'line', v_line,
@@ -389,8 +405,10 @@ begin
     where id = any(ids);
   elsif action = 'deactivate' then
     update public.medicines set is_active = false where id = any(ids);
+  elsif action = 'activate' then
+    update public.medicines set is_active = true where id = any(ids);
   else
-    raise exception 'Bulk action must be category or deactivate';
+    raise exception 'Bulk action must be category, activate, or deactivate';
   end if;
 
   get diagnostics v_updated = row_count;
@@ -446,15 +464,19 @@ begin
     end if;
     if exists (
       select 1 from public.medicines medicine
-      where lower(btrim(medicine.code)) = lower(btrim(v_row->>'code'))
-        or (nullif(btrim(v_row->>'barcode'), '') is not null
-          and medicine.barcode = btrim(v_row->>'barcode'))
-        or (
-          nullif(btrim(v_row->>'barcode'), '') is null
-          and lower(btrim(medicine.brand_name)) = lower(btrim(v_row->>'brand_name'))
-          and lower(btrim(medicine.generic_name)) = lower(btrim(v_row->>'generic_name'))
-          and lower(btrim(medicine.company)) = lower(btrim(v_row->>'company'))
+      where (
+        nullif(btrim(v_row->>'barcode'), '') is not null
+        and medicine.barcode = btrim(v_row->>'barcode')
+      ) or (
+        nullif(btrim(v_row->>'barcode'), '') is null
+        and lower(btrim(medicine.brand_name)) = lower(btrim(v_row->>'brand_name'))
+        and lower(btrim(medicine.company)) = lower(btrim(v_row->>'company'))
+        and (
+          not (v_row ? 'strength')
+          or lower(btrim(coalesce(medicine.strength, '')))
+             = lower(btrim(coalesce(v_row->>'strength', '')))
         )
+      )
     ) then
       raise exception 'Import contains a duplicate product: %', btrim(v_row->>'brand_name');
     end if;
@@ -478,6 +500,8 @@ begin
       'barcode', nullif(btrim(v_row->>'barcode'), ''),
       'brand_name', btrim(v_row->>'brand_name'),
       'generic_name', btrim(v_row->>'generic_name'),
+      'strength', case when v_row ? 'strength'
+        then nullif(btrim(v_row->>'strength'), '') else null end,
       'category', v_category,
       'company', v_company,
       'drug_class', coalesce(nullif(v_row->>'drug_class', ''), 'OTC'),
@@ -511,13 +535,12 @@ begin
 end;
 $function$;
 
-revoke all on function public.can_view_cost() from public, anon;
+revoke all on function public.can_view_cost() from public, anon, authenticated;
 revoke all on function public.products_overview_stats() from public, anon;
 revoke all on function public.products_list(text, text, text, text, text, boolean, text, text, integer, integer) from public, anon;
 revoke all on function public.products_import_preview(jsonb) from public, anon;
 revoke all on function public.products_bulk_update(uuid[], text, text) from public, anon;
 revoke all on function public.products_bulk_import(jsonb) from public, anon;
-grant execute on function public.can_view_cost() to authenticated;
 grant execute on function public.products_overview_stats() to authenticated;
 grant execute on function public.products_list(text, text, text, text, text, boolean, text, text, integer, integer) to authenticated;
 grant execute on function public.products_import_preview(jsonb) to authenticated;

@@ -277,6 +277,9 @@ export function DataTable<Row>({
   selectedIds,
   onSelectionChange,
   actions = [],
+  layout = 'responsive',
+  hiddenColumnIds,
+  onHiddenColumnIdsChange,
 }: {
   label: string;
   rows: readonly Row[];
@@ -289,10 +292,19 @@ export function DataTable<Row>({
   selectedIds?: readonly string[];
   onSelectionChange?: (ids: string[]) => void;
   actions?: readonly DataTableAction<Row>[];
+  layout?: 'responsive' | 'table' | 'cards';
+  hiddenColumnIds?: readonly string[];
+  onHiddenColumnIdsChange?: (ids: string[]) => void;
 }) {
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(
+  const [internalHiddenColumns, setInternalHiddenColumns] = useState<Set<string>>(
     () => new Set(columns.filter((column) => column.initiallyHidden).map((column) => column.id)),
   );
+  const hiddenColumns = new Set(hiddenColumnIds ?? internalHiddenColumns);
+  const updateHiddenColumns = (update: (current: Set<string>) => Set<string>) => {
+    const next = update(hiddenColumns);
+    setInternalHiddenColumns(next);
+    onHiddenColumnIdsChange?.([...next]);
+  };
   const visibleColumns = columns.filter((column) => !hiddenColumns.has(column.id));
   const selectableIds = rows.map(getRowId);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds?.includes(id));
@@ -326,7 +338,7 @@ export function DataTable<Row>({
                 <input
                   type="checkbox"
                   checked={!hiddenColumns.has(column.id)}
-                  onChange={(event) => setHiddenColumns((previous) => {
+                    onChange={(event) => updateHiddenColumns((previous) => {
                     const next = new Set(previous);
                     if (event.target.checked) next.delete(column.id);
                     else next.add(column.id);
@@ -347,7 +359,7 @@ export function DataTable<Row>({
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : (
         <>
-          <div className="hidden max-h-[65vh] overflow-auto sm:block">
+          <div className={`${layout === 'cards' ? 'hidden' : layout === 'table' ? 'block' : 'hidden sm:block'} max-h-[65vh] overflow-auto`}>
             <table className="w-full min-w-max border-collapse text-left text-sm">
               <thead className="sticky top-0 z-10 bg-surface text-xs font-bold uppercase tracking-wide text-muted">
                 <tr>
@@ -403,7 +415,7 @@ export function DataTable<Row>({
               </tbody>
             </table>
           </div>
-          <div className="space-y-3 p-3 sm:hidden">
+          <div className={`${layout === 'table' ? 'hidden' : layout === 'cards' ? 'block' : 'space-y-3 p-3 sm:hidden'} ${layout === 'cards' ? 'space-y-3 p-3' : ''}`}>
             {rows.map((row) => {
               const id = getRowId(row);
               return (
