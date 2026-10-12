@@ -30,7 +30,11 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
       setLoading(false);
       return;
     }
-    const { data, error } = await supabase.rpc('list_print_requests');
+    const { data, error } = await supabase
+      .from('print_requests')
+      .select('id,type,receipt_ref,payload,requested_by,requested_at,status,decided_by,decided_at,note,printed_at')
+      .order('requested_at', { ascending: false })
+      .limit(200);
     if (error) {
       setNotice({ text: `Could not load print requests: ${error.message}`, error: true });
       setLoading(false);
@@ -38,8 +42,28 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
     }
     try {
       if (!Array.isArray(data)) throw new Error('The print-request list response is invalid.');
-      setRequests(data.map(parsePrintRequestRecord));
-      setNotice(null);
+      const parsed = data.map(parsePrintRequestRecord);
+      const requesterIds = [...new Set(parsed.map((request) => request.requested_by))];
+      let profileWarning: string | null = null;
+      if (requesterIds.length > 0) {
+        const { data: profiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id,full_name,username,email')
+          .in('id', requesterIds);
+        if (profileError) {
+          profileWarning = `Could not load requester names: ${profileError.message}`;
+        } else {
+          const names = new Map((profiles ?? []).map((profile) => [
+            profile.id,
+            profile.username || profile.full_name || profile.email || 'Unknown user',
+          ]));
+          parsed.forEach((request) => {
+            request.requester_name = names.get(request.requested_by) || 'Unknown user';
+          });
+        }
+      }
+      setRequests(parsed);
+      setNotice(profileWarning ? { text: profileWarning, error: true } : null);
     } catch (parseError) {
       setNotice({ text: parseError instanceof Error ? parseError.message : 'Could not parse print requests.', error: true });
     } finally {

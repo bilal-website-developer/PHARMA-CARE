@@ -86,6 +86,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
+- **Proposed (awaiting approval):** Expand Trash Bin into an admin deletion/void activity view across users, products, suppliers, and purchases. Preserve each entity’s safe lifecycle semantics and show who changed what and when.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
@@ -93,6 +94,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
+- Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
+- Trash Bin currently lists/restores deleted users only. Suppliers are deactivated, products are deactivated, and purchases are voided rather than hard-deleted; a unified view should represent those distinct actions without implying every record can safely be restored.
 - Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
 - No end-to-end return workflow or Sales History reprint path; the renderer supports return memos and print-request review separately.
 - Direct ESC/POS printer-driver support is not implemented; browser printing uses the browser print dialog.
@@ -109,9 +112,12 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 - Split payment is UI-only (saves as Cash); real split tenders must be built in the post_sale RPC.
 - Admin modifications to pending print requests change the receipt snapshot for printing only; they do not rewrite the completed sale, inventory, or accounting records.
+- Proposed Trash Bin scope: record and display user soft-deletes, product/supplier deactivations, and purchase voids; offer restore only for entity types with a safe, implemented restore operation. Do not physically delete purchase/accounting history.
 
 ## Changelog
 
+- 2026-10-12 — Documented the Supabase location and current retention behavior for print requests.
+- 2026-10-12 — Prepared a plan to expand the admin Trash Bin with actor-attributed deletion/deactivation/void history; no implementation or schema change made.
 - 2026-10-12 — Removed the cashier print-request confirmation, added profile-name display and an audited admin receipt editor for pending sale requests, and added validation/calculation tests. The migration is not applied.
 - 2026-10-12 — Added an editable POS cart discount, Rs 200 hard maximum, role-cap clamping, and discounted receipt coverage.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
@@ -131,15 +137,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T14:02:56.989Z
+Generated at (UTC): 2026-10-12T14:12:28.828Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- modify
 - print request
 - Add capped editable cart discount input
 - Enforce POS discount caps in shared calculator
 - user errror
-- Add shared POS checkout discount controls
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
