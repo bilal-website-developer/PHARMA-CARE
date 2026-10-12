@@ -20,9 +20,9 @@
 | 6. W4 persistence and transactional `complete_sale` | Blocked on package 5 | — | None | None | Not run |
 | 7. W3 stock alerts | Blocked on package 5 | — | None | None | Not run |
 | 8. W5 per-shop cross-table barcode registry and RPCs | Blocked on package 4 and duplicate inventory | — | None | None | Not run |
-| 9. W6 unused checks and ESLint (`react-hooks`) | Pending; do not enable `strict` in this package | — | None | None | Not run |
+| 9. W6 unused checks and ESLint (`react-hooks`) | Unused cleanup committed; strict/noUnusedParameters enabled; noUnusedLocals and ESLint await owner decision | `cce45bb` + this commit | None | None | `npm run lint`, `npm test`, `npm run build` passed |
 | 10. W7 performance and hygiene | Pending | — | None | None | Not run |
-| 11. Final strict TypeScript measurement/decision | Pending final package; enable only if measured errors are manageable | — | None | None | Not run |
+| 11. Final strict TypeScript measurement/decision | Complete; strict diagnostics were zero and strict is enabled | This commit | None | None | `--strict`: 0 before/after cleanup; combined strict + noUnusedParameters: 0 |
 | 12. Consolidated staging security and feature verification | Blocked on all implementation packages and owner-applied staging migrations | — | None | None | Not run |
 
 ## Baseline measurements
@@ -53,6 +53,28 @@ Each flag was run separately with `npx.cmd tsc --noEmit`; no config files were e
 | `--strict` | 0 | None |
 
 The one unused-parameter diagnostic is `currentRole` in `SettingsView.tsx`. The 88 unused-local diagnostics comprise 87 TS6133 diagnostics and one TS6198 unused destructuring diagnostic. Twenty-one unused import bindings were reported: `App.tsx` (`ControlledDrugScreen`, `RepositoryReviewView`); `EndOfDayModal.tsx` (`Moon`, `CheckCircle2`, `Wallet`, `ArrowDownLeft`, `ArrowUpRight`); `InventoryScreen.tsx` (`React`, `useMemo`); `MyPrintRequestsView.tsx` (`React`); `PrintRequestsAdminView.tsx` (`React`); `PurchaseHistoryView.tsx` (`React`); `StockPurchaseView.tsx` (`React`); `TemplatePreviewModal.tsx` (`useMemo`); `TrashBinView.tsx` (`React`); `WhatsAppRemindersView.tsx` (`Send`, `CheckCircle2`, `Phone`, `AlertCircle`); `inventory/InventoryUi.tsx` (`React`); and `labels/LabelPrintDialog.tsx` (`React`). Keep `RepositoryReviewView` as requested: it is imported by `App.tsx` even though the current unused-local check flags that binding.
+
+After the client cleanup in `cce45bb`: `--noUnusedLocals` reports 16 errors, all left in the protected `ControlledDrugScreen.tsx` (5), `POSScreen.tsx` (6), and `RepositoryReviewView.tsx` (4), plus the intentionally retained `RepositoryReviewView` import in `App.tsx` (1). Those three component files were not edited or deleted. `--noUnusedParameters` reports 0 and `--strict` reports 0; their combination also reports 0. Accordingly, `strict` and `noUnusedParameters` are enabled in `tsconfig.json`; `noUnusedLocals` is not enabled pending the owner's decision on those preserved diagnostics.
+
+Cleanup removed 72 of 88 initial unused-local diagnostics and the sole unused-parameter binding without changing app behavior. `ControlledDrugScreen`, `RepositoryReviewView`, and `POSScreen` remain present for the owner's decision. `npm run lint`, `npm test`, and `npm run build` all passed after the config update.
+
+### ESLint proposal (not installed; pending approval)
+
+Registry release dates verified 2026-10-13. Proposed exact development dependencies: `eslint@10.11.0` (2026-09-18), `typescript-eslint@8.71.0` (2026-09-28), and `eslint-plugin-react-hooks@7.1.1` (2026-04-17). The ESLint packages are older than 14 days. **Compatibility caveat:** `typescript-eslint@8.71.0` declares TypeScript `<6.1.0` as its peer range, while this repository declares TypeScript `^7.0.2`; confirm a compatible typescript-eslint release before installing.
+
+Proposed `eslint.config.mjs`:
+
+```js
+import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
+
+export default tseslint.config(
+  ...tseslint.configs.recommended,
+  reactHooks.configs.flat.recommended,
+);
+```
+
+Proposed npm script: `"lint:eslint": "eslint ."`; no packages were installed and no ESLint config/package script was added. Await owner approval and TypeScript 7 compatibility resolution.
 
 ### Unused-code candidates
 

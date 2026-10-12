@@ -91,6 +91,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
 - **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, and barcode printing are present. Client package commit `818af6c` adds Edit/Print/Make actions on product rows, cards, and a product-details dialog; per-product label quantities (1–200) with a 1,000-label job cap; a scanner test dialog; and fast keyboard-scanner handling in Products search and POS. Label printing requires an assigned barcode; it no longer falls back to the product code. Missing barcode-generation RPCs show an explicit notice. This package changed no SQL/schema and applied no migration. Real scanner/printer hardware remains untested.
+- **W6 TypeScript baseline:** `strict` and `noUnusedParameters` are enabled after both command-line measurements returned zero diagnostics. `noUnusedLocals` remains disabled because its 16 remaining diagnostics are in preserved components and the retained `RepositoryReviewView` import. The broader source cleanup is committed as `cce45bb`; ESLint packages/config remain pending owner approval and TypeScript 7 compatibility review. Details and release-date evidence are in `docs/EXECUTION_PROGRESS.md`.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** `docs/MASTER_PLAN.md` is approved with owner decisions recorded. The active branch is `master-plan/implementation`; the staging bootstrap/catalog comparison in `docs/STAGING_BOOTSTRAP.md` remains the gate before any multi-shop migration. Package 3's client-only barcode UI is complete; track further package state in `docs/EXECUTION_PROGRESS.md`. Hardware scanning/printing remains unverified.
 
@@ -124,6 +125,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Removed cleanable unused imports/locals in `cce45bb`; enabled TypeScript `strict` and `noUnusedParameters` after both measured zero errors. `noUnusedLocals` remains disabled due protected-file findings; recorded an ESLint proposal pending approval.
 - 2026-10-13 — Recorded production build/gzip, separate TypeScript diagnostic, and unused-code baseline measurements in `docs/EXECUTION_PROGRESS.md`; no source, configuration, or SQL was changed.
 - 2026-10-12 — Completed client-only barcode UI/scanner package in `818af6c`: product row/card/details actions, per-product label quantities and print-job limits, scanner test and POS/Products scan handling. Full tests, TypeScript lint/check, and production build passed; no SQL or migrations changed. Commit hook also included its generated context update.
 - 2026-10-12 — Recorded owner-approved W1-W7 execution decisions, created `master-plan/implementation` from `barcode/labels` commit `adf3606`, and prepared staging bootstrap/catalog comparison plus execution progress checklist; stopped before SQL execution or multi-shop migration work.
@@ -158,15 +160,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T19:10:57.507Z
+Generated at (UTC): 2026-10-12T19:21:54.027Z
 Git branch: master-plan/implementation
 
 Last 5 commit subjects:
+- chore: remove unused imports and locals
+- docs: record barcode client UI progress
 - docs: record baseline measurements
 - Add barcode client UI and scanner support
 - docs: log bootstrap query refinement
-- docs: clarify function search path query
-- docs: record staging checkpoint progress
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
