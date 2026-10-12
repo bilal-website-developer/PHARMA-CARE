@@ -35,6 +35,20 @@ The frontend inventory redesign's Phase 1 adds shared display components and pur
 
 The proposed Products redesign migration `20261010040000_products_redesign_rpc.sql` adds `can_view_cost()`, `products_overview_stats()`, `products_list(...)`, `products_import_preview(...)`, `products_bulk_update(...)`, and `products_bulk_import(...)`. These are `SECURITY DEFINER` RPCs with a fixed `public` search path; product operations require an active, non-deleted profile with Products permission. Product filters, counts, expiry and stock values, ordering, and paging are computed in Postgres. Cost, stock value, and margin are redacted there unless the caller is an active admin, super-admin, or accountant. CSV writes use the existing `save_medicine`, `save_category`, and `save_brand` functions in the same transaction; creating missing categories/manufacturers requires Categories permission. The migration does not change RLS policies or shared permission helpers and is pending manual application. The schema has no medicine-strength field, so strength is neither displayed nor used to infer duplicate imports.
 
+## ACL lockdown proposal (files only; not applied)
+
+The owner reports that a live ACL audit found broad default privileges for `anon`, `authenticated`, and `service_role`. The proposed migration set revokes `anon` privileges on current public tables, views, and sequences; revokes `anon`/`authenticated` table defaults for objects created by `postgres`; revokes authenticated DML on tables whose frontend writes use RPCs; replaces direct supplier writes with permission-checked RPCs; and reasserts profile DML revokes. No RLS policy, `service_role`, `postgres`, or function EXECUTE ACL is changed.
+
+The owner reports the five cost-bearing tables (`stock_batches`, `purchases`, `purchase_items`, `sale_items`, `sale_item_batch_allocations`) are revoked from both `anon` and `authenticated`. This grant state must be preserved and reasserted: a later grant on `stock_batches` previously undid its revoke. Do not directly grant table SELECT on these relations; use permission-checked RPCs.
+
+Because future tables created by `postgres` will no longer inherit grants to `authenticated`, every new table migration must explicitly grant only the required privileges to `authenticated` and define its RLS policy. The existing migrations for `audit_logs`, `print_requests`, `categories`, and `brands` explicitly revoke broad access, grant authenticated SELECT where required, and define RLS policies. Review those grants/policies whenever their schemas change.
+
+The owner reports that `postgres` owns all 20 public relations. The `supabase_admin` default-privilege statements are kept in a separate optional file: running `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` as `postgres` may fail with a membership/permission error (`must be member of role "supabase_admin"`); do not run that optional file unless the SQL Editor role can execute it successfully.
+
+The owner reports that profile INSERT/UPDATE/DELETE for `authenticated` are already revoked and that no non-internal triggers were returned for `auth.users` or `public.profiles`. Reassert profile DML/TRUNCATE revocation while preserving authenticated SELECT. `manage-users` is the only checked-in client-server profile writer and uses its service-role client; password change uses Supabase Auth. The checked-in profile RLS policies still allow an active admin to write through the API if table privileges are granted, which is why DML privileges remain revoked.
+
+Default function EXECUTE grants are not changed in this round. The owner reports default execute grants to `anon` and `authenticated`; reviewing and narrowing those grants is optional future hardening after checking every RPC’s caller and authorization guard.
+
 ## Stock flow
 
 1. A posted purchase is submitted through `post_purchase(...)` as a Postgres RPC. The current checked-in migration validates the purchase and each item, locks/advances the purchase-number counter, verifies that each unit belongs to its medicine, and performs all related writes transactionally.

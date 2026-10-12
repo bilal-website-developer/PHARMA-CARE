@@ -116,17 +116,18 @@ export const SuppliersView: React.FC = () => {
     };
 
     try {
-      const result = editingId
-        ? await supabase.from('suppliers').update(values).eq('id', editingId).select('id').single()
-        : await supabase.from('suppliers').insert({ ...values, is_active: true });
-
-      if (result.error) {
-        setError(describeError(result.error));
-      } else {
-        setNotice(editingId ? 'Supplier updated.' : 'Supplier added.');
-        resetForm();
-        await loadSuppliers();
-      }
+      const { error: saveError } = await supabase.rpc('save_supplier', {
+        p_supplier_id: editingId,
+        p_name: values.name,
+        p_contact: values.contact,
+        p_address: values.address,
+        p_licence_or_tax_number: values.licence_or_tax_number,
+        p_payment_terms: values.payment_terms,
+      });
+      if (saveError) throw saveError;
+      setNotice(editingId ? 'Supplier updated.' : 'Supplier added.');
+      resetForm();
+      await loadSuppliers();
     } catch (saveError) {
       setError(describeUnknownError(saveError));
     } finally {
@@ -157,17 +158,10 @@ export const SuppliersView: React.FC = () => {
     setError('');
     setNotice('');
     try {
-      const { error: updateError } = await supabase
-        .from('suppliers')
-        .update({ is_active: false })
-        .eq('id', supplier.id)
-        .select('id')
-        .single();
-
-      if (updateError) {
-        setError(describeError(updateError));
-        return;
-      }
+      const { error: deactivateError } = await supabase.rpc('deactivate_supplier', {
+        p_supplier_id: supplier.id,
+      });
+      if (deactivateError) throw deactivateError;
 
       setSuppliers((current) =>
         current.map((item) => item.id === supplier.id ? { ...item, is_active: false } : item)

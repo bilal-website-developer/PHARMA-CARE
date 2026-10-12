@@ -126,15 +126,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T11:44:52.878Z
+Generated at (UTC): 2026-10-12T11:59:05.079Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- Add shared POS checkout discount controls
 - Add tested integer-paisa discount calculator
 - Fix Manage Users stale list response crash
 - Keep unrelated ACL notes uncommitted
 - Redesign Products filter toolbar
-- chore: add applied stock, cost visibility and revoke migrations
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
