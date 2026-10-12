@@ -101,6 +101,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
 - Memo-number sequencing and gap-free guarantees are unknown.
 - Discount rules to enforce inside the future post_sale RPC: per-role maximum percent, discount never above the bill, never below batch cost (cashier only sees a generic 'Discount not allowed'), discount stored in paisa with the sale, audit_logs entry for discounts above a threshold.
+- Enforce the Rs 200 maximum discount and the role percent caps inside the future post_sale RPC; make the Rs 200 limit editable in Settings.
 
 ## Assumptions
 
@@ -108,7 +109,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
-- 2026-10-12 — Added shared POS amount/percentage discount controls, role-limit validation, integer-paisa calculations, and discounted receipt coverage.
+- 2026-10-12 — Added an editable POS cart discount, Rs 200 hard maximum, role-cap clamping, and discounted receipt coverage.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
 - 2026-10-12 — Redesigned only the Products filter toolbar with a compact responsive layout and debounced search; added tested active-filter chips, removal, and clear-all logic.
 - 2026-10-12 — Audited `src/` for direct Supabase queries to the tables in the direct-access revoke migration; none found. This is a source-only audit and does not verify live database state.
@@ -126,15 +127,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T11:59:05.079Z
+Generated at (UTC): 2026-10-12T12:07:54.837Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- user errror
 - Add shared POS checkout discount controls
 - Add tested integer-paisa discount calculator
 - Fix Manage Users stale list response crash
 - Keep unrelated ACL notes uncommitted
-- Redesign Products filter toolbar
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

@@ -22,6 +22,8 @@ export const ROLE_MAX_DISCOUNT: Record<UserRole, number> = {
   [UserRole.ACCOUNTANT]: 0,
 };
 
+export const MAX_DISCOUNT_PAISA = 20000;
+
 export enum DrugClass {
   OTC = 'OTC',
   RX = 'RX',
