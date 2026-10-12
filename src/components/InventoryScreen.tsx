@@ -16,11 +16,18 @@ import {
 import {
   parseProductCsv, previewProductCsv, type ProductImportPreviewRow,
 } from './inventory/productImportLogic';
+import {
+  clearProductFilters,
+  getActiveProductFilters,
+  removeProductFilter,
+  type ProductFilterKey,
+} from './inventory/productFilterLogic';
 import { StockInventory } from './inventory/StockInventory';
 
 const PAGE_SIZE = 25;
 const NEAR_EXPIRY_DAYS = 90;
 const FIELD = 'w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+const FILTER_PILL = 'w-auto max-w-full rounded-full border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 const PANEL = 'rounded-xl border border-border bg-surface shadow-xs';
 const BUTTON = 'inline-flex items-center justify-center gap-2 rounded-control bg-primary px-3 py-2 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50';
 const SECONDARY = 'inline-flex items-center justify-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface/80 disabled:opacity-50';
@@ -314,6 +321,7 @@ function ProductsCatalog({
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [brands, setBrands] = useState<CategoryOption[]>([]);
   const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
@@ -353,6 +361,14 @@ function ProductsCatalog({
     setSavedViews(readSavedViews(userId));
     setDisplayMode(readDisplayMode(userId));
   }, [userId]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setPage(1);
+      setSearch(searchInput);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput]);
 
   useEffect(() => {
     localStorage.setItem(viewModeStorageKey(userId), displayMode);
@@ -479,7 +495,7 @@ function ProductsCatalog({
     const view: SavedProductView = {
       id: crypto.randomUUID(),
       name,
-      search,
+      search: searchInput,
       category: categoryFilter,
       manufacturer: brandFilter,
       drugClass: classFilter,
@@ -498,6 +514,7 @@ function ProductsCatalog({
   const applySavedView = (id: string) => {
     const view = savedViews.find((item) => item.id === id);
     if (!view) return;
+    setSearchInput(view.search);
     setSearch(view.search);
     setCategoryFilter(view.category);
     setBrandFilter(view.manufacturer);
@@ -509,6 +526,33 @@ function ProductsCatalog({
     setHiddenColumnIds(view.hiddenColumns);
     setPage(1);
     setSelectedSavedView(id);
+  };
+
+  const currentProductFilters = {
+    search: searchInput,
+    category: categoryFilter,
+    manufacturer: brandFilter,
+    drugClass: classFilter,
+    status: activeFilter,
+    lowStockOnly,
+  };
+  const activeProductFilters = getActiveProductFilters(currentProductFilters);
+  const applyProductFilterState = (filters: typeof currentProductFilters) => {
+    setPage(1);
+    setSearchInput(filters.search);
+    setSearch(filters.search);
+    setCategoryFilter(filters.category);
+    setBrandFilter(filters.manufacturer);
+    setClassFilter(filters.drugClass);
+    setActiveFilter(filters.status);
+    setLowStockOnly(filters.lowStockOnly);
+  };
+  const handleRemoveProductFilter = (key: ProductFilterKey) => {
+    applyProductFilterState(removeProductFilter(currentProductFilters, key));
+  };
+  const handleClearProductFilters = () => {
+    applyProductFilterState(clearProductFilters());
+    setSelectedSavedView('');
   };
 
   const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -1014,67 +1058,76 @@ function ProductsCatalog({
         {canViewCost && <KpiCard compact label="Stock value" value={money(overviewStats?.stock_value_cost_paisa ?? 0)} detail="at cost" />}
       </section>
 
-      <section aria-label="Product search and filters" className={`${PANEL} flex flex-wrap items-center gap-2 p-3`}>
-        <label className="relative min-w-56 flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
-          <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, generic, code or barcode" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />
-        </label>
-        <select aria-label="Filter category" className={FIELD + ' w-auto min-w-32'} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
-          <option value="">Category</option>{categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-        </select>
-        <select aria-label="Filter manufacturer" className={FIELD + ' w-auto min-w-36'} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
-          <option value="">Manufacturer</option>{brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-        </select>
-        <select aria-label="Filter medicine class" className={FIELD + ' w-auto min-w-28'} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
-          <option value="">Class</option><option value="OTC">OTC</option><option value="RX">Rx</option><option value="CONTROLLED">Controlled (including narcotics)</option>
-        </select>
-        <select aria-label="Filter active status" className={FIELD + ' w-auto min-w-28'} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
-          <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
-        </select>
-        <label className="inline-flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text">
-          <input type="checkbox" checked={lowStockOnly} onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }} className="h-4 w-4 accent-green-700" />
-          Low stock only
-        </label>
-        <select aria-label="Saved product views" className={FIELD + ' w-auto min-w-32'} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
-          <option value="">Saved views</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-        </select>
-        <details className="relative">
-          <summary className={`${SECONDARY} cursor-pointer list-none`}>Save view</summary>
-          <div className="absolute right-0 z-20 mt-2 grid min-w-56 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
-            <input aria-label="Saved view name" className={FIELD} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
-            <button type="button" className={BUTTON} onClick={saveCurrentView}>Save view</button>
-            {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
-              setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
-              setSelectedSavedView('');
-              setNotice('Saved view removed.');
-            }}>Delete view</button>}
+      <section aria-label="Product search and filters" className={`${PANEL} grid gap-3 p-3`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="relative min-w-56 flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+            <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, generic, code or barcode" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+          </label>
+          <div role="group" aria-label="Product display mode" className="inline-flex shrink-0 rounded-control border border-border p-0.5">
+            <button type="button" className={`${displayMode === 'table' ? BUTTON : SECONDARY} rounded-control px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label="Table view" aria-pressed={displayMode === 'table'} onClick={() => setDisplayMode('table')}><List size={16} /><span>Table</span></button>
+            <button type="button" className={`${displayMode === 'cards' ? BUTTON : SECONDARY} rounded-control px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label="Card view" aria-pressed={displayMode === 'cards'} onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /><span>Cards</span></button>
           </div>
-        </details>
-        <span className="inline-flex items-center gap-1">
-          <button type="button" className={`${displayMode === 'table' ? BUTTON : SECONDARY} px-2.5`} aria-label="Table view" aria-pressed={displayMode === 'table'} title="Table view" onClick={() => setDisplayMode('table')}><List size={16} /></button>
-          <button type="button" className={`${displayMode === 'cards' ? BUTTON : SECONDARY} px-2.5`} aria-label="Card view" aria-pressed={displayMode === 'cards'} title="Card view" onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /></button>
-        </span>
-        <details className="relative">
-          <summary className={`${SECONDARY} cursor-pointer list-none`}>More filters</summary>
-          <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
-            <label className="grid gap-1 text-xs font-semibold text-muted">Sort products
-              <select aria-label="Sort products" className={FIELD} value={sortColumn} onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}>
-                <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
-              </select>
-            </label>
-            <button type="button" className={SECONDARY} aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`} onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}>
-              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Filter category" className={`${FILTER_PILL} min-w-32 ${categoryFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
+            <option value="">Category</option>{categories.map((item) => <option key={item.id} value={item.name}>Category: {item.name}</option>)}
+          </select>
+          <select aria-label="Filter manufacturer" className={`${FILTER_PILL} min-w-36 ${brandFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
+            <option value="">Manufacturer</option>{brands.map((item) => <option key={item.id} value={item.name}>Manufacturer: {item.name}</option>)}
+          </select>
+          <select aria-label="Filter medicine class" className={`${FILTER_PILL} min-w-28 ${classFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
+            <option value="">Class</option><option value="OTC">Class: OTC</option><option value="RX">Class: Rx</option><option value="CONTROLLED">Class: Controlled (including narcotics)</option>
+          </select>
+          <select aria-label="Filter active status" className={`${FILTER_PILL} min-w-28 ${activeFilter !== 'active' ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
+            <option value="active">Status: Active</option><option value="inactive">Status: Inactive</option><option value="all">Status: All</option>
+          </select>
+          <label className={`inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold focus-within:ring-2 focus-within:ring-accent ${lowStockOnly ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`}>
+            <input type="checkbox" checked={lowStockOnly} onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }} className="h-4 w-4 accent-accent" />
+            Low stock only
+          </label>
+          <select aria-label="Saved product views" className={`${FILTER_PILL} min-w-32 border-border bg-surface text-text`} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
+            <option value="">Saved views</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
+          </select>
+          <details className="relative shrink-0">
+            <summary className={`${SECONDARY} cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}>Save view</summary>
+            <div className="absolute right-0 z-20 mt-2 grid min-w-56 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
+              <input aria-label="Saved view name" className={FIELD} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
+              <button type="button" className={`${BUTTON} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} onClick={saveCurrentView}>Save view</button>
+              {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
+                setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
+                setSelectedSavedView('');
+                setNotice('Saved view removed.');
+              }}>Delete view</button>}
+            </div>
+          </details>
+          <details className="relative shrink-0">
+            <summary className={`${SECONDARY} cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}>More filters</summary>
+            <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
+              <label className="grid gap-1 text-xs font-semibold text-muted">Sort products
+                <select aria-label="Sort products" className={FIELD} value={sortColumn} onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}>
+                  <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
+                </select>
+              </label>
+              <button type="button" className={`${SECONDARY} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`} onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}>
+                {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+              </button>
+            </div>
+          </details>
+        </div>
+
+        {activeProductFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Active product filters">
+            {activeProductFilters.map(({ key, label }) => (
+              <FilterChip key={key} onRemove={() => handleRemoveProductFilter(key)} removeLabel={`Remove ${label} filter`}>{label}</FilterChip>
+            ))}
+            <span className="ml-auto text-sm font-semibold text-muted" aria-live="polite">
+              {totalCount.toLocaleString()} {totalCount === 1 ? 'product' : 'products'}
+            </span>
+            <button type="button" className="rounded-control px-2 py-1 text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" onClick={handleClearProductFilters}>
+              Clear all
             </button>
-          </div>
-        </details>
-        {(search || categoryFilter || brandFilter || classFilter || activeFilter !== 'active' || lowStockOnly) && (
-          <div className="flex flex-wrap gap-2" aria-label="Active filters">
-            {search && <FilterChip onRemove={() => { setPage(1); setSearch(''); }}>Search: {search}</FilterChip>}
-            {categoryFilter && <FilterChip onRemove={() => { setPage(1); setCategoryFilter(''); }}>Category: {categoryFilter}</FilterChip>}
-            {brandFilter && <FilterChip onRemove={() => { setPage(1); setBrandFilter(''); }}>Manufacturer: {brandFilter}</FilterChip>}
-            {classFilter && <FilterChip onRemove={() => { setPage(1); setClassFilter(''); }}>Class: {classFilter}</FilterChip>}
-            {activeFilter !== 'active' && <FilterChip onRemove={() => { setPage(1); setActiveFilter('active'); }}>Status: {activeFilter}</FilterChip>}
-            {lowStockOnly && <FilterChip onRemove={() => { setPage(1); setLowStockOnly(false); }}>Low stock only</FilterChip>}
           </div>
         )}
       </section>
