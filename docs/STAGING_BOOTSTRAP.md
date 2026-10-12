@@ -84,9 +84,9 @@ select n.nspname as schema_name,
        p.prosecdef as security_definer,
        coalesce(
          (
-           select split_part(setting, '=', 2)
-           from unnest(coalesce(p.proconfig, array[]::text[])) as setting
-           where setting like 'search_path=%'
+           select split_part(cfg.setting, '=', 2)
+           from unnest(coalesce(p.proconfig, array[]::text[])) as cfg(setting)
+           where cfg.setting like 'search_path=%'
            limit 1
          ),
          '(not set on function)'

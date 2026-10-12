@@ -156,15 +156,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T18:42:12.804Z
+Generated at (UTC): 2026-10-12T18:43:09.084Z
 Git branch: master-plan/implementation
 
 Last 5 commit subjects:
+- docs: record staging checkpoint progress
 - docs: prepare staging bootstrap checkpoint
 - barcode
 - trash
 - trash bin
-- modify
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
