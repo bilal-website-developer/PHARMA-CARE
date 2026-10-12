@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   ShoppingCart,
@@ -50,6 +50,8 @@ import {
   PrintReceiptHandler,
 } from '../utils/printWorkflow';
 import { APP_NAME } from '../constants/brand';
+import { DiscountBox } from './DiscountBox';
+import { computeDiscount, DiscountMode } from '../utils/discount';
 
 interface POSBillingViewProps {
   products: Product[];
@@ -97,7 +99,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [walkInName, setWalkInName] = useState<string>('Walk-in Customer');
 
   // Checkout & Cash Tendered
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
   const [saleError, setSaleError] = useState('');
@@ -114,13 +116,17 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const subtotalPaisa = useMemo(() => cart.reduce((sum, item) => sum + item.lineTotalPaisa, 0), [cart]);
   const subtotalPKR = subtotalPaisa / 100;
 
-  const discountPaisa = useMemo(
-    () => Math.round((subtotalPaisa * discountPercent) / 100),
-    [subtotalPaisa, discountPercent]
-  );
+  const maxAllowedDiscount = ROLE_MAX_DISCOUNT[currentRole];
+  const discountResult = useMemo(() => computeDiscount({
+    billPaisa: subtotalPaisa,
+    mode: discount.mode,
+    value: discount.value,
+    maxPercent: maxAllowedDiscount,
+  }), [subtotalPaisa, discount.mode, discount.value, maxAllowedDiscount]);
+  const discountPaisa = discountResult.discountPaisa;
   const discountPKR = discountPaisa / 100;
 
-  const unroundedTotalPaisa = Math.max(0, subtotalPaisa - discountPaisa);
+  const unroundedTotalPaisa = discountResult.payablePaisa;
   const roundingUnitPaisa = billingTemplate === 'pharmacy-memo' && memoSettings.roundNet !== 'none'
     ? Number(memoSettings.roundNet) * 100
     : 0;
@@ -130,7 +136,34 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
 
-  const changeDuePKR = Math.max(0, tenderedAmountPKR - totalPKR);
+  const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
+    ? Math.max(0, Math.round(tenderedAmountPKR * 100))
+    : 0;
+  const changeDuePaisa = Math.max(0, tenderedAmountPaisa - totalPaisa);
+  const changeDuePKR = changeDuePaisa / 100;
+  const previousSubtotalPaisa = useRef(subtotalPaisa);
+  const previousTotalPaisa = useRef(totalPaisa);
+
+  useEffect(() => {
+    const billWasReduced = subtotalPaisa < previousSubtotalPaisa.current;
+    previousSubtotalPaisa.current = subtotalPaisa;
+
+    if (cart.length === 0) {
+      if (discount.value !== '' || discount.mode !== 'percent') setDiscount({ mode: 'percent', value: '' });
+      return;
+    }
+    if (billWasReduced && discount.mode === 'amount' && discountResult.error === 'Discount cannot exceed the bill.') {
+      setDiscount((current) => ({ ...current, value: (subtotalPaisa / 100).toFixed(2) }));
+    }
+  }, [subtotalPaisa, cart.length, discount.mode, discount.value, discountResult.error]);
+
+  useEffect(() => {
+    const previousTotal = previousTotalPaisa.current;
+    previousTotalPaisa.current = totalPaisa;
+    if (previousTotal > 0 && tenderedAmountPaisa === previousTotal) {
+      setTenderedAmountPKR(totalPaisa / 100);
+    }
+  }, [totalPaisa, tenderedAmountPaisa]);
 
   // Add Product to Cart
   const handleAddToCart = (product: Product) => {
@@ -228,6 +261,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
+    if (discountResult.error) return;
 
     let items: CartItem[];
     try {
@@ -284,9 +318,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           : PaymentMethod.CASH,
       amountTenderedPaisa:
         paymentMethod === 'CASH'
-          ? (tenderedAmountPKR || totalPKR) * 100
+          ? (tenderedAmountPaisa || totalPaisa)
           : totalPaisa,
-      changePaisa: Math.round(changeDuePKR * 100),
+      changePaisa: changeDuePaisa,
     };
 
     onSaleComplete(sale);
@@ -300,7 +334,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       }
     }
     setCart([]);
-    setDiscountPercent(0);
+    setDiscount({ mode: 'percent', value: '' });
     setTenderedAmountPKR(0);
   };
 
@@ -587,22 +621,24 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           {/* ── Bottom Dock Checkout Panel (Matching Screenshot 8, 61, 62) ─── */}
           <div className="mt-4 pt-3 border-t border-slate-200 space-y-2.5">
             {/* Subtotal & Quick Discount Row */}
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-slate-600 font-medium">
                 Subtotal ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)} pcs):{' '}
                 <strong className="text-slate-900 font-mono">Rs. {subtotalPKR.toFixed(0)}</strong>
               </span>
+              <span className="text-slate-600 font-semibold">
+                Disc: <strong className="font-mono text-text">Rs. {discountPKR.toFixed(2)}</strong>
+              </span>
 
               {/* Quick Discount Pills */}
               <div className="pos-discount-options flex items-center gap-1 text-[10px]">
-                <span className="text-slate-500 font-semibold">Disc:</span>
                 {[0, 2, 5, 10, 15, 20].map((pct) => (
                   <button
                     key={pct}
-                    onClick={() => setDiscountPercent(pct)}
-                    aria-pressed={discountPercent === pct}
+                    onClick={() => setDiscount({ mode: 'percent', value: String(pct) })}
+                    aria-pressed={discount.mode === 'percent' && Number(discount.value || 0) === pct}
                     className={`px-1.5 py-0.5 rounded font-bold transition ${
-                      discountPercent === pct
+                      discount.mode === 'percent' && Number(discount.value || 0) === pct
                         ? 'bg-blue-600 text-white'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
@@ -619,7 +655,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 NET TOTAL
               </span>
               <span className="pos-total-value text-base font-black font-mono text-slate-950" key={totalPKR}>
-                Rs. {totalPKR.toFixed(0)}
+                Rs. {totalPKR.toFixed(2)}
               </span>
             </div>
 
@@ -664,7 +700,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   Wapis Karein (Change Due):
                 </span>
                 <span className="text-sm font-black font-mono text-emerald-800">
-                  Rs. {changeDuePKR.toFixed(0)}
+                  Rs. {changeDuePKR.toFixed(2)}
                 </span>
               </div>
             )}
@@ -725,7 +761,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 className="pos-charge-button relative flex-1 overflow-hidden py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
               >
                 <Zap className="w-3.5 h-3.5" />
-                <span>Charge Rs. {totalPKR.toFixed(0)} (F4)</span>
+                <span>Charge Rs. {totalPKR.toFixed(2)} (F4)</span>
               </button>
             </div>
           </div>
@@ -735,7 +771,18 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       {/* ── Pharma Care checkout modal ─────────────────────────────────────── */}
       {showCheckoutModal && (
         <div className="pos-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="pos-modal-panel bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200">
+          <div
+            className="pos-modal-panel flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setShowCheckoutModal(false);
+              } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
+                event.preventDefault();
+                handleCompleteSale();
+              }
+            }}
+          >
             {/* Modal Header */}
             <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
               <div>
@@ -743,7 +790,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   {APP_NAME.toUpperCase()} CHECKOUT
                 </span>
                 <span className="text-base font-black">
-                  Total Payable: Rs. {totalPKR.toFixed(0)}
+                  Total Payable: Rs. {totalPKR.toFixed(2)}
                 </span>
               </div>
               <button
@@ -754,33 +801,40 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
-              <div className="text-slate-600 font-medium">
+            <div className="flex min-h-0 flex-col space-y-4 overflow-y-auto p-5 text-xs">
+              <div className="order-1 text-slate-600 font-medium">
                 Customer: <strong>{walkInName}</strong>
               </div>
 
-              <div>
+              <DiscountBox
+                billPaisa={subtotalPaisa}
+                discount={discount}
+                maxPercent={maxAllowedDiscount}
+                onChange={setDiscount}
+              />
+
+              <div className="order-2">
                 <div className="flex justify-between font-bold text-slate-700 mb-1">
                   <span>RECEIVED / TENDERED AMOUNT</span>
-                  <span className="font-mono">Bill: Rs. {totalPKR.toFixed(0)}</span>
+                  <span className="font-mono">Bill: Rs. {totalPKR.toFixed(2)}</span>
                 </div>
                 <input
                   type="number"
+                  step="0.01"
                   placeholder="0"
                   value={tenderedAmountPKR || ''}
                   onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
                   className="w-full px-3 py-2 text-base font-black font-mono border-2 border-blue-500 rounded-xl focus:outline-none"
-                  autoFocus
                 />
               </div>
 
               {/* Quick Cash pills */}
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="order-3 flex items-center gap-1.5 flex-wrap">
                 <button
                   onClick={() => setTenderedAmountPKR(totalPKR)}
                   className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 text-white rounded-lg"
                 >
-                  Exact (Rs. {totalPKR.toFixed(0)})
+                  Exact (Rs. {totalPKR.toFixed(2)})
                 </button>
                 {[100, 500, 1000, 5000].map((amt) => (
                   <button
@@ -794,25 +848,33 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </div>
 
               {/* Change Banner */}
-              {changeDuePKR > 0 && (
-                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-300 flex items-center justify-between text-emerald-950">
+              {discountPaisa > 0 && (
+                <div className="order-5 flex items-center justify-between rounded-control border border-border bg-surface px-3 py-2 font-semibold text-text">
+                  <span>Discount</span>
+                  <span className="font-mono">-Rs. {discountPKR.toFixed(2)}</span>
+                </div>
+              )}
+
+              {changeDuePaisa > 0 && (
+                <div className="order-6 p-2.5 bg-emerald-50 rounded-xl border border-emerald-300 flex items-center justify-between text-emerald-950">
                   <span className="font-bold">Wapis Karein (Change Due):</span>
                   <span className="text-base font-black font-mono text-emerald-700">
-                    Rs. {changeDuePKR.toFixed(0)}
+                    Rs. {changeDuePKR.toFixed(2)}
                   </span>
                 </div>
               )}
 
               {/* Payment Method Selector */}
-              <div>
+              <div className="order-7">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
                   PAYMENT METHOD
                 </span>
                 <div className="grid grid-cols-4 gap-1.5 text-xs">
-                  {['CASH', 'ONLINE', 'CREDIT', 'SPLIT'].map((m) => (
+                  {(['CASH', 'ONLINE', 'CREDIT', 'SPLIT'] as const).map((m) => (
                     <button
                       key={m}
-                      onClick={() => setPaymentMethod(m as any)}
+                      type="button"
+                      onClick={() => setPaymentMethod(m)}
                       className={`py-1.5 rounded-lg border font-bold text-[11px] ${
                         paymentMethod === m
                           ? 'bg-blue-600 text-white border-blue-700'
@@ -825,7 +887,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center gap-2">
+              <div className="order-8 pt-2 flex items-center gap-2">
                 <button
                   onClick={() => setShowCheckoutModal(false)}
                   className="flex-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
@@ -836,7 +898,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   onClick={handleCompleteSale}
                   className="flex-1 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition"
                 >
-                  ✓ Complete Sale (Rs. {totalPKR.toFixed(0)})
+                  ✓ Complete Sale (Rs. {totalPKR.toFixed(2)})
                 </button>
               </div>
             </div>

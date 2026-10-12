@@ -84,6 +84,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. The role-and-permission-scoped `can_view_cost()` migration is local and awaits application.
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
+- **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
@@ -99,9 +100,15 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
 - Memo-number sequencing and gap-free guarantees are unknown.
+- Discount rules to enforce inside the future post_sale RPC: per-role maximum percent, discount never above the bill, never below batch cost (cashier only sees a generic 'Discount not allowed'), discount stored in paisa with the sale, audit_logs entry for discounts above a threshold.
+
+## Assumptions
+
+- Split payment is UI-only (saves as Cash); real split tenders must be built in the post_sale RPC.
+
 ## Changelog
 
-- 2026-10-12 — Added the tested integer-paisa POS discount calculator.
+- 2026-10-12 — Added shared POS amount/percentage discount controls, role-limit validation, integer-paisa calculations, and discounted receipt coverage.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
 - 2026-10-12 — Redesigned only the Products filter toolbar with a compact responsive layout and debounced search; added tested active-filter chips, removal, and clear-all logic.
 - 2026-10-12 — Audited `src/` for direct Supabase queries to the tables in the direct-access revoke migration; none found. This is a source-only audit and does not verify live database state.
@@ -119,15 +126,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T11:42:30.300Z
+Generated at (UTC): 2026-10-12T11:44:52.878Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- Add tested integer-paisa discount calculator
 - Fix Manage Users stale list response crash
 - Keep unrelated ACL notes uncommitted
 - Redesign Products filter toolbar
 - chore: add applied stock, cost visibility and revoke migrations
-- Tooling: context update script and hook
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

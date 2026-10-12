@@ -126,6 +126,15 @@ function memoHtml(data = memoFixture, settings = memoSettings, format: ReceiptFo
   return renderPharmacyMemo(data, settings, format);
 }
 
+function printedPaisa(html: string, label: 'Gross Amount:' | 'Discount:' | 'Net Amount:'): number {
+  const markup = label === 'Net Amount:'
+    ? `<strong>${label}</strong><strong>(\\d+)\\.(\\d{2})`
+    : `<span>${label}</span><span>(\\d+)\\.(\\d{2})`;
+  const match = html.match(new RegExp(markup));
+  assert.ok(match, `Expected printed ${label} amount`);
+  return Number(match[1]) * 100 + Number(match[2]);
+}
+
 test('buildMemoData whitelists sale receipt fields and strips all cost and profit values', () => {
   const data = buildMemoData(sale, { role: 'CASHIER', terminal: 'REGISTER-1' });
   const serialized = JSON.stringify(data);
@@ -134,6 +143,32 @@ test('buildMemoData whitelists sale receipt fields and strips all cost and profi
   assert.equal(data.lines[0].ratePaisa, 45000);
   assert.doesNotMatch(serialized, /cost|purchase|profit|margin/i);
   assert.equal(data.isCredit, false);
+});
+
+test('prints the real discount and discounted balance for a partially paid sale', () => {
+  const discountedSale: CompletedSale = {
+    ...sale,
+    items: [{
+      ...sale.items[0],
+      quantityInUnit: 1,
+      mrpPaisaPerUnit: 217000,
+      lineTotalPaisa: 217000,
+    }],
+    subtotalPaisa: 217000,
+    discountPaisa: 10000,
+    totalPaisa: 207000,
+    amountTenderedPaisa: 50000,
+    changePaisa: 0,
+  };
+  const data = buildMemoData(discountedSale, { role: 'CASHIER', terminal: 'REGISTER-1' });
+  const html = memoHtml(data);
+  assert.equal(data.discountPaisa, 10000);
+  assert.equal(printedPaisa(html, 'Gross Amount:') - printedPaisa(html, 'Discount:'), printedPaisa(html, 'Net Amount:'));
+  assert.match(html, /Gross Amount:<\/span><span>2170\.00/);
+  assert.match(html, /Discount:<\/span><span>100\.00/);
+  assert.match(html, /Net Amount:<\/strong><strong>2070\.00/);
+  assert.match(html, /Paid:<\/span><span>500\.00/);
+  assert.match(html, /Balance:<\/span><span>1570\.00/);
 });
 
 test('renders fixture arithmetic in paisa, including date, time, item count, gross, discount, and net', () => {
@@ -162,6 +197,7 @@ for (const format of ['thermal58', 'thermal80', 'a4'] as const) {
 
 test('rounds net to the selected amount and reflects the adjustment in printed discount', () => {
   const html = memoHtml({ ...memoFixture, discountPaisa: 2000 }, { ...memoSettings, roundNet: '5' });
+  assert.equal(printedPaisa(html, 'Gross Amount:') - printedPaisa(html, 'Discount:'), printedPaisa(html, 'Net Amount:'));
   assert.match(html, /Discount:<\/span><span>21\.16/);
   assert.match(html, /Net Amount:<\/strong><strong>510\.00/);
 });
