@@ -11,8 +11,8 @@
 
 | Package | Status | Commit hash | Migrations written | Migrations applied by owner | Tests / checks |
 |---|---|---|---|---|---|
-| 0. Branch and read-only baseline | In progress; branch created, baseline inventory pending | Not committed | None | None | `git branch -a`, `git branch --merged main`, branch divergence and diff inspected; no application tests |
-| 1. Staging bootstrap and catalog comparison | Waiting for owner to build staging and return results | Not committed | None | None; SQL has not been run by assistant | Documentation and query pack prepared; no database query executed by assistant |
+| 0. Branch and read-only baseline | Complete; repository/branch audit only | — | None | None | `git branch -a`, `git branch --merged main`, branch divergence and diff inspected; no application tests |
+| 1. Staging bootstrap and catalog comparison | Waiting for owner to build staging and return results | `b05cfa4` | None | None; SQL has not been run by assistant | Bootstrap/query documentation committed; no database query executed by assistant |
 | 2. W1 ACL prerequisite reconciliation | Blocked on package 1 results | — | None | None | Not run |
 | 3. W5 barcode UI/scanner improvements (early client-only package) | Blocked at staging checkpoint | — | None | None | Not run |
 | 4. W2 schema foundation and Shop 1 backfill | Blocked on package 1 and prerequisite approvals | — | None | None | Not run |
