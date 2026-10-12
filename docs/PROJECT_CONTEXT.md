@@ -90,16 +90,16 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
-- **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, a Products-page barcode column/actions, label print dialog, and a POS keyboard-scanner flow matching the local product barcode/code are present. Unit-barcode scanning, shop-aware cross-table uniqueness, the full per-product Edit/Print/Make action set, and scanner/printer hardware verification remain outstanding. Live migration application is owner-reported only and was not independently queried.
+- **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, and barcode printing are present. Client package commit `818af6c` adds Edit/Print/Make actions on product rows, cards, and a product-details dialog; per-product label quantities (1–200) with a 1,000-label job cap; a scanner test dialog; and fast keyboard-scanner handling in Products search and POS. Label printing requires an assigned barcode; it no longer falls back to the product code. Missing barcode-generation RPCs show an explicit notice. This package changed no SQL/schema and applied no migration. Real scanner/printer hardware remains untested.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
-- **Next:** `docs/MASTER_PLAN.md` is approved with owner decisions recorded. The active branch is `master-plan/implementation`; the first package is the staging bootstrap/catalog comparison in `docs/STAGING_BOOTSTRAP.md`. Stop before writing multi-shop migrations until the owner returns SELECT-only results. Track package state in `docs/EXECUTION_PROGRESS.md`; hardware scanning/printing remains unverified.
+- **Next:** `docs/MASTER_PLAN.md` is approved with owner decisions recorded. The active branch is `master-plan/implementation`; the staging bootstrap/catalog comparison in `docs/STAGING_BOOTSTRAP.md` remains the gate before any multi-shop migration. Package 3's client-only barcode UI is complete; track further package state in `docs/EXECUTION_PROGRESS.md`. Hardware scanning/printing remains unverified.
 
 ## Known issues and Later
 
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
-- Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops; label printing is locally implemented, while scanner behavior is POS-local and hardware output is unverified. Owner reported manually running the barcode SQL, but no live schema query was performed in this checkout.
+- Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
 - Supabase bootstrap hazard: `supabase/baseline/00_baseline_schema.sql` is a reconstructed schema reference, not a complete dump. The migration directory also contains timestamped barcode rollback files; do not apply them as forward migrations. Bootstrap instructions and metadata-only comparison queries are in `docs/STAGING_BOOTSTRAP.md`.
 - Approved business rule: positive stock in `ACTIVE`/`NEAR_EXPIRY` batches for an active medicine remains sellable through expiry (`expiry_date >= current_date`). Existing FEFO helper/docs currently use a stricter boundary and must be reconciled before sale persistence is implemented.
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
@@ -124,6 +124,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Recorded production build/gzip, separate TypeScript diagnostic, and unused-code baseline measurements in `docs/EXECUTION_PROGRESS.md`; no source, configuration, or SQL was changed.
+- 2026-10-12 — Completed client-only barcode UI/scanner package in `818af6c`: product row/card/details actions, per-product label quantities and print-job limits, scanner test and POS/Products scan handling. Full tests, TypeScript lint/check, and production build passed; no SQL or migrations changed. Commit hook also included its generated context update.
 - 2026-10-12 — Recorded owner-approved W1-W7 execution decisions, created `master-plan/implementation` from `barcode/labels` commit `adf3606`, and prepared staging bootstrap/catalog comparison plus execution progress checklist; stopped before SQL execution or multi-shop migration work.
 - 2026-10-12 — Added `docs/MASTER_PLAN.md` with evidence-based W1-W7 status, multi-shop security design, staging test plan, and approval-gated execution order; no application code or database operations were performed.
 - 2026-10-12 — Added POS barcode scan support for keyboard/scan input: matching by product barcode or internal code, quick add-to-cart behavior, and scanner-mode UI with a manual entry fallback.
@@ -156,15 +158,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T19:00:10.528Z
+Generated at (UTC): 2026-10-12T19:10:57.507Z
 Git branch: master-plan/implementation
 
 Last 5 commit subjects:
+- docs: record baseline measurements
+- Add barcode client UI and scanner support
 - docs: log bootstrap query refinement
 - docs: clarify function search path query
 - docs: record staging checkpoint progress
-- docs: prepare staging bootstrap checkpoint
-- barcode
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
