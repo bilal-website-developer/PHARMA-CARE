@@ -171,6 +171,13 @@ test('prints the real discount and discounted balance for a partially paid sale'
   assert.match(html, /Balance:<\/span><span>1570\.00/);
 });
 
+test('prints a Rs 35 discount with matching net total', () => {
+  const html = memoHtml({ ...memoFixture, discountPaisa: 3500 });
+  assert.equal(printedPaisa(html, 'Gross Amount:') - printedPaisa(html, 'Discount:'), printedPaisa(html, 'Net Amount:'));
+  assert.match(html, /Discount:<\/span><span>35\.00/);
+  assert.match(html, /Net Amount:<\/strong><strong>496\.16/);
+});
+
 test('renders fixture arithmetic in paisa, including date, time, item count, gross, discount, and net', () => {
   const html = memoHtml();
   assert.match(html, /34\.16/);

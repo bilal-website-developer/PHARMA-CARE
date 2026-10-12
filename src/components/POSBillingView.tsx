@@ -34,6 +34,7 @@ import {
   PaymentMethod,
   Customer,
   CompletedSale,
+  MAX_DISCOUNT_PAISA,
   ROLE_MAX_DISCOUNT,
   BatchStatus,
 } from '../types/pharmacy';
@@ -51,7 +52,7 @@ import {
 } from '../utils/printWorkflow';
 import { APP_NAME } from '../constants/brand';
 import { DiscountBox } from './DiscountBox';
-import { computeDiscount, DiscountMode } from '../utils/discount';
+import { computeDiscount, DiscountMode, formatDiscountLimit } from '../utils/discount';
 
 interface POSBillingViewProps {
   products: Product[];
@@ -100,6 +101,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
   // Checkout & Cash Tendered
   const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
+  const [discountNotice, setDiscountNotice] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
   const [saleError, setSaleError] = useState('');
@@ -122,6 +124,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     mode: discount.mode,
     value: discount.value,
     maxPercent: maxAllowedDiscount,
+    maxPaisa: MAX_DISCOUNT_PAISA,
   }), [subtotalPaisa, discount.mode, discount.value, maxAllowedDiscount]);
   const discountPaisa = discountResult.discountPaisa;
   const discountPKR = discountPaisa / 100;
@@ -136,26 +139,62 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
 
+  const handleDiscountChange = (next: { mode: DiscountMode; value: string }) => {
+    const result = computeDiscount({
+      billPaisa: subtotalPaisa,
+      mode: next.mode,
+      value: next.value,
+      maxPercent: maxAllowedDiscount,
+      maxPaisa: MAX_DISCOUNT_PAISA,
+    });
+    if (result.error) {
+      setDiscount(next);
+      setDiscountNotice(result.error);
+      return;
+    }
+    if (result.limited) {
+      const amount = formatDiscountLimit(result.maxDiscountPaisa ?? 0);
+      setDiscountNotice(`${next.mode === 'amount' ? 'Maximum discount is' : 'Limited to'} Rs ${amount}`);
+      setDiscount(next.mode === 'amount'
+        ? { mode: 'amount', value: (result.discountPaisa / 100).toFixed(2) }
+        : next);
+      return;
+    }
+    setDiscount(next);
+    setDiscountNotice('');
+  };
+
   const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
     ? Math.max(0, Math.round(tenderedAmountPKR * 100))
     : 0;
   const changeDuePaisa = Math.max(0, tenderedAmountPaisa - totalPaisa);
   const changeDuePKR = changeDuePaisa / 100;
-  const previousSubtotalPaisa = useRef(subtotalPaisa);
   const previousTotalPaisa = useRef(totalPaisa);
 
   useEffect(() => {
-    const billWasReduced = subtotalPaisa < previousSubtotalPaisa.current;
-    previousSubtotalPaisa.current = subtotalPaisa;
-
     if (cart.length === 0) {
       if (discount.value !== '' || discount.mode !== 'percent') setDiscount({ mode: 'percent', value: '' });
+      if (discountNotice) setDiscountNotice('');
       return;
     }
-    if (billWasReduced && discount.mode === 'amount' && discountResult.error === 'Discount cannot exceed the bill.') {
-      setDiscount((current) => ({ ...current, value: (subtotalPaisa / 100).toFixed(2) }));
+    if (discountResult.limited && discount.mode === 'amount') {
+      const clampedValue = (discountResult.discountPaisa / 100).toFixed(2);
+      if (discount.value !== clampedValue) {
+        setDiscount({ mode: 'amount', value: clampedValue });
+        setDiscountNotice(`Maximum discount is Rs ${formatDiscountLimit(discountResult.maxDiscountPaisa ?? 0)}`);
+      }
+    } else if (discountResult.limited && discount.mode === 'percent' && !discountNotice) {
+      setDiscountNotice(`Limited to Rs ${formatDiscountLimit(discountResult.maxDiscountPaisa ?? 0)}`);
     }
-  }, [subtotalPaisa, cart.length, discount.mode, discount.value, discountResult.error]);
+  }, [
+    subtotalPaisa,
+    cart.length,
+    discount.mode,
+    discount.value,
+    discountResult.limited,
+    discountResult.maxDiscountPaisa,
+    discountNotice,
+  ]);
 
   useEffect(() => {
     const previousTotal = previousTotalPaisa.current;
@@ -261,7 +300,23 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
-    if (discountResult.error) return;
+    const finalDiscount = computeDiscount({
+      billPaisa: subtotalPaisa,
+      mode: discount.mode,
+      value: discount.value,
+      maxPercent: maxAllowedDiscount,
+      maxPaisa: MAX_DISCOUNT_PAISA,
+    });
+    if (finalDiscount.error) {
+      setDiscountNotice(finalDiscount.error);
+      return;
+    }
+    if (finalDiscount.limited) {
+      setDiscountNotice(
+        `${discount.mode === 'amount' ? 'Maximum discount is' : 'Limited to'} Rs ${formatDiscountLimit(finalDiscount.maxDiscountPaisa ?? 0)}`,
+      );
+      return;
+    }
 
     let items: CartItem[];
     try {
@@ -626,16 +681,45 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 Subtotal ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)} pcs):{' '}
                 <strong className="text-slate-900 font-mono">Rs. {subtotalPKR.toFixed(0)}</strong>
               </span>
-              <span className="text-slate-600 font-semibold">
-                Disc: <strong className="font-mono text-text">Rs. {discountPKR.toFixed(2)}</strong>
-              </span>
+              <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
+                <span>Disc:</span>
+                <label className="inline-flex items-center gap-1 rounded-control border border-border bg-surface px-2 text-text focus-within:ring-2 focus-within:ring-accent">
+                  <span className="text-muted">Rs.</span>
+                  <input
+                    aria-label="Cart discount amount"
+                    type="text"
+                    inputMode="decimal"
+                    value={discount.mode === 'amount' ? discount.value : discountPKR.toFixed(2)}
+                    disabled={cart.length === 0}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!/^\d*(?:\.\d{0,2})?$/.test(value)) {
+                        setDiscountNotice('Enter a valid discount.');
+                        return;
+                      }
+                      handleDiscountChange({ mode: 'amount', value });
+                    }}
+                    className="w-20 min-w-0 bg-transparent py-1 font-mono text-text outline-none disabled:cursor-not-allowed"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleDiscountChange({ mode: 'amount', value: '' })}
+                  className="rounded-control px-1.5 py-1 text-xs font-semibold text-muted hover:bg-surface disabled:cursor-not-allowed"
+                  disabled={cart.length === 0}
+                >
+                  Clear
+                </button>
+                {cart.length === 0 && <span className="text-muted">Add items first</span>}
+              </div>
 
               {/* Quick Discount Pills */}
               <div className="pos-discount-options flex items-center gap-1 text-[10px]">
                 {[0, 2, 5, 10, 15, 20].map((pct) => (
                   <button
                     key={pct}
-                    onClick={() => setDiscount({ mode: 'percent', value: String(pct) })}
+                    onClick={() => handleDiscountChange({ mode: 'percent', value: String(pct) })}
+                    disabled={cart.length === 0}
                     aria-pressed={discount.mode === 'percent' && Number(discount.value || 0) === pct}
                     className={`px-1.5 py-0.5 rounded font-bold transition ${
                       discount.mode === 'percent' && Number(discount.value || 0) === pct
@@ -648,6 +732,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 ))}
               </div>
             </div>
+            {discountNotice && cart.length > 0 && (
+              <p role="alert" className="text-xs font-semibold text-danger">{discountNotice}</p>
+            )}
 
             {/* NET TOTAL */}
             <div className="flex items-center justify-between py-1 bg-slate-50 px-2.5 rounded-lg border border-slate-200">
@@ -810,7 +897,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 billPaisa={subtotalPaisa}
                 discount={discount}
                 maxPercent={maxAllowedDiscount}
-                onChange={setDiscount}
+                maxPaisa={MAX_DISCOUNT_PAISA}
+                notice={discountNotice}
+                onChange={handleDiscountChange}
               />
 
               <div className="order-2">

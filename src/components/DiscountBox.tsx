@@ -1,21 +1,28 @@
-import { computeDiscount, DiscountMode } from '../utils/discount';
+import { computeDiscount, DiscountMode, formatDiscountLimit } from '../utils/discount';
 
 interface DiscountBoxProps {
   billPaisa: number;
   discount: { mode: DiscountMode; value: string };
   maxPercent: number;
+  maxPaisa: number;
+  notice?: string;
   onChange: (discount: { mode: DiscountMode; value: string }) => void;
 }
 
 const QUICK_PERCENTAGES = [2, 5, 10, 15, 20] as const;
 
-export function DiscountBox({ billPaisa, discount, maxPercent, onChange }: DiscountBoxProps) {
+export function DiscountBox({ billPaisa, discount, maxPercent, maxPaisa, notice, onChange }: DiscountBoxProps) {
   const result = computeDiscount({
     billPaisa,
     mode: discount.mode,
     value: discount.value,
     maxPercent,
+    maxPaisa,
   });
+  const limitMessage = result.limited
+    ? `${discount.mode === 'amount' ? 'Maximum discount is' : 'Limited to'} Rs ${formatDiscountLimit(result.maxDiscountPaisa ?? 0)}`
+    : '';
+  const message = notice || result.error || limitMessage;
 
   return (
     <section className="order-4 space-y-2 rounded-control border border-border bg-surface p-3" aria-label="Discount">
@@ -73,7 +80,7 @@ export function DiscountBox({ billPaisa, discount, maxPercent, onChange }: Disco
           Clear
         </button>
       </div>
-      {result.error && <p role="alert" className="text-xs font-semibold text-danger">{result.error}</p>}
+      {message && <p role="alert" className="text-xs font-semibold text-danger">{message}</p>}
     </section>
   );
 }
