@@ -127,9 +127,6 @@ export async function printReceipt(
       access.onNotice('Auto-print is disabled because this account needs admin approval.', true);
       return 'auto-print-disabled';
     }
-    if (!window.confirm(`You do not have permission to print this ${type} receipt. Send a print request to an admin?`)) {
-      return 'cancelled';
-    }
     await requestReceiptPrint(type, snapshot);
     access.onNotice('Request sent to admin.');
     return 'requested';

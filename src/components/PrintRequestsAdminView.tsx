@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Printer, RotateCcw, XCircle } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Minus, Pencil, Plus, Printer, RotateCcw, Trash2, X, XCircle } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { parsePrintSnapshot } from '../utils/printSnapshot';
+import { parsePrintSnapshot, PrintSnapshot } from '../utils/printSnapshot';
 import { parsePrintRequestRecord, PrintRequestRecord } from '../utils/printRequestTypes';
 import { PrintReceiptHandler } from '../utils/printWorkflow';
+import { EditableReceiptLine, recalculateEditableReceipt } from '../utils/printRequestEditor';
 
 function statusClass(status: PrintRequestRecord['status']) {
   if (status === 'approved') return 'bg-green-100 text-green-800';
@@ -16,6 +17,12 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const [editingRequest, setEditingRequest] = useState<PrintRequestRecord | null>(null);
+  const [draftLines, setDraftLines] = useState<EditableReceiptLine[]>([]);
+  const [draftDiscount, setDraftDiscount] = useState('');
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [editError, setEditError] = useState('');
 
   const refresh = useCallback(async () => {
     if (!supabase) {
@@ -23,18 +30,15 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
       setLoading(false);
       return;
     }
-    const { data, error } = await supabase
-      .from('print_requests')
-      .select('id,type,receipt_ref,payload,requested_by,requested_at,status,decided_by,decided_at,note,printed_at')
-      .order('requested_at', { ascending: false })
-      .limit(200);
+    const { data, error } = await supabase.rpc('list_print_requests');
     if (error) {
       setNotice({ text: `Could not load print requests: ${error.message}`, error: true });
       setLoading(false);
       return;
     }
     try {
-      setRequests((data ?? []).map(parsePrintRequestRecord));
+      if (!Array.isArray(data)) throw new Error('The print-request list response is invalid.');
+      setRequests(data.map(parsePrintRequestRecord));
       setNotice(null);
     } catch (parseError) {
       setNotice({ text: parseError instanceof Error ? parseError.message : 'Could not parse print requests.', error: true });
@@ -42,6 +46,99 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
       setLoading(false);
     }
   }, []);
+
+  const editPreview = useMemo((): { snapshot: PrintSnapshot | null; error: string } | null => {
+    if (!editingRequest) return null;
+    const discountMatch = /^\d*(?:\.\d{0,2})?$/.test(draftDiscount);
+    if (!discountMatch) return { snapshot: null, error: 'Enter a valid discount amount.' };
+    const discountPaisa = Math.round(Number(draftDiscount || '0') * 100);
+    try {
+      return {
+        snapshot: recalculateEditableReceipt(
+          parsePrintSnapshot(editingRequest.payload),
+          draftLines,
+          discountPaisa,
+        ),
+        error: '',
+      };
+    } catch (error) {
+      return {
+        snapshot: null,
+        error: error instanceof Error ? error.message : 'The edited receipt is invalid.',
+      };
+    }
+  }, [draftDiscount, draftLines, editingRequest]);
+
+  const beginEdit = (request: PrintRequestRecord) => {
+    try {
+      const snapshot = parsePrintSnapshot(request.payload);
+      if (request.type !== 'sale' || snapshot.data.kind !== 'SALE') {
+        throw new Error('Only sale receipts can be modified.');
+      }
+      setEditingRequest(request);
+      setDraftLines(snapshot.data.lines.map((line) => ({ ...line })));
+      setDraftDiscount((snapshot.data.discountPaisa / 100).toFixed(2));
+      setNewItemName('');
+      setNewItemPrice('');
+      setEditError('');
+    } catch (error) {
+      setNotice({
+        text: error instanceof Error ? error.message : 'Could not open the receipt editor.',
+        error: true,
+      });
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!editingRequest || !editPreview?.snapshot) {
+      setEditError(editPreview?.error || 'Correct the receipt details before saving.');
+      return;
+    }
+    if (!supabase) {
+      setEditError('Supabase is not configured.');
+      return;
+    }
+    setBusyId(editingRequest.id);
+    setEditError('');
+    try {
+      const { data, error } = await supabase.rpc('modify_print_request', {
+        p_request_id: editingRequest.id,
+        p_lines: editPreview.snapshot.data.lines,
+        p_discount_paisa: editPreview.snapshot.data.discountPaisa,
+      });
+      if (error) throw new Error(error.message);
+      if (typeof data !== 'object' || data === null || !('payload' in data)) {
+        throw new Error('The server did not return the updated receipt snapshot.');
+      }
+      const updatedSnapshot = parsePrintSnapshot(data.payload);
+      setRequests((current) => current.map((request) =>
+        request.id === editingRequest.id ? { ...request, payload: updatedSnapshot } : request
+      ));
+      setEditingRequest(null);
+      setNotice({ text: 'Receipt request updated. The completed sale was not changed.', error: false });
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Could not save the receipt changes.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const addItem = () => {
+    const name = newItemName.trim();
+    if (!name || !/^\d+(?:\.\d{0,2})?$/.test(newItemPrice)) {
+      setEditError('Enter an item name and a valid price.');
+      return;
+    }
+    const ratePaisa = Math.round(Number(newItemPrice) * 100);
+    if (!Number.isSafeInteger(ratePaisa)) {
+      setEditError('Item price is too large.');
+      return;
+    }
+    setDraftLines((current) => [...current, { qty: 1, name, ratePaisa }]);
+    setNewItemName('');
+    setNewItemPrice('');
+    setEditError('');
+  };
 
   useEffect(() => {
     void refresh();
@@ -135,7 +232,7 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
                   <tr key={request.id}>
                     <td className="px-5 py-4 capitalize">{request.type}</td>
                     <td className="px-5 py-4 font-mono">{request.receipt_ref}</td>
-                    <td className="px-5 py-4 font-mono text-xs">{request.requested_by}</td>
+                    <td className="px-5 py-4">{request.requester_name || 'Unknown user'}</td>
                     <td className="px-5 py-4">{new Date(request.requested_at).toLocaleString()}</td>
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${statusClass(request.status)}`}>{request.status}</span></td>
                     <td className="max-w-56 px-5 py-4 text-muted">{request.note || '—'}</td>
@@ -143,6 +240,7 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
                       <div className="inline-flex gap-2">
                         {request.status === 'pending' && <>
                           <button type="button" disabled={busyId === request.id} onClick={() => approve(request)} className="inline-flex items-center gap-1 rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-50"><Printer className="h-3.5 w-3.5" />Approve and print</button>
+                          {request.type === 'sale' && <button type="button" disabled={busyId === request.id} onClick={() => beginEdit(request)} className="inline-flex items-center gap-1 rounded-control border border-primary/30 px-3 py-2 text-xs font-bold text-primary disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Modify</button>}
                           <button type="button" disabled={busyId === request.id} onClick={() => reject(request)} className="inline-flex items-center gap-1 rounded-control border border-red-200 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"><XCircle className="h-3.5 w-3.5" />Reject</button>
                         </>}
                         {request.status === 'approved' && <button type="button" disabled={busyId === request.id} onClick={() => void printAgain(request)} className="inline-flex items-center gap-1 rounded-control border border-primary/30 px-3 py-2 text-xs font-bold text-primary disabled:opacity-50"><RotateCcw className="h-3.5 w-3.5" />Print again</button>}
@@ -153,6 +251,64 @@ export function PrintRequestsAdminView({ onPrintReceipt }: { onPrintReceipt: Pri
           </tbody>
         </table>
       </div>
+      {editingRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="modify-print-request-title" className="max-h-[90vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-card border border-border bg-white p-5 shadow-xl">
+            <header className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="modify-print-request-title" className="text-lg font-black text-text">Modify receipt request</h3>
+                <p className="text-sm text-muted">{editingRequest.receipt_ref} · Changes apply to the receipt only, not the completed sale or stock.</p>
+              </div>
+              <button type="button" aria-label="Close editor" onClick={() => setEditingRequest(null)} className="rounded-control p-2 text-muted hover:bg-surface"><X className="h-4 w-4" /></button>
+            </header>
+
+            <div className="space-y-2">
+              {draftLines.map((line, index) => (
+                <div key={`${line.name}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-control border border-border p-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-text">{line.name}</p>
+                    <p className="text-xs text-muted">Rs. {(line.ratePaisa / 100).toFixed(2)} each</p>
+                  </div>
+                  <div className="inline-flex items-center rounded-control border border-border">
+                    <button type="button" aria-label={`Decrease ${line.name} quantity`} onClick={() => setDraftLines((current) => current.flatMap((item, itemIndex) => itemIndex !== index ? [item] : item.qty <= 1 ? [] : [{ ...item, qty: item.qty - 1 }]))} className="p-1.5 text-muted hover:bg-surface"><Minus className="h-3 w-3" /></button>
+                    <span className="min-w-7 text-center text-sm font-bold">{line.qty}</span>
+                    <button type="button" aria-label={`Increase ${line.name} quantity`} onClick={() => setDraftLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, qty: item.qty + 1 } : item))} className="p-1.5 text-muted hover:bg-surface"><Plus className="h-3 w-3" /></button>
+                  </div>
+                  <strong className="min-w-20 text-right font-mono text-sm">Rs. {(line.qty * line.ratePaisa / 100).toFixed(2)}</strong>
+                  <button type="button" aria-label={`Remove ${line.name}`} onClick={() => setDraftLines((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="p-1.5 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+
+            <form className="grid grid-cols-[minmax(0,1fr)_9rem_auto] gap-2" onSubmit={(event) => { event.preventDefault(); addItem(); }}>
+              <input aria-label="New item name" value={newItemName} onChange={(event) => setNewItemName(event.target.value)} placeholder="Add product name" className="min-w-0 rounded-control border border-border px-3 py-2 text-sm" />
+              <input aria-label="New item price" inputMode="decimal" value={newItemPrice} onChange={(event) => setNewItemPrice(event.target.value)} placeholder="Price (Rs.)" className="rounded-control border border-border px-3 py-2 text-sm" />
+              <button type="submit" className="inline-flex items-center gap-1 rounded-control border border-primary/30 px-3 py-2 text-sm font-bold text-primary"><Plus className="h-4 w-4" />Add item</button>
+            </form>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-text">
+                Discount (Rs.)
+                <input aria-label="Receipt discount in rupees" inputMode="decimal" value={draftDiscount} onChange={(event) => { setDraftDiscount(event.target.value); setEditError(''); }} className="w-28 rounded-control border border-border px-2 py-1.5 font-mono" />
+              </label>
+              <p className="text-sm font-bold text-text">
+                Updated total: {editPreview?.snapshot
+                  ? `Rs. ${((editPreview.snapshot.data.lines.reduce((sum, line) => sum + line.qty * line.ratePaisa, 0)
+                    - editPreview.snapshot.data.discountPaisa
+                    + (editPreview.snapshot.data.salesTaxPaisa ?? 0)
+                    + (editPreview.snapshot.data.roundingPaisa ?? 0)) / 100).toFixed(2)}`
+                  : '—'}
+              </p>
+            </div>
+            {editError && <p role="alert" className="rounded-control border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{editError}</p>}
+            {editPreview?.error && <p role="alert" className="text-sm text-red-700">{editPreview.error}</p>}
+            <footer className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingRequest(null)} className="rounded-control border border-border px-4 py-2 text-sm font-bold text-muted">Cancel</button>
+              <button type="button" disabled={busyId === editingRequest.id || !editPreview?.snapshot} onClick={() => void saveEdit()} className="rounded-control bg-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busyId === editingRequest.id ? 'Saving…' : 'Save changes'}</button>
+            </footer>
+          </section>
+        </div>
+      )}
       <p className="text-xs text-muted">Requests refresh every 20 seconds. A cancelled print dialog leaves the request approved.</p>
     </section>
   );

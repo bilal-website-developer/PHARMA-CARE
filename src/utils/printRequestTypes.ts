@@ -8,6 +8,7 @@ export interface PrintRequestRecord {
   receipt_ref: string;
   payload: unknown;
   requested_by: string;
+  requester_name?: string;
   requested_at: string;
   status: PrintRequestStatus;
   decided_by: string | null;
@@ -43,6 +44,9 @@ export function parsePrintRequestRecord(value: unknown): PrintRequestRecord {
     receipt_ref,
     payload: value.payload,
     requested_by,
+    requester_name: typeof value.requester_name === 'string' && value.requester_name.trim()
+      ? value.requester_name
+      : 'Unknown user',
     requested_at,
     status,
     decided_by: nullableString(value.decided_by, 'decision maker'),
