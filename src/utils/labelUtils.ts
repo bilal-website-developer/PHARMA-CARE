@@ -1,5 +1,8 @@
 export type BarcodeFormat = 'CODE128' | 'EAN13' | 'UPC' | 'CODE39' | 'ITF';
 
+export const MAX_LABELS_PER_PRODUCT = 200;
+export const MAX_LABELS_PER_PRINT_JOB = 1000;
+
 export const BARCODE_FORMATS = [
   { value: 'CODE128', label: 'Code 128' },
   { value: 'EAN13', label: 'EAN-13' },
@@ -7,6 +10,27 @@ export const BARCODE_FORMATS = [
   { value: 'CODE39', label: 'Code 39' },
   { value: 'ITF', label: 'ITF-14' },
 ] as const satisfies readonly { value: BarcodeFormat; label: string }[];
+
+export interface LabelQuantity {
+  id: string;
+  name: string;
+  quantity: number;
+}
+
+export function validateLabelQuantities(items: readonly LabelQuantity[]): string | null {
+  for (const item of items) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > MAX_LABELS_PER_PRODUCT) {
+      return `${item.name}: enter a whole number from 1 to ${MAX_LABELS_PER_PRODUCT}.`;
+    }
+  }
+
+  const total = items.reduce((sum, item) => sum + item.quantity, 0);
+  if (total > MAX_LABELS_PER_PRINT_JOB) {
+    return `Print jobs are limited to ${MAX_LABELS_PER_PRINT_JOB} labels. Current total: ${total}.`;
+  }
+
+  return null;
+}
 
 export function ean13CheckDigit(payload12: string): string {
   const digits = payload12.replace(/\D/g, '');

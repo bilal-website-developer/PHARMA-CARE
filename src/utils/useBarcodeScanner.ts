@@ -4,10 +4,34 @@ export interface UseBarcodeScannerOptions {
   enabled?: boolean;
   timeoutMs?: number;
   minLength?: number;
+  maxScanDurationMs?: number;
+}
+
+export interface BarcodeScanParseOptions {
+  minLength?: number;
+  maxScanDurationMs?: number;
 }
 
 export function normalizeScannedValue(value: string): string {
   return value.replace(/\s+/g, '').trim();
+}
+
+export function parseBarcodeScan(
+  value: string,
+  durationMs: number,
+  { minLength = 3, maxScanDurationMs = 1000 }: BarcodeScanParseOptions = {},
+): string | null {
+  const normalized = normalizeScannedValue(value);
+  if (
+    normalized.length < minLength
+    || !Number.isFinite(durationMs)
+    || durationMs < 0
+    || durationMs > maxScanDurationMs
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 export function findProductByScan<T extends { barcode?: string | null; code?: string | null }>(
@@ -30,31 +54,46 @@ export function useBarcodeScanner({
   enabled = true,
   timeoutMs = 100,
   minLength = 3,
+  maxScanDurationMs = 1000,
 }: UseBarcodeScannerOptions = {}) {
   const [scanValue, setScanValue] = useState('');
   const [lastScanned, setLastScanned] = useState('');
+  const [lastRawValue, setLastRawValue] = useState('');
+  const [lastScanDurationMs, setLastScanDurationMs] = useState<number | null>(null);
   const timeoutRef = useRef<number | undefined>(undefined);
   const bufferRef = useRef('');
+  const scanStartedAtRef = useRef<number | null>(null);
 
   const flushBuffer = useCallback(() => {
-    const normalized = normalizeScannedValue(bufferRef.current);
+    const rawValue = bufferRef.current;
+    const scanStartedAt = scanStartedAtRef.current;
+    const durationMs = scanStartedAt === null ? Number.NaN : performance.now() - scanStartedAt;
+    const parsed = parseBarcodeScan(rawValue, durationMs, { minLength, maxScanDurationMs });
     bufferRef.current = '';
+    scanStartedAtRef.current = null;
     setScanValue('');
+    if (timeoutRef.current !== undefined) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = undefined;
+    }
 
-    if (normalized.length >= minLength) {
-      setLastScanned(normalized);
+    if (parsed) {
+      setLastRawValue(rawValue);
+      setLastScanDurationMs(Math.round(durationMs));
+      setLastScanned(parsed);
       return;
     }
 
     setLastScanned('');
-  }, [minLength]);
+  }, [maxScanDurationMs, minLength]);
 
   const resetScan = useCallback(() => {
-    if (timeoutRef.current) {
+    if (timeoutRef.current !== undefined) {
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = undefined;
     }
     bufferRef.current = '';
+    scanStartedAtRef.current = null;
     setScanValue('');
     setLastScanned('');
   }, []);
@@ -75,7 +114,7 @@ export function useBarcodeScanner({
         return;
       }
 
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (event.key === 'Enter') {
         if (bufferRef.current.trim()) {
           flushBuffer();
         }
@@ -92,15 +131,21 @@ export function useBarcodeScanner({
         return;
       }
 
+      if (scanStartedAtRef.current === null) {
+        scanStartedAtRef.current = performance.now();
+      }
       bufferRef.current += event.key;
       setScanValue(bufferRef.current);
 
-      if (timeoutRef.current) {
+      if (timeoutRef.current !== undefined) {
         window.clearTimeout(timeoutRef.current);
       }
 
       timeoutRef.current = window.setTimeout(() => {
-        flushBuffer();
+        bufferRef.current = '';
+        scanStartedAtRef.current = null;
+        timeoutRef.current = undefined;
+        setScanValue('');
       }, timeoutMs);
     };
 
@@ -108,7 +153,7 @@ export function useBarcodeScanner({
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      if (timeoutRef.current) {
+      if (timeoutRef.current !== undefined) {
         window.clearTimeout(timeoutRef.current);
       }
     };
@@ -117,6 +162,8 @@ export function useBarcodeScanner({
   return {
     scanValue,
     lastScanned,
+    lastRawValue,
+    lastScanDurationMs,
     resetScan,
     clearBuffer: resetScan,
   };

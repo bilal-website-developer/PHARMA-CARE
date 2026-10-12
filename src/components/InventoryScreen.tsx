@@ -1,13 +1,15 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Download, FileUp, Grid2X2, List, Package,
-  Plus, Printer, RefreshCw, Search, ShieldAlert, SlidersHorizontal, X,
+  Pencil, Plus, Printer, RefreshCw, ScanLine, Search, ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
 import { LabelPrintDialog, type LabelPrintItem } from './labels/LabelPrintDialog';
+import { BarcodeScannerTest } from './BarcodeScannerTest';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
+import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import {
   BulkActionBar, ConfirmDialog, DataTable, EmptyState, ExpiryChip, FilterChip, KpiCard,
   SegmentedTabs, Skeleton, StockBar, StatusChip,
@@ -175,6 +177,15 @@ function isProductsOverviewStats(value: unknown): value is ProductsOverviewStats
 
 function messageFor(error: unknown, fallback: string) {
   return getSupabaseErrorMessage(error, fallback);
+}
+
+function isBarcodeFunctionMissing(error: unknown) {
+  if (!isRecord(error)) return false;
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = typeof error.message === 'string' ? error.message : '';
+  return code === 'PGRST202'
+    || code === '42883'
+    || (message.includes('assign_medicine_barcode') && /not found|does not exist|schema cache/i.test(message));
 }
 
 function money(paisa: number) {
@@ -352,13 +363,30 @@ function ProductsCatalog({
   const [error, setError] = useState('');
   const [optionsError, setOptionsError] = useState('');
   const [editing, setEditing] = useState<Medicine | null>(null);
+  const [viewingMedicine, setViewingMedicine] = useState<Medicine | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<ProductFormValues>(() => initialProductForm());
   const [generatingBarcodeId, setGeneratingBarcodeId] = useState<string | null>(null);
   const [labelDialogProducts, setLabelDialogProducts] = useState<LabelPrintItem[]>([]);
+  const [scannerTestOpen, setScannerTestOpen] = useState(false);
+  const [lastProductScan, setLastProductScan] = useState('');
+  const {
+    scanValue,
+    lastScanned,
+    lastRawValue,
+    lastScanDurationMs,
+    resetScan,
+  } = useBarcodeScanner();
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!lastScanned) return;
+    setSearchInput(lastScanned);
+    setLastProductScan(lastScanned);
+    resetScan();
+  }, [lastScanned, resetScan]);
 
   useEffect(() => {
     setSavedViews(readSavedViews(userId));
@@ -789,33 +817,62 @@ function ProductsCatalog({
     }
   };
 
-  const printBarcodes = () => {
-    const productsToPrint = selectedIds.length
-      ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
-      : visibleMedicines;
+  const toLabelPrintItem = (medicine: Medicine): LabelPrintItem => {
+    const defaultUnit = medicine.units.find((unit) => unit.is_default_sale_unit) ?? medicine.units[0];
+    return {
+      id: medicine.id,
+      brand_name: medicine.brand_name,
+      generic_name: medicine.generic_name,
+      strength: medicine.strength,
+      code: medicine.code,
+      barcode: medicine.barcode,
+      price_paisa: defaultUnit ? defaultUnit.price_paisa : null,
+      expiry: medicine.nearest_expiry,
+    };
+  };
+
+  const openBarcodePrint = (productsToPrint: Medicine[]) => {
     if (!productsToPrint.length) {
       setNotice('There are no products on this page to print.');
       return;
     }
-    const productsForDialog: LabelPrintItem[] = productsToPrint.map((medicine) => {
-      const defaultUnit = medicine.units.find((unit) => unit.is_default_sale_unit) ?? medicine.units[0];
-      return {
-        id: medicine.id,
-        brand_name: medicine.brand_name,
-        generic_name: medicine.generic_name,
-        strength: medicine.strength,
-        code: medicine.code,
-        barcode: medicine.barcode,
-        price_paisa: defaultUnit ? defaultUnit.price_paisa : null,
-        expiry: medicine.nearest_expiry,
-      };
-    });
-    setLabelDialogProducts(productsForDialog);
-    setNotice('');
+    const productsWithBarcodes = productsToPrint.filter((medicine) => medicine.barcode?.trim());
+    if (!productsWithBarcodes.length) {
+      setNotice('No selected product has a barcode. Make a barcode before printing labels.');
+      return;
+    }
+    if (productsWithBarcodes.length !== productsToPrint.length) {
+      setNotice('Products without a barcode were skipped. Make a barcode before printing their labels.');
+    } else {
+      setNotice('');
+    }
+    setLabelDialogProducts(productsWithBarcodes.map(toLabelPrintItem));
+  };
+
+  const printBarcodes = () => {
+    const productsToPrint = selectedIds.length
+      ? medicines.filter((medicine) => selectedIds.includes(medicine.id))
+      : visibleMedicines;
+    openBarcodePrint(productsToPrint);
+  };
+
+  const printBarcodeForMedicine = (medicine: Medicine) => {
+    if (!medicine.barcode?.trim()) {
+      setNotice(`${medicine.brand_name} has no barcode. Make a barcode before printing labels.`);
+      return;
+    }
+    openBarcodePrint([medicine]);
   };
 
   const generateBarcodeForMedicine = async (medicine: Medicine) => {
-    if (!supabase || !canEditProducts) return;
+    if (!canEditProducts) {
+      setNotice('Products permission is required to make a barcode.');
+      return;
+    }
+    if (!supabase) {
+      setNotice('Supabase is not configured.');
+      return;
+    }
     setGeneratingBarcodeId(medicine.id);
     setNotice('');
     try {
@@ -824,9 +881,16 @@ function ProductsCatalog({
         p_barcode: null,
         p_replace: false,
       });
-      if (barcodeError) throw barcodeError;
+      if (barcodeError) {
+        if (isBarcodeFunctionMissing(barcodeError)) {
+          setNotice('Barcode generation is not enabled on this database yet');
+          return;
+        }
+        throw barcodeError;
+      }
       if (typeof data !== 'string' || !data) throw new Error('The barcode service returned an invalid response.');
       setNotice(`Generated barcode ${data} for ${medicine.brand_name}.`);
+      setViewingMedicine((current) => current?.id === medicine.id ? { ...current, barcode: data } : current);
       await loadProducts();
     } catch (caught) {
       setNotice(messageFor(caught, `Could not generate a barcode for ${medicine.brand_name}.`));
@@ -836,7 +900,14 @@ function ProductsCatalog({
   };
 
   const generateMissingBarcodes = async () => {
-    if (!supabase || !canEditProducts) return;
+    if (!canEditProducts) {
+      setNotice('Products permission is required to make barcodes.');
+      return;
+    }
+    if (!supabase) {
+      setNotice('Supabase is not configured.');
+      return;
+    }
     const ids = selectedIds.length > 0
       ? selectedIds
       : medicines.filter((medicine) => !medicine.barcode).map((medicine) => medicine.id);
@@ -850,7 +921,13 @@ function ProductsCatalog({
       const { data, error: bulkError } = await supabase.rpc('assign_missing_barcodes', {
         p_medicine_ids: ids,
       });
-      if (bulkError) throw bulkError;
+      if (bulkError) {
+        if (isBarcodeFunctionMissing(bulkError)) {
+          setNotice('Barcode generation is not enabled on this database yet');
+          return;
+        }
+        throw bulkError;
+      }
       if (!isRecord(data)) {
         throw new Error('The missing-barcode service returned an invalid response.');
       }
@@ -879,6 +956,7 @@ function ProductsCatalog({
   };
 
   const openEdit = (medicine: Medicine) => {
+    setViewingMedicine(null);
     setEditing(medicine);
     setForm(initialProductForm(medicine));
     setShowForm(true);
@@ -976,6 +1054,45 @@ function ProductsCatalog({
     }
   };
 
+  const renderProductActions = (medicine: Medicine) => (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Actions for ${medicine.brand_name}`}>
+      <button
+        type="button"
+        className={`${SECONDARY} px-2 py-1.5 text-xs`}
+        disabled={!canEditProducts}
+        title={canEditProducts ? 'Edit product' : 'Products permission is required to edit'}
+        aria-label={`Edit ${medicine.brand_name}`}
+        onClick={() => openEdit(medicine)}
+      >
+        <Pencil size={14} /> Edit
+      </button>
+      <button
+        type="button"
+        className={`${SECONDARY} px-2 py-1.5 text-xs`}
+        disabled={!medicine.barcode?.trim()}
+        title={medicine.barcode?.trim() ? 'Print barcode' : 'Make a barcode before printing'}
+        aria-label={`Print barcode for ${medicine.brand_name}`}
+        onClick={() => printBarcodeForMedicine(medicine)}
+      >
+        <Printer size={14} /> Print barcode
+      </button>
+      <button
+        type="button"
+        className={`${SECONDARY} px-2 py-1.5 text-xs`}
+        disabled={!canEditProducts || Boolean(medicine.barcode?.trim()) || generatingBarcodeId === medicine.id}
+        title={!canEditProducts
+          ? 'Products permission is required to make a barcode'
+          : medicine.barcode?.trim()
+            ? 'This product already has a barcode'
+            : 'Make barcode'}
+        aria-label={`Make barcode for ${medicine.brand_name}`}
+        onClick={() => void generateBarcodeForMedicine(medicine)}
+      >
+        <Barcode size={14} /> {generatingBarcodeId === medicine.id ? 'Making…' : 'Make barcode'}
+      </button>
+    </div>
+  );
+
   const productColumns: DataTableColumn<Medicine>[] = [
     {
       id: 'product',
@@ -989,7 +1106,7 @@ function ProductsCatalog({
       },
       render: (medicine) => (
         <div className="min-w-44">
-          <strong className="block text-text">{medicine.brand_name}</strong>
+          <button type="button" className="block text-left font-bold text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setViewingMedicine(medicine)}>{medicine.brand_name}</button>
           <span className="block text-xs text-muted">{medicine.generic_name}{medicine.strength ? ` · ${medicine.strength}` : ''}</span>
           <span className="text-xs text-muted">{medicine.code}</span>
           {medicine.barcode && <span className="mt-1 flex items-center gap-1 text-xs text-muted"><Barcode size={13} />{medicine.barcode}</span>}
@@ -1003,20 +1120,14 @@ function ProductsCatalog({
         if (medicine.barcode) {
           return <span className="flex items-center gap-1 text-xs text-muted"><Barcode size={13} /> {medicine.barcode}</span>;
         }
-        if (!canEditProducts) {
-          return <span className="text-xs text-muted">—</span>;
-        }
-        return (
-          <button
-            type="button"
-            className={`${SECONDARY} min-w-[92px] justify-center`}
-            onClick={() => void generateBarcodeForMedicine(medicine)}
-            disabled={generatingBarcodeId === medicine.id}
-          >
-            {generatingBarcodeId === medicine.id ? 'Generating…' : 'Generate'}
-          </button>
-        );
+        return <span className="text-xs text-muted">Not assigned</span>;
       },
+    },
+    {
+      id: 'product-actions',
+      header: 'Product actions',
+      hideable: false,
+      render: renderProductActions,
     },
     {
       id: 'category',
@@ -1117,6 +1228,7 @@ function ProductsCatalog({
               <button type="button" className={`${SECONDARY} justify-start`} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
               <button type="button" className={`${SECONDARY} justify-start`} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export XLSX</button>
               <button type="button" className={`${SECONDARY} justify-start`} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
+              <button type="button" className={`${SECONDARY} justify-start`} onClick={() => setScannerTestOpen(true)}><ScanLine size={16} /> Scanner test</button>
               {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => void generateMissingBarcodes()}><Barcode size={16} /> Generate missing barcodes</button>}
               {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>}
               {skippedRows.length > 0 && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
@@ -1129,6 +1241,14 @@ function ProductsCatalog({
         open={labelDialogProducts.length > 0}
         products={labelDialogProducts}
         onClose={() => setLabelDialogProducts([])}
+      />
+      <BarcodeScannerTest
+        open={scannerTestOpen}
+        scanValue={scanValue}
+        lastRawValue={lastRawValue}
+        lastScanned={lastProductScan}
+        lastScanDurationMs={lastScanDurationMs}
+        onClose={() => setScannerTestOpen(false)}
       />
 
       <section aria-label="Product summary" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -1319,6 +1439,49 @@ function ProductsCatalog({
               <button type="button" className={SECONDARY} onClick={() => setImportPreview(null)}>Cancel</button>
               <button type="button" className={BUTTON} disabled={importing || !importPreview.some((row) => row.errors.length === 0 && !skippedLines.includes(row.line))} onClick={() => void importProducts()}>
                 {importing ? 'Importing…' : 'Import valid rows'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {viewingMedicine && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="product-details-title" className={`${PANEL} w-full max-w-2xl space-y-4 p-5`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="product-details-title" className="text-lg font-black text-text">{viewingMedicine.brand_name}</h3>
+                <p className="text-sm text-muted">{viewingMedicine.generic_name}{viewingMedicine.strength ? ` · ${viewingMedicine.strength}` : ''}</p>
+              </div>
+              <button type="button" aria-label="Close product details" className={SECONDARY} onClick={() => setViewingMedicine(null)}><X size={16} /></button>
+            </div>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="font-semibold text-muted">Product code</dt><dd className="text-text">{viewingMedicine.code}</dd></div>
+              <div><dt className="font-semibold text-muted">Barcode</dt><dd className="break-all text-text">{viewingMedicine.barcode || 'Not assigned'}</dd></div>
+              <div><dt className="font-semibold text-muted">Category</dt><dd className="text-text">{viewingMedicine.category}</dd></div>
+              <div><dt className="font-semibold text-muted">Manufacturer</dt><dd className="text-text">{viewingMedicine.company}</dd></div>
+              <div><dt className="font-semibold text-muted">Classification</dt><dd className="text-text">{viewingMedicine.drug_class}</dd></div>
+              <div><dt className="font-semibold text-muted">Storage</dt><dd className="text-text">{viewingMedicine.storage_condition.replace(/_/g, ' ').toLowerCase()}</dd></div>
+              <div className="sm:col-span-2">
+                <dt className="font-semibold text-muted">Sale units</dt>
+                <dd className="space-y-1 text-text">
+                  {viewingMedicine.units.map((unit) => <div key={unit.id}>{unit.name}{unit.barcode ? ` · ${unit.barcode}` : ''}</div>)}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+              <button type="button" className={SECONDARY} disabled={!canEditProducts} onClick={() => openEdit(viewingMedicine)}><Pencil size={15} /> Edit</button>
+              <button type="button" className={SECONDARY} disabled={!viewingMedicine.barcode?.trim()} onClick={() => {
+                setViewingMedicine(null);
+                printBarcodeForMedicine(viewingMedicine);
+              }}><Printer size={15} /> Print barcode</button>
+              <button
+                type="button"
+                className={BUTTON}
+                disabled={!canEditProducts || Boolean(viewingMedicine.barcode?.trim()) || generatingBarcodeId === viewingMedicine.id}
+                onClick={() => void generateBarcodeForMedicine(viewingMedicine)}
+              >
+                <Barcode size={15} /> {generatingBarcodeId === viewingMedicine.id ? 'Making…' : 'Make barcode'}
               </button>
             </div>
           </section>

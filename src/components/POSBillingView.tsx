@@ -560,7 +560,6 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault();
-                      submitBarcode(barcodeInput);
                     }
                   }}
                   className="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:outline-blue-600"

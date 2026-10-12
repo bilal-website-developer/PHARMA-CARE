@@ -156,15 +156,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T18:43:23.905Z
+Generated at (UTC): 2026-10-12T19:00:10.528Z
 Git branch: master-plan/implementation
 
 Last 5 commit subjects:
+- docs: log bootstrap query refinement
 - docs: clarify function search path query
 - docs: record staging checkpoint progress
 - docs: prepare staging bootstrap checkpoint
 - barcode
-- trash
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -221,6 +221,7 @@ src/ tree (maximum two directory levels):
 src/
   src/App.tsx
   src/components/
+    src/components/BarcodeScannerTest.tsx
     src/components/CashBookScreen.tsx
     src/components/ControlledDrugScreen.tsx
     src/components/CustomerLedgerScreen.tsx

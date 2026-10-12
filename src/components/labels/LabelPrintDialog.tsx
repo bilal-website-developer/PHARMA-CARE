@@ -1,8 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { Printer, X } from 'lucide-react';
 import { BarcodeRenderer } from './BarcodeRenderer';
-import { isValidForFormat, type BarcodeFormat } from '../../utils/labelUtils';
+import {
+  isValidForFormat,
+  MAX_LABELS_PER_PRODUCT,
+  validateLabelQuantities,
+  type BarcodeFormat,
+} from '../../utils/labelUtils';
 
 export type LabelSize = '30x20' | '50x30' | '58x40' | 'a4';
 export type LabelFieldKey = 'name' | 'strength' | 'generic' | 'expiry' | 'mrp';
@@ -16,6 +21,7 @@ export interface LabelPrintItem {
   barcode: string | null;
   price_paisa: number | null;
   expiry: string | null;
+  copies?: number;
 }
 
 interface LabelPrintDialogProps {
@@ -50,8 +56,9 @@ function defaultFormatForBarcode(value: string): BarcodeFormat {
 
 export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogProps) {
   const [size, setSize] = useState<LabelSize>('50x30');
-  const [copiesPerLabel, setCopiesPerLabel] = useState(1);
+  const [copiesByProduct, setCopiesByProduct] = useState<Record<string, string>>({});
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>('CODE128');
+  const [printError, setPrintError] = useState('');
   const [showFields, setShowFields] = useState<Record<LabelFieldKey, boolean>>({
     name: true,
     strength: true,
@@ -60,27 +67,52 @@ export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogPr
     mrp: true,
   });
 
+  useEffect(() => {
+    setCopiesByProduct(Object.fromEntries(products.map((product) => [
+      product.id,
+      String(product.copies ?? 1),
+    ])));
+    setPrintError('');
+  }, [products]);
+
+  const quantities = products.map((product) => ({
+    id: product.id,
+    name: product.brand_name,
+    quantity: Number(copiesByProduct[product.id] ?? product.copies ?? 1),
+  }));
+  const quantityError = validateLabelQuantities(quantities);
+  const missingBarcode = products.find((product) => !product.barcode?.trim());
+  const validationError = quantityError
+    ?? (missingBarcode ? `${missingBarcode.brand_name} has no barcode. Make a barcode before printing.` : '');
+
   const previewRows = useMemo(() => {
     return products.flatMap((product) => {
-      const maxCopies = Math.min(Math.max(copiesPerLabel, 1), 20);
-      return Array.from({ length: maxCopies }, (_, index) => ({ ...product, key: `${product.id}-${index}` }));
+      const copies = Number(copiesByProduct[product.id] ?? product.copies ?? 1);
+      if (!Number.isInteger(copies) || copies < 1 || copies > MAX_LABELS_PER_PRODUCT) return [];
+      return Array.from({ length: copies }, (_, index) => ({ ...product, key: `${product.id}-${index}` }));
     });
-  }, [copiesPerLabel, products]);
+  }, [copiesByProduct, products]);
 
   const toggleField = (field: LabelFieldKey) => {
     setShowFields((current) => ({ ...current, [field]: !current[field] }));
   };
 
   const printLabels = () => {
-    const printWindow = window.open('', '_blank', 'width=980,height=700');
-    if (!printWindow) {
+    if (validationError) {
+      setPrintError(validationError);
       return;
     }
+    const printWindow = window.open('', '_blank', 'width=980,height=700');
+    if (!printWindow) {
+      setPrintError('The print window was blocked. Allow pop-ups for this site and try again.');
+      return;
+    }
+    setPrintError('');
 
     const labelCount = previewRows.length;
     const sheetSize = LABEL_SIZES[size];
     const itemsHtml = previewRows.map((product) => {
-      const barcodeValue = normalizeBarcodeValue(product.barcode, product.code);
+      const barcodeValue = normalizeBarcodeValue(product.barcode, '');
       const resolvedFormat = barcodeFormat;
       const isValid = isValidForFormat(barcodeValue, resolvedFormat);
       const svgMarkup = (() => {
@@ -190,10 +222,28 @@ export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogPr
               </select>
             </label>
 
-            <label className="block text-sm font-semibold text-text">
-              Copies per label
-              <input className={`${FIELD} mt-1`} type="number" min={1} max={20} value={copiesPerLabel} onChange={(event) => setCopiesPerLabel(Math.min(20, Math.max(1, Number(event.target.value) || 1)))} />
-            </label>
+            <fieldset className="max-h-48 space-y-2 overflow-y-auto rounded-control border border-border p-3">
+              <legend className="px-1 text-sm font-semibold text-text">Labels per product</legend>
+              {products.map((product) => (
+                <label key={product.id} className="flex items-center justify-between gap-3 text-sm text-text">
+                  <span className="min-w-0 truncate">{product.brand_name}</span>
+                  <input
+                    aria-label={`Labels for ${product.brand_name}`}
+                    className={`${FIELD} w-24`}
+                    type="number"
+                    min={1}
+                    max={MAX_LABELS_PER_PRODUCT}
+                    step={1}
+                    value={copiesByProduct[product.id] ?? product.copies ?? 1}
+                    onChange={(event) => setCopiesByProduct((current) => ({
+                      ...current,
+                      [product.id]: event.target.value,
+                    }))}
+                  />
+                </label>
+              ))}
+            </fieldset>
+            <p className="text-xs text-muted">1–{MAX_LABELS_PER_PRODUCT} labels per product; print jobs allow up to 1,000 labels.</p>
 
             <div>
               <p className="text-sm font-semibold text-text">Fields to show</p>
@@ -211,12 +261,12 @@ export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogPr
           <div className="rounded-control border border-border bg-surface p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h4 className="text-sm font-black text-text">Live preview</h4>
-              <button type="button" className={BUTTON} onClick={printLabels}><Printer size={16} /> Print</button>
+              <span className="text-xs text-muted">{previewRows.length} label(s)</span>
             </div>
 
             <div className="grid gap-2 overflow-hidden rounded-control border border-border bg-white p-2" style={{ gridTemplateColumns: `repeat(${LABEL_SIZES[size].columns}, minmax(0, 1fr))` }}>
               {previewRows.slice(0, Math.min(previewRows.length, 12)).map((product) => {
-                const barcodeValue = normalizeBarcodeValue(product.barcode, product.code);
+                const barcodeValue = normalizeBarcodeValue(product.barcode, '');
                 const resolvedFormat = barcodeFormat === 'CODE128' || barcodeFormat === 'UPC' || barcodeFormat === 'CODE39' || barcodeFormat === 'ITF' || barcodeFormat === 'EAN13'
                   ? barcodeFormat
                   : defaultFormatForBarcode(barcodeValue);
@@ -239,9 +289,15 @@ export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogPr
           </div>
         </div>
 
+        {(validationError || printError) && (
+          <p role="alert" className="mt-3 rounded-control border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {printError || validationError}
+          </p>
+        )}
+
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className={SECONDARY} onClick={onClose}>Close</button>
-          <button type="button" className={BUTTON} onClick={printLabels}><Printer size={16} /> Print labels</button>
+          <button type="button" className={BUTTON} disabled={Boolean(validationError)} onClick={printLabels}><Printer size={16} /> Print labels</button>
         </div>
       </section>
     </div>
