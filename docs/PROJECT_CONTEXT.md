@@ -85,6 +85,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
+- **Proposed (awaiting owner approval):** Simplify cashier print requests, show requester names in admin review, and support audited edits to pending receipt snapshots before approval. The proposal does not change completed sale records.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
@@ -106,9 +107,11 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 ## Assumptions
 
 - Split payment is UI-only (saves as Cash); real split tenders must be built in the post_sale RPC.
+- Proposed print-request modification scope: edit the pending receipt snapshot for printing only; do not rewrite the completed sale, inventory, or accounting records without an explicitly designed correction workflow.
 
 ## Changelog
 
+- 2026-10-12 — Prepared a proposed print-request UX/admin modification plan; implementation and schema changes await owner approval.
 - 2026-10-12 — Added an editable POS cart discount, Rs 200 hard maximum, role-cap clamping, and discounted receipt coverage.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
 - 2026-10-12 — Redesigned only the Products filter toolbar with a compact responsive layout and debounced search; added tested active-filter chips, removal, and clear-all logic.
@@ -127,15 +130,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T12:08:16.458Z
+Generated at (UTC): 2026-10-12T13:30:43.950Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- Add capped editable cart discount input
 - Enforce POS discount caps in shared calculator
 - user errror
 - Add shared POS checkout discount controls
 - Add tested integer-paisa discount calculator
-- Fix Manage Users stale list response crash
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
