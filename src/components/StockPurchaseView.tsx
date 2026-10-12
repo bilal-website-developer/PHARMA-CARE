@@ -22,7 +22,7 @@ interface PurchaseProduct {
   generic_name: string;
   company: string;
   stock: number;
-  last_cost_base_paisa: number;
+  last_cost_base_paisa: number | null;
   units: PurchaseUnit[];
 }
 
@@ -209,7 +209,9 @@ export function StockPurchaseView({
         bonusQty: 0,
         batchNumber: '',
         expiryDate: '',
-        rate: paisaInput(Math.round(product.last_cost_base_paisa * unit.conversion_factor)),
+        rate: product.last_cost_base_paisa === null
+          ? ''
+          : paisaInput(Math.round(product.last_cost_base_paisa * unit.conversion_factor)),
         mrp: paisaInput(unit.price_paisa),
       }];
     });
@@ -357,7 +359,7 @@ export function StockPurchaseView({
                     <span className="block truncate font-bold text-text">{product.brand_name}</span>
                     <span className="mt-1 block truncate text-xs text-muted">{product.company} · {product.generic_name}</span>
                     <span className="mt-3 flex items-center justify-between text-xs"><span className="text-muted">Stock</span><strong className="text-primary">{product.stock.toLocaleString('en-PK')}</strong></span>
-                    <span className="mt-1 flex items-center justify-between text-xs"><span className="text-muted">Last Cost</span><strong className="text-text">{money(Math.round(product.last_cost_base_paisa * (product.units.find((unit) => unit.is_default_sale_unit) ?? product.units[0])?.conversion_factor || 0))}</strong></span>
+                    <span className="mt-1 flex items-center justify-between text-xs"><span className="text-muted">Last Cost</span><strong className="text-text">{product.last_cost_base_paisa === null ? '—' : money(Math.round(product.last_cost_base_paisa * (product.units.find((unit) => unit.is_default_sale_unit) ?? product.units[0])?.conversion_factor || 0))}</strong></span>
                     <span className="mt-3 flex items-center gap-1 text-xs font-bold text-primary"><Plus size={14} /> Add to cart</span>
                   </button>
                 ))}
@@ -404,7 +406,13 @@ export function StockPurchaseView({
                     <label className="text-[11px] font-semibold text-text">Unit
                       <select value={line.unitId} onChange={(event) => {
                         const nextUnit = line.product.units.find((item) => item.id === event.target.value);
-                        if (nextUnit) patchLine(index, { unitId: nextUnit.id, rate: paisaInput(Math.round(line.product.last_cost_base_paisa * nextUnit.conversion_factor)), mrp: paisaInput(nextUnit.price_paisa) });
+                        if (nextUnit) patchLine(index, {
+                          unitId: nextUnit.id,
+                          rate: line.product.last_cost_base_paisa === null
+                            ? ''
+                            : paisaInput(Math.round(line.product.last_cost_base_paisa * nextUnit.conversion_factor)),
+                          mrp: paisaInput(nextUnit.price_paisa),
+                        });
                       }} className="mt-1 w-full rounded-control border border-border bg-white px-2 py-1.5 text-xs">
                         {line.product.units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                       </select>
@@ -416,7 +424,7 @@ export function StockPurchaseView({
                         <button type="button" aria-label="Increase quantity" onClick={() => patchLine(index, { quantity: line.quantity + 1 })} className="px-2 py-1.5"><Plus size={13} /></button>
                       </span>
                     </label>
-                    <label className="text-[11px] font-semibold text-text">Rate (Rs) <span className="font-normal text-muted">Prev Cost {money(Math.round(line.product.last_cost_base_paisa * (unit?.conversion_factor ?? 1)))}</span>
+                    <label className="text-[11px] font-semibold text-text">Rate (Rs) <span className="font-normal text-muted">Prev Cost {line.product.last_cost_base_paisa === null ? '—' : money(Math.round(line.product.last_cost_base_paisa * (unit?.conversion_factor ?? 1)))}</span>
                       <input inputMode="decimal" value={line.rate} onChange={(event) => patchLine(index, { rate: event.target.value })} className="mt-1 w-full rounded-control border border-border bg-white px-2 py-1.5 text-xs" />
                     </label>
                     <label className="text-[11px] font-semibold text-text">MRP (Rs)

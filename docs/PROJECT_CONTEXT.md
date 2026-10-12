@@ -56,12 +56,15 @@ Permission keys in `src/permissions.tsx`: `pos`, `products`, `categories`, `supp
 
 UI defaults: Admin and Super Admin get every module. Manager gets POS, Products, Categories, Suppliers, Customers, Sales History, Purchase History, Purchases, Stock Inventory, and Reports. Cashier gets POS and Customers. Accountant gets Customers, Suppliers, Sales History, Purchase History, Expenses, and Reports. Non-admin permissions can be configured; admin roles use their full defaults. Dashboard/help and personal print requests are available to all in the UI; Settings, Trash Bin, and print-request administration are admin-only. UI checks do not replace database/server authorization.
 
+Cost visibility decision: Admin and Super Admin may view cost; Manager may view it only with at least one of `products`, `stock_inventory`, `purchases`, or `purchase_history`; Accountant may view it read-only through `purchase_history` or `reports`; Cashier never may. There is no Pharmacist role in the current app. The migration implementing this server rule is local and has not been applied.
+
 ## Business rules
 
 - Persisted money columns and calculation fields use integer paisa; `sale_items.discount_percent` is numeric.
 - Batch sale allocation in `src/utils/fefo.ts` uses FEFO: positive eligible stock only, `ACTIVE`/`NEAR_EXPIRY`, expiry strictly after today, then received date and ID for tie-breaking. It rejects an insufficient allocation rather than returning a partial sale. Server-side enforcement depends on the deployed RPC/schema and must be verified there.
 - Do not permit negative stock. Verify the server transaction and constraints as well as frontend allocation before relying on this in production.
 - Cost and profit/margin are internal data, not Pharmacy Memo print fields. Receipt rendering displays sale amounts/totals and is styled black on white. Do not add cost, purchase price, profit, or margin to customer-facing slips.
+- Cost-bearing base tables stay inaccessible to `anon` and `authenticated`; read cost only through permission-checked RPCs. Do not grant direct `SELECT` on `stock_batches`, because its RLS read policy includes `pos` and exposes all selectable columns to Cashier.
 - Pharmacy Memo supports 58mm and 80mm thermal layouts (and A4); black text on white background. Return/payment memo rendering exists, but an end-to-end return workflow is not established.
 - Gap-free sequential memo numbering is a desired business rule, but the current checkout does not establish a persisted server-side allocator for Pharmacy Memo numbers: enforcement is **unknown**. Do not promise gap-free numbering until implemented and verified.
 
@@ -72,12 +75,13 @@ UI defaults: Admin and Super Admin get every module. Manager gets POS, Products,
 - Keep client-facing cost fields nullable/redacted by the server when visibility is denied; never turn unknown cost into zero in UI.
 - Date: 2026-10-10 — Inventory lists, statistics, movements, adjustments, and write-offs use stock RPCs to keep paging/filtering and mutations server-side.
 - Date: 2026-10-10 — Product data uses server-side list/stat/import RPCs; cost visibility is decided server-side rather than trusted to client hiding.
+- Date: 2026-10-12 — Cost access is role-and-permission scoped by `can_view_cost()`; Cashier is always denied, Accountants are read-only, and Manager access requires a relevant module permission. The migration is pending application.
 - Date: 2026-10-09 — Pharmacy Memo uses a shared sanitized renderer for 58mm/80mm and A4; template and paper preferences remain browser-local because shared settings storage is not implemented.
 
 ## Current status
 
 - **Done:** Products and Master Data redesigns; Stock Inventory UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
-- **In progress:** Purchases and Purchase History use RPCs. 4b cost-visibility and 4c direct-table-revoke migration files are present locally; live execution/verification is unknown and belongs to the owner.
+- **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. The role-and-permission-scoped `can_view_cost()` migration is local and awaits application.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
 ## Known issues and Later
@@ -89,10 +93,13 @@ UI defaults: Admin and Super Admin get every module. Manager gets POS, Products,
 - Several screens still use mock/in-memory data; identify persistence from the current component before changing it.
 - Supplier contact insert/update/deactivation is still performed directly by the browser; consider a permission-checked RPC plan.
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
+- POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
 - Memo-number sequencing and gap-free guarantees are unknown.
 
 ## Changelog
 
+- 2026-10-12 — Audited `src/` for direct Supabase queries to the tables in the direct-access revoke migration; none found. This is a source-only audit and does not verify live database state.
+- 2026-10-12 — Added a role-and-permission-scoped `can_view_cost()` migration; direct table revokes remain owned by the already-applied 4c migration. The new migration is not applied.
 - 2026-10-10 — Added maintained project context, generator, hook setup, and AI working agreements; `docs/PROJECT_CONTEXT.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `package.json`, `scripts/`, `.githooks/`.
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
@@ -105,15 +112,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-10T12:41:31.511Z
-Git branch: project-context
+Generated at (UTC): 2026-10-12T08:18:41.905Z
+Git branch: security/cost-visibility-permissions
 
 Last 5 commit subjects:
+- Tooling: context update script and hook
 - Docs: add project context
 - feat: rebuild stock inventory page
 - style: align inventory pages with design reference
 - feat: build categories master data card grid
-- feat: complete products inventory redesign
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
