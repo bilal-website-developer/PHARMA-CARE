@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minus, Pencil, Plus, Printer, RotateCcw, Trash2, X, XCircle } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { parsePrintSnapshot, PrintSnapshot } from '../utils/printSnapshot';

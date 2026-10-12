@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { Printer, X } from 'lucide-react';
 import { BarcodeRenderer } from './BarcodeRenderer';

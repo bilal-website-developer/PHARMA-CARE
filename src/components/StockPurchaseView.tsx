@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight, Minus, Pause, Play, Plus, RefreshCw, Search, Trash2, X,
 } from 'lucide-react';

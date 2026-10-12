@@ -2,18 +2,15 @@ import React, { Component, useState, useEffect } from 'react';
 import {
   Product,
   Customer,
-  ControlledDrugLog,
   CashTransaction,
   CompletedSale,
   DrugClass,
-  UserRole,
   PaymentMethod,
 } from './types/pharmacy';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CUSTOMERS,
   INITIAL_LEDGER_ENTRIES,
-  INITIAL_CONTROLLED_LOGS,
   INITIAL_CASH_TRANSACTIONS,
 } from './data/mockPharmacyData';
 import { Sidebar, NavItemKey } from './components/Sidebar';
@@ -26,7 +23,6 @@ import { SettingsView } from './components/SettingsView';
 import { MasterDataView } from './components/MasterDataView';
 import { WhatsAppRemindersView } from './components/WhatsAppRemindersView';
 import { CustomerLedgerScreen } from './components/CustomerLedgerScreen';
-import { ControlledDrugScreen } from './components/ControlledDrugScreen';
 import { CashBookScreen } from './components/CashBookScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
@@ -416,7 +412,6 @@ function PharmacyWorkspace({
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
   const [ledgerEntries, setLedgerEntries] = useState(INITIAL_LEDGER_ENTRIES);
-  const [controlledLogs, setControlledLogs] = useState<ControlledDrugLog[]>(INITIAL_CONTROLLED_LOGS);
   const [transactions, setTransactions] = useState<CashTransaction[]>(INITIAL_CASH_TRANSACTIONS);
   const [completedSales, setCompletedSales] = useState<CompletedSale[]>([
     {
@@ -866,7 +861,6 @@ function PharmacyWorkspace({
           {activeItem === 'settings' && (
             <SettingsView
               sales={completedSales}
-              currentRole={currentRole}
               currentUserName={currentUserName}
               activeTemplate={billingPreferences.template}
               canEditBilling={isAdminRole(currentRole)}

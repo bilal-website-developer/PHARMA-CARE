@@ -1,7 +1,6 @@
-import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Barcode, ChevronLeft, ChevronRight, Clock3, Download, FileUp, Grid2X2, List, Package,
-  Pencil, Plus, Printer, RefreshCw, ScanLine, Search, ShieldAlert, SlidersHorizontal, X,
+  Barcode, Download, FileUp, Grid2X2, List, Pencil, Plus, Printer, RefreshCw, ScanLine, Search, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
 import { LabelPrintDialog, type LabelPrintItem } from './labels/LabelPrintDialog';
@@ -11,9 +10,7 @@ import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import {
-  BulkActionBar, ConfirmDialog, DataTable, EmptyState, ExpiryChip, FilterChip, KpiCard,
-  SegmentedTabs, Skeleton, StockBar, StatusChip,
-  type DataTableAction,
+  BulkActionBar, ConfirmDialog, DataTable, ExpiryChip, FilterChip, KpiCard, StockBar, StatusChip,
   type DataTableColumn,
 } from './inventory/InventoryUi';
 import {
@@ -28,7 +25,6 @@ import {
 import { StockInventory } from './inventory/StockInventory';
 
 const PAGE_SIZE = 25;
-const NEAR_EXPIRY_DAYS = 90;
 const FIELD = 'w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 const FILTER_PILL = 'w-auto max-w-full rounded-full border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 const PANEL = 'rounded-xl border border-border bg-surface shadow-xs';
@@ -239,12 +235,6 @@ function readSavedViews(userId: string): SavedProductView[] {
 
 function readDisplayMode(userId: string): ProductsDisplayMode {
   return localStorage.getItem(viewModeStorageKey(userId)) === 'cards' ? 'cards' : 'table';
-}
-
-function safePrintText(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character] ?? character);
 }
 
 function initialProductForm(medicine?: Medicine): ProductFormValues {

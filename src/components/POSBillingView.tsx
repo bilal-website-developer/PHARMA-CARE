@@ -2,28 +2,14 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   ShoppingCart,
-  Trash2,
   Plus,
   Minus,
-  CreditCard,
-  Banknote,
-  Smartphone,
-  Building2,
   Printer,
-  PauseCircle,
-  PlayCircle,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
-  ChevronRight,
   Package,
-  Receipt,
-  RotateCcw,
   Sparkles,
   Barcode,
-  Layers,
-  FileText,
-  User,
   X,
   Zap,
 } from 'lucide-react';
@@ -36,7 +22,6 @@ import {
   CompletedSale,
   MAX_DISCOUNT_PAISA,
   ROLE_MAX_DISCOUNT,
-  BatchStatus,
 } from '../types/pharmacy';
 import { allocateFefo, localIsoDate } from '../utils/fefo';
 import {

@@ -1,6 +1,6 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, ArrowDownWideNarrow, Check, Edit2, Layers, Merge, Plus, RefreshCw, Search,
+  AlertCircle, Check, Edit2, Layers, Merge, Plus, RefreshCw, Search,
   Tag, Trash2, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';

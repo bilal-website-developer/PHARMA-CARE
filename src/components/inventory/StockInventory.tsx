@@ -780,8 +780,6 @@ export function StockInventory({
   const movementPageCount = Math.max(1, Math.ceil(movementCount / PAGE_SIZE));
   const pickerPageCount = Math.max(1, Math.ceil(pickerCount / PICKER_PAGE_SIZE));
   const maxBucketCount = Math.max(1, ...expiryBuckets.map((bucket) => bucket.count));
-  const activeBatchTab: BatchTab = tab === 'adjustment-log' ? 'all' : tab;
-
   const selectTab = (nextTab: StockTab) => {
     setTab(nextTab);
     setPage(1);

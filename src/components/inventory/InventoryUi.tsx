@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronUp, Columns3, MoreHorizontal } from 'lucide-react';
 import { getExpiryDisplay, getStockBarState, type ExpiryVariant } from './inventoryUiLogic';
 

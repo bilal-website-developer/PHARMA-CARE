@@ -5,9 +5,6 @@ import {
   ArrowUpRight,
   Plus,
   CheckCircle2,
-  AlertTriangle,
-  Receipt,
-  Calendar,
   Lock,
 } from 'lucide-react';
 import { CashTransaction } from '../types/pharmacy';

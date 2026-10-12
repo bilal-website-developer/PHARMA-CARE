@@ -1,12 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Store,
-  Upload,
   Check,
   Eye,
-  Trash2,
-  AlertTriangle,
-  Smartphone,
   Save,
   Printer,
   Sparkles,
@@ -24,7 +19,7 @@ import {
   withReceiptTheme,
 } from '../utils/receipt';
 import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
-import { CompletedSale, UserRole } from '../types/pharmacy';
+import { CompletedSale } from '../types/pharmacy';
 import { PrintSalesReport } from './PrintSalesReport';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
@@ -64,7 +59,6 @@ function readSavedShopProfile(): SavedShopProfile {
 
 interface SettingsViewProps {
   sales: CompletedSale[];
-  currentRole: UserRole;
   currentUserName: string;
   companyName: string;
   onSaveCompanyName: (companyName: string) => boolean;
@@ -81,7 +75,6 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   sales,
-  currentRole,
   currentUserName,
   companyName,
   onSaveCompanyName,

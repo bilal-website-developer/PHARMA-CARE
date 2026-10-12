@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, FileText, Lightbulb, Sparkles, X } from 'lucide-react';
 import {
   BillingTemplate,

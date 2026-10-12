@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Moon, Printer, MessageSquare, X, CheckCircle2, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Printer, MessageSquare, X } from 'lucide-react';
 
 interface EndOfDayModalProps {
   onClose: () => void;

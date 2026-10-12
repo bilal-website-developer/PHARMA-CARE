@@ -1,14 +1,5 @@
 import React from 'react';
-import {
-  TrendingUp,
-  BarChart3,
-  DollarSign,
-  Package,
-  ShieldCheck,
-  AlertCircle,
-  EyeOff,
-  ShoppingBag,
-} from 'lucide-react';
+import { EyeOff, ShoppingBag } from 'lucide-react';
 import { CompletedSale, UserRole } from '../types/pharmacy';
 
 interface ReportsScreenProps {

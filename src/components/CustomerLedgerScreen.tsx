@@ -3,14 +3,8 @@ import {
   Users,
   Search,
   Plus,
-  CreditCard,
   Receipt,
-  ArrowDownLeft,
-  ArrowUpRight,
-  FileText,
   Phone,
-  AlertCircle,
-  CheckCircle,
 } from 'lucide-react';
 import { Customer, LedgerEntry, UserRole } from '../types/pharmacy';
 import {

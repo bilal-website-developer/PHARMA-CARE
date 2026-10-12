@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, RotateCcw } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
 import { invokeManageUsers } from './ManageUsersView';

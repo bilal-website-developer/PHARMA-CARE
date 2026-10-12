@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, Printer, RefreshCw, X } from 'lucide-react';
 import * as XLSX from '@e965/xlsx';
 import { UserRole } from '../types/pharmacy';

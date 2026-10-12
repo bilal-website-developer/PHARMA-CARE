@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageSquare, Search, Send, CheckCircle2, Phone, AlertCircle, Lightbulb } from 'lucide-react';
+import { MessageSquare, Search, Lightbulb } from 'lucide-react';
 import { Customer } from '../types/pharmacy';
 
 interface WhatsAppRemindersViewProps {
