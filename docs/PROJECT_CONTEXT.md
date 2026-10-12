@@ -99,9 +99,9 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
 - Memo-number sequencing and gap-free guarantees are unknown.
-
 ## Changelog
 
+- 2026-10-12 — Added the tested integer-paisa POS discount calculator.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
 - 2026-10-12 — Redesigned only the Products filter toolbar with a compact responsive layout and debounced search; added tested active-filter chips, removal, and clear-all logic.
 - 2026-10-12 — Audited `src/` for direct Supabase queries to the tables in the direct-access revoke migration; none found. This is a source-only audit and does not verify live database state.
@@ -119,15 +119,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T10:59:58.911Z
-Git branch: fix/manage-users-list-response-guard
+Generated at (UTC): 2026-10-12T11:42:30.300Z
+Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- Fix Manage Users stale list response crash
 - Keep unrelated ACL notes uncommitted
 - Redesign Products filter toolbar
 - chore: add applied stock, cost visibility and revoke migrations
 - Tooling: context update script and hook
-- Docs: add project context
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -146,9 +146,10 @@ npm scripts:
 - - `test:master-data`: `tsx --test src/components/masterDataSimilarity.test.ts`
 - - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
 - - `test:report`: `tsx --test src/utils/salesReport.test.ts`
+- - `test:discount`: `tsx --test src/utils/discount.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:report && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -183,6 +184,7 @@ src/
     src/components/ControlledDrugScreen.tsx
     src/components/CustomerLedgerScreen.tsx
     src/components/DashboardView.tsx
+    src/components/DiscountBox.tsx
     src/components/EndOfDayModal.tsx
     src/components/GlowCredit.css
     src/components/GlowCredit.tsx
@@ -225,6 +227,8 @@ src/
     src/types/pharmacy.ts
   src/utils/
     src/utils/auth.ts
+    src/utils/discount.test.ts
+    src/utils/discount.ts
     src/utils/fefo.test.ts
     src/utils/fefo.ts
     src/utils/fetchAllSupabaseRows.ts
@@ -250,6 +254,7 @@ Test files:
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
 - src/permissions.test.ts
+- src/utils/discount.test.ts
 - src/utils/fefo.test.ts
 - src/utils/printSnapshot.test.ts
 - src/utils/receipt.test.ts
