@@ -53,6 +53,7 @@ import {
 import { APP_NAME } from '../constants/brand';
 import { DiscountBox } from './DiscountBox';
 import { computeDiscount, DiscountMode, formatDiscountLimit } from '../utils/discount';
+import { findProductByScan, normalizeScannedValue, useBarcodeScanner } from '../utils/useBarcodeScanner';
 
 interface POSBillingViewProps {
   products: Product[];
@@ -106,6 +107,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
   const [saleError, setSaleError] = useState('');
   const [printNotice, setPrintNotice] = useState('');
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const { lastScanned, resetScan } = useBarcodeScanner({ enabled: activeTopTab === 'barcode' });
 
   // Modals
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -274,11 +277,42 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     const matchSearch =
       p.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.genericName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode.includes(searchQuery);
+      p.barcode.includes(searchQuery) ||
+      p.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchCat = selectedCategory === 'ALL' || p.category === selectedCategory;
     const matchBrand = selectedBrand === 'ALL' || p.company === selectedBrand;
     return matchSearch && matchCat && matchBrand;
   });
+
+  const submitBarcode = (rawValue: string) => {
+    const normalized = normalizeScannedValue(rawValue);
+    if (!normalized) {
+      return;
+    }
+
+    const match = findProductByScan(products, normalized);
+    if (!match) {
+      setSaleError(`No product matches barcode "${normalized}".`);
+      setBarcodeInput('');
+      resetScan();
+      return;
+    }
+
+    handleAddToCart(match);
+    setBarcodeInput('');
+    resetScan();
+    setSearchQuery('');
+    setSelectedCategory('ALL');
+    setSelectedBrand('ALL');
+  };
+
+  useEffect(() => {
+    if (!lastScanned) {
+      return;
+    }
+
+    submitBarcode(lastScanned);
+  }, [lastScanned]);
 
   const printSaleReceipt = async (sale: CompletedSale, autoPrint = false) => {
     try {
@@ -500,6 +534,52 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               ))}
             </select>
           </div>
+
+          {activeTopTab === 'barcode' && (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-blue-700">
+                  <Barcode className="h-4 w-4" />
+                  Barcode scanner mode
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBarcodeInput('')}
+                  className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={barcodeInput}
+                  placeholder="Scan barcode or type here"
+                  onChange={(event) => setBarcodeInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      submitBarcode(barcodeInput);
+                    }
+                  }}
+                  className="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:outline-blue-600"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => submitBarcode(barcodeInput)}
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+                >
+                  Add item
+                </button>
+              </div>
+
+              <p className="mt-2 text-[10px] text-slate-600">
+                Keyboard scanner input is captured automatically and matched against the product barcode or internal code.
+              </p>
+            </div>
+          )}
 
           {/* Product Chips Grid (Matching Screenshot 7) */}
           <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[580px] overflow-y-auto pr-1">

@@ -80,13 +80,17 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Current status
 
+- **Done:** Phase 1 barcode validation and server-side generation work for `medicines.barcode`: reusable EAN-13 validation helpers, barcode renderer error handling, and product-page bulk generation actions. The corresponding migration files are staged under `supabase/migrations/20261012180000_assign_medicine_barcodes.sql` and the companion unique-index migration.
+- **Done:** Product barcode labels now open a dedicated print dialog with size/copies/field controls and a live preview; the old raw popup path was replaced by the reusable label dialog while preserving the product-page barcode generation flow.
 - **Done:** Products and Master Data redesigns; Stock Inventory UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
+- **Added:** Barcode/labeling agent prompt at `docs/barcode-labels-agent-prompt.md` for follow-up product barcode generation, assignment, and print workflow work. UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. The role-and-permission-scoped `can_view_cost()` migration is local and awaits application.
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
+- **Discovery only:** Barcode support currently consists of product/unit barcode fields, Products-page Code 128 label printing, and search filters; no dedicated Label Studio or shared scanner utility exists. No barcode feature changes were made.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
@@ -95,6 +99,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
+- Barcode assignment, label sizing/printing, and scanning are not implemented as a complete workflow. Checked-in baseline/migrations show barcode columns but no barcode uniqueness index; verify live schema and duplicates before adding one.
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
 - Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
@@ -117,6 +122,9 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-12 — Added POS barcode scan support for keyboard/scan input: matching by product barcode or internal code, quick add-to-cart behavior, and scanner-mode UI with a manual entry fallback.
+- 2026-10-12 — Completed Phase 1 barcode generation work: server-side EAN-13 barcode assignment RPCs, missing-barcode bulk assignment, and product-page generate actions; validation helpers and renderer error states remain in place.
+- 2026-10-12 — Completed read-only barcode/label Phase 0 discovery; no application or SQL changes.
 - 2026-10-12 — Added actor-attributed Trash Bin event storage, admin listing/filtering, safe product/supplier/user restores, and purchase-void visibility. Migration and Edge Function deployment are pending.
 - 2026-10-12 — Documented the Supabase location and current retention behavior for print requests.
 - 2026-10-12 — Removed the cashier print-request confirmation, added profile-name display and an audited admin receipt editor for pending sale requests, and added validation/calculation tests. The migration is not applied.
@@ -130,6 +138,28 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
 
+## Barcode migration run order
+
+The checked-in migration files are ready for manual application in the target Supabase project. Run them in this order and verify after each step:
+
+1. `supabase/migrations/20261012180000_assign_medicine_barcodes.sql`
+   - Check: `select proname from pg_proc where proname like 'assign_%' order by proname;`
+2. `supabase/migrations/20261012181000_medicines_barcode_unique_index.sql`
+   - Check: `select indexname, indexdef from pg_indexes where schemaname = 'public' and indexname = 'medicines_barcode_unique';`
+3. After each file, issue: `notify pgrst, 'reload schema';`
+
+Before enabling the unique index in production, review duplicate non-empty barcode values with:
+
+```sql
+select barcode, count(*)
+from public.medicines
+where barcode is not null and btrim(barcode) <> ''
+group by barcode
+having count(*) > 1;
+```
+
+If duplicates exist, clean them before applying the index migration.
+
 ## Working agreements with the owner
 
 - Keep messages short.
@@ -138,15 +168,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T15:20:25.871Z
-Git branch: pos/checkout-discount
+Generated at (UTC): 2026-10-12T18:04:47.821Z
+Git branch: barcode/labels
 
 Last 5 commit subjects:
+- trash
 - trash bin
 - modify
 - print request
 - Add capped editable cart discount input
-- Enforce POS discount caps in shared calculator
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -168,9 +198,11 @@ npm scripts:
 - - `test:trash-bin`: `tsx --test src/utils/trashBin.test.ts`
 - - `test:report`: `tsx --test src/utils/salesReport.test.ts`
 - - `test:discount`: `tsx --test src/utils/discount.test.ts`
+- - `test:barcode-scanner`: `tsx --test src/utils/useBarcodeScanner.test.ts`
+- - `test:labels`: `tsx --test src/utils/labelUtils.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -212,6 +244,7 @@ src/
     src/components/HelpSupportView.tsx
     src/components/inventory/
     src/components/InventoryScreen.tsx
+    src/components/labels/
     src/components/LoginView.tsx
     src/components/ManageUsersView.tsx
     src/components/masterDataSimilarity.test.ts
@@ -254,6 +287,8 @@ src/
     src/utils/fefo.test.ts
     src/utils/fefo.ts
     src/utils/fetchAllSupabaseRows.ts
+    src/utils/labelUtils.test.ts
+    src/utils/labelUtils.ts
     src/utils/printRequestEditor.test.ts
     src/utils/printRequestEditor.ts
     src/utils/printRequestTypes.ts
@@ -271,6 +306,8 @@ src/
     src/utils/supabaseError.ts
     src/utils/trashBin.test.ts
     src/utils/trashBin.ts
+    src/utils/useBarcodeScanner.test.ts
+    src/utils/useBarcodeScanner.ts
 ```
 
 Test files:
@@ -282,12 +319,14 @@ Test files:
 - src/permissions.test.ts
 - src/utils/discount.test.ts
 - src/utils/fefo.test.ts
+- src/utils/labelUtils.test.ts
 - src/utils/printRequestEditor.test.ts
 - src/utils/printSnapshot.test.ts
 - src/utils/receipt.test.ts
 - src/utils/salesReport.test.ts
 - src/utils/supabaseError.test.ts
 - src/utils/trashBin.test.ts
+- src/utils/useBarcodeScanner.test.ts
 - supabase/functions/manage-users/policy.test.ts
 
 Environment variable names from .env.example files (values are not read into this block):

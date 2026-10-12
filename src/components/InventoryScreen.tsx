@@ -4,6 +4,7 @@ import {
   Plus, Printer, RefreshCw, Search, ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
+import { LabelPrintDialog, type LabelPrintItem } from './labels/LabelPrintDialog';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
@@ -355,6 +356,8 @@ function ProductsCatalog({
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<ProductFormValues>(() => initialProductForm());
+  const [generatingBarcodeId, setGeneratingBarcodeId] = useState<string | null>(null);
+  const [labelDialogProducts, setLabelDialogProducts] = useState<LabelPrintItem[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -794,29 +797,78 @@ function ProductsCatalog({
       setNotice('There are no products on this page to print.');
       return;
     }
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      setNotice('The barcode-label window was blocked. Allow pop-ups for this site and try again.');
+    const productsForDialog: LabelPrintItem[] = productsToPrint.map((medicine) => {
+      const defaultUnit = medicine.units.find((unit) => unit.is_default_sale_unit) ?? medicine.units[0];
+      return {
+        id: medicine.id,
+        brand_name: medicine.brand_name,
+        generic_name: medicine.generic_name,
+        strength: medicine.strength,
+        code: medicine.code,
+        barcode: medicine.barcode,
+        price_paisa: defaultUnit ? defaultUnit.price_paisa : null,
+        expiry: medicine.nearest_expiry,
+      };
+    });
+    setLabelDialogProducts(productsForDialog);
+    setNotice('');
+  };
+
+  const generateBarcodeForMedicine = async (medicine: Medicine) => {
+    if (!supabase || !canEditProducts) return;
+    setGeneratingBarcodeId(medicine.id);
+    setNotice('');
+    try {
+      const { data, error: barcodeError } = await supabase.rpc('assign_medicine_barcode', {
+        p_medicine_id: medicine.id,
+        p_barcode: null,
+        p_replace: false,
+      });
+      if (barcodeError) throw barcodeError;
+      if (typeof data !== 'string' || !data) throw new Error('The barcode service returned an invalid response.');
+      setNotice(`Generated barcode ${data} for ${medicine.brand_name}.`);
+      await loadProducts();
+    } catch (caught) {
+      setNotice(messageFor(caught, `Could not generate a barcode for ${medicine.brand_name}.`));
+    } finally {
+      setGeneratingBarcodeId((current) => (current === medicine.id ? null : current));
+    }
+  };
+
+  const generateMissingBarcodes = async () => {
+    if (!supabase || !canEditProducts) return;
+    const ids = selectedIds.length > 0
+      ? selectedIds
+      : medicines.filter((medicine) => !medicine.barcode).map((medicine) => medicine.id);
+    if (!ids.length) {
+      setNotice('There are no missing product barcodes to generate.');
       return;
     }
-    void (async () => {
-      try {
-        const { default: JsBarcode } = await import('jsbarcode');
-        const labels = productsToPrint.map((medicine) => {
-          const barcodeValue = medicine.barcode || medicine.code;
-          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          JsBarcode(svg, barcodeValue, { format: 'CODE128', displayValue: true, height: 42, margin: 4 });
-          const unit = medicine.units.find((item) => item.is_default_sale_unit);
-          return `<article class="label"><strong>${safePrintText(medicine.brand_name)}${medicine.strength ? ` · ${safePrintText(medicine.strength)}` : ''}</strong><span>${safePrintText(medicine.code)}</span>${svg.outerHTML}<strong>MRP ${safePrintText(unit ? money(unit.price_paisa) : 'Not set')}</strong></article>`;
-        }).join('');
-        printWindow.document.write(`<!doctype html><html><head><title>Product barcode labels</title><style>body{font-family:Arial,sans-serif;margin:12mm;color:#111}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}.label{min-height:34mm;border:1px dashed #777;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm;text-align:center;padding:2mm;overflow:hidden}.label strong{font-size:9pt}.label span{font-size:8pt}.label svg{max-width:100%;height:auto}@media print{.label{break-inside:avoid}}</style></head><body><main class="sheet">${labels}</main><script>window.onload=()=>window.print()</script></body></html>`);
-        printWindow.document.close();
-        setNotice(`Prepared ${productsToPrint.length} scannable Code 128 barcode label${productsToPrint.length === 1 ? '' : 's'}.`);
-      } catch (caught) {
-        printWindow.close();
-        setNotice(messageFor(caught, 'Could not generate Code 128 barcode labels.'));
+    setImporting(true);
+    setNotice('');
+    try {
+      const { data, error: bulkError } = await supabase.rpc('assign_missing_barcodes', {
+        p_medicine_ids: ids,
+      });
+      if (bulkError) throw bulkError;
+      if (!isRecord(data)) {
+        throw new Error('The missing-barcode service returned an invalid response.');
       }
-    })();
+      const assigned = typeof data.assigned === 'number' ? data.assigned : 0;
+      const skipped = typeof data.skipped === 'number' ? data.skipped : 0;
+      const failed = typeof data.failed === 'number' ? data.failed : 0;
+      setSelectedIds([]);
+      setNotice(
+        assigned || skipped || failed
+          ? `Generated ${assigned} barcode${assigned === 1 ? '' : 's'}; skipped ${skipped}; failed ${failed}.`
+          : 'No barcodes were generated.',
+      );
+      await loadProducts();
+    } catch (caught) {
+      setNotice(messageFor(caught, 'Could not generate missing product barcodes.'));
+    } finally {
+      setImporting(false);
+    }
   };
 
   const openCreate = () => {
@@ -945,6 +997,28 @@ function ProductsCatalog({
       ),
     },
     {
+      id: 'barcode',
+      header: 'Barcode',
+      render: (medicine) => {
+        if (medicine.barcode) {
+          return <span className="flex items-center gap-1 text-xs text-muted"><Barcode size={13} /> {medicine.barcode}</span>;
+        }
+        if (!canEditProducts) {
+          return <span className="text-xs text-muted">—</span>;
+        }
+        return (
+          <button
+            type="button"
+            className={`${SECONDARY} min-w-[92px] justify-center`}
+            onClick={() => void generateBarcodeForMedicine(medicine)}
+            disabled={generatingBarcodeId === medicine.id}
+          >
+            {generatingBarcodeId === medicine.id ? 'Generating…' : 'Generate'}
+          </button>
+        );
+      },
+    },
+    {
       id: 'category',
       header: 'Category',
       render: (medicine) => medicine.category,
@@ -1043,12 +1117,19 @@ function ProductsCatalog({
               <button type="button" className={`${SECONDARY} justify-start`} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
               <button type="button" className={`${SECONDARY} justify-start`} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export XLSX</button>
               <button type="button" className={`${SECONDARY} justify-start`} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
+              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => void generateMissingBarcodes()}><Barcode size={16} /> Generate missing barcodes</button>}
               {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>}
               {skippedRows.length > 0 && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
             </div>
           </details>
         </div>
       </section>
+
+      <LabelPrintDialog
+        open={labelDialogProducts.length > 0}
+        products={labelDialogProducts}
+        onClose={() => setLabelDialogProducts([])}
+      />
 
       <section aria-label="Product summary" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <KpiCard compact label="Total products" value={(overviewStats?.total_active ?? 0).toLocaleString()} detail="active" />
