@@ -95,17 +95,25 @@ export function ManageUsersView({
     setLoading(true);
     try {
       const result = await invokeManageUsers<{
-        users: ManagedUser[];
-        currentCount: number;
-        assignable_roles: UserRole[];
-        grantable_permissions: PermissionKey[];
-      }>(
+        users?: ManagedUser[];
+        currentCount?: number;
+        assignable_roles?: UserRole[];
+        grantable_permissions?: PermissionKey[];
+      } | null>(
         { action: 'list' }
       );
-      setUsers(result.users);
-      setCurrentCount(result.currentCount);
-      setAssignableRoles(result.assignable_roles);
-      setGrantablePermissions(result.grantable_permissions);
+      const hasRoleData = Array.isArray(result?.assignable_roles)
+        && Array.isArray(result?.grantable_permissions);
+      setUsers(Array.isArray(result?.users) ? result.users : []);
+      setCurrentCount(typeof result?.currentCount === 'number' ? result.currentCount : 0);
+      setAssignableRoles(Array.isArray(result?.assignable_roles) ? result.assignable_roles : []);
+      setGrantablePermissions(Array.isArray(result?.grantable_permissions) ? result.grantable_permissions : []);
+      if (!hasRoleData) {
+        setNotice({
+          text: 'The user service is out of date. Ask the admin to deploy manage-users.',
+          error: true,
+        });
+      }
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : 'Could not load users.', error: true });
     } finally {
