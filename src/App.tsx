@@ -34,7 +34,8 @@ import type { ProductFilter } from './components/InventoryScreen';
 import { SuppliersView } from './components/SuppliersView';
 import { RepositoryReviewView } from './components/RepositoryReviewView';
 import { LoginView } from './components/LoginView';
-import { ChangePasswordModal, DeletedUsersView, ManageUsersView } from './components/ManageUsersView';
+import { ChangePasswordModal, ManageUsersView } from './components/ManageUsersView';
+import { TrashBinView } from './components/TrashBinView';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
 import { isAdminRole, PermissionsProvider, usePermissions } from './permissions';
@@ -891,7 +892,7 @@ function PharmacyWorkspace({
 
           {activeItem === 'help-support' && <HelpSupportView username={currentUserName} role={currentRole} />}
 
-          {activeItem === 'trash-bin' && <DeletedUsersView currentRole={currentRole} />}
+          {activeItem === 'trash-bin' && <TrashBinView currentRole={currentRole} />}
 
           {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} onChangePassword={() => setShowPasswordDialog(true)} />}
           {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}

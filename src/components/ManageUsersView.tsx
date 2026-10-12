@@ -44,7 +44,7 @@ const EMPTY_FORM: UserForm = {
   is_active: true,
 };
 
-async function invokeManageUsers<T>(body: Record<string, unknown>): Promise<T> {
+export async function invokeManageUsers<T>(body: Record<string, unknown>): Promise<T> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { data, error } = await supabase.functions.invoke('manage-users', { body });
   if (error) {
@@ -407,52 +407,6 @@ export function ManageUsersView({
         </table>
       </div>
       {currentCount >= MAX_USERS && !editingId && <p role="status" className="text-sm text-warning">The user limit has been reached.</p>}
-    </section>
-  );
-}
-
-export function DeletedUsersView({ currentRole }: { currentRole: UserRole }) {
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState(false);
-  const refresh = useCallback(async () => {
-    try {
-      const result = await invokeManageUsers<{ users: ManagedUser[] }>({ action: 'list_deleted' });
-      setUsers(result.users);
-    } catch (caught) {
-      setError(true);
-      setMessage(caught instanceof Error ? caught.message : 'Could not load deleted users.');
-    }
-  }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  const restore = async (user: ManagedUser) => {
-    setBusyId(user.id);
-    setMessage('');
-    try {
-      const result = await invokeManageUsers<{ message: string }>({ action: 'restore', id: user.id });
-      setError(false);
-      setMessage(result.message || `${user.username} restored.`);
-      await refresh();
-    } catch (caught) {
-      setError(true);
-      setMessage(caught instanceof Error ? caught.message : 'Could not restore user.');
-    } finally {
-      setBusyId(null);
-    }
-  };
-  return (
-    <section className="mx-auto max-w-3xl space-y-4 rounded-card border border-border bg-white p-6 shadow-sm">
-      <h2 className="text-base font-black text-text">Deleted Users</h2>
-      {message && <p role={error ? 'alert' : 'status'} className="visual-toast text-sm text-muted">{message}</p>}
-      {users.length === 0 ? <p className="py-8 text-center text-sm text-muted">No deleted users found.</p> : users.map((user) => (
-        <div key={user.id} className="flex items-center justify-between gap-3 border-t border-border py-3">
-          <div><div className="font-bold text-text">{user.full_name}</div><div className="text-xs text-muted">{user.username} · {user.email}</div></div>
-          {(currentRole === UserRole.SUPER_ADMIN
-            ? user.role !== UserRole.SUPER_ADMIN
-            : user.role !== UserRole.ADMIN && user.role !== UserRole.SUPER_ADMIN) && <button type="button" disabled={busyId !== null} onClick={() => void restore(user)} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{busyId === user.id ? 'Restoring…' : 'Restore'}</button>}
-        </div>
-      ))}
     </section>
   );
 }

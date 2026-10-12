@@ -62,6 +62,25 @@ async function writeAuditLog(
   if (error) throw new Error(`User change succeeded but audit logging failed: ${error.message}`);
 }
 
+async function writeTrashEvent(
+  client: ReturnType<typeof createClient>,
+  actorId: string,
+  entityId: string,
+  action: 'deleted' | 'restored',
+  displayName: string,
+  metadata: Record<string, unknown>,
+) {
+  const { error } = await client.from('trash_bin_events').insert({
+    actor_id: actorId,
+    entity_type: 'profile',
+    entity_id: entityId,
+    action,
+    display_name: displayName,
+    metadata,
+  });
+  if (error) throw new Error(`User change succeeded but Trash Bin history could not be saved: ${error.message}`);
+}
+
 function validPermissions(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(
     (permission) => typeof permission === 'string' && PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])
@@ -410,6 +429,23 @@ Deno.serve(async (request) => {
           await adminClient.from('profiles').update({ deleted_at: target.deleted_at, is_active: target.is_active }).eq('id', id);
           return response(500, { message: `Could not disable the account: ${banError.message}` });
         }
+        const displayName = target.full_name || target.username || target.email || 'Unknown user';
+        try {
+          await writeTrashEvent(adminClient, authData.user.id, id, 'deleted', displayName, {
+            role: target.role,
+          });
+        } catch (historyError) {
+          const { error: profileRestoreError } = await adminClient.from('profiles')
+            .update({ deleted_at: target.deleted_at, is_active: target.is_active })
+            .eq('id', id);
+          const { error: unbanError } = await adminClient.auth.admin.updateUserById(id, { ban_duration: 'none' });
+          if (profileRestoreError || unbanError) {
+            throw new Error(
+              `Trash Bin history failed and rollback was incomplete. ${profileRestoreError?.message ?? ''} ${unbanError?.message ?? ''}`.trim(),
+            );
+          }
+          throw historyError;
+        }
         await writeAuditLog(adminClient, authData.user.id, 'delete', id, before, {
           role: target.role,
           permissions: target.permissions,
@@ -440,6 +476,23 @@ Deno.serve(async (request) => {
         if (unbanError) {
           await adminClient.from('profiles').update({ deleted_at: target.deleted_at, is_active: false }).eq('id', id);
           return response(500, { message: `Could not restore the account: ${unbanError.message}` });
+        }
+        const displayName = target.full_name || target.username || target.email || 'Unknown user';
+        try {
+          await writeTrashEvent(adminClient, authData.user.id, id, 'restored', displayName, {
+            role: target.role,
+          });
+        } catch (historyError) {
+          const { error: profileDeleteError } = await adminClient.from('profiles')
+            .update({ deleted_at: target.deleted_at, is_active: false })
+            .eq('id', id);
+          const { error: rebanError } = await adminClient.auth.admin.updateUserById(id, { ban_duration: '876000h' });
+          if (profileDeleteError || rebanError) {
+            throw new Error(
+              `Trash Bin history failed and rollback was incomplete. ${profileDeleteError?.message ?? ''} ${rebanError?.message ?? ''}`.trim(),
+            );
+          }
+          throw historyError;
         }
         await writeAuditLog(adminClient, authData.user.id, 'restore', id, {
           role: target.role,

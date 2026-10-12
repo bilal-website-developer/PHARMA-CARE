@@ -20,11 +20,12 @@
     "test:master-data": "tsx --test src/components/masterDataSimilarity.test.ts",
     "test:print-snapshot": "tsx --test src/utils/printSnapshot.test.ts",
     "test:print-request-editor": "tsx --test src/utils/printRequestEditor.test.ts",
+    "test:trash-bin": "tsx --test src/utils/trashBin.test.ts",
     "test:report": "tsx --test src/utils/salesReport.test.ts",
     "test:discount": "tsx --test src/utils/discount.test.ts",
     "test:permissions": "tsx --test src/permissions.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy"
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

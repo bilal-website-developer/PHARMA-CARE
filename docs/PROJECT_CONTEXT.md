@@ -42,7 +42,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 ## Data and storage
 
 - Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, and purchase workflows use server RPCs; Suppliers still has direct table reads/writes. Authorization and persistence are not uniform across every screen.
-- Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, and audited receipt-only modification workflows use database RPCs.
+- Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, audited receipt-only modification, and profile Trash Bin events use database RPCs/Edge Functions.
 - Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, and other UI settings. These do not synchronize across counters.
 - In-memory/mock data: POS sales, customers/ledgers, cash transactions, and controlled-drug logs are initialized from `src/data/mockPharmacyData.ts` in `App.tsx`; these app-state values do not persist or synchronize. The Products and Stock Inventory screens separately load server data.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
@@ -86,7 +86,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
-- **Proposed (awaiting approval):** Expand Trash Bin into an admin deletion/void activity view across users, products, suppliers, and purchases. Preserve each entity’s safe lifecycle semantics and show who changed what and when.
+- **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
@@ -94,8 +94,9 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
+- Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
+- Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
-- Trash Bin currently lists/restores deleted users only. Suppliers are deactivated, products are deactivated, and purchases are voided rather than hard-deleted; a unified view should represent those distinct actions without implying every record can safely be restored.
 - Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
 - No end-to-end return workflow or Sales History reprint path; the renderer supports return memos and print-request review separately.
 - Direct ESC/POS printer-driver support is not implemented; browser printing uses the browser print dialog.
@@ -112,12 +113,12 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 - Split payment is UI-only (saves as Cash); real split tenders must be built in the post_sale RPC.
 - Admin modifications to pending print requests change the receipt snapshot for printing only; they do not rewrite the completed sale, inventory, or accounting records.
-- Proposed Trash Bin scope: record and display user soft-deletes, product/supplier deactivations, and purchase voids; offer restore only for entity types with a safe, implemented restore operation. Do not physically delete purchase/accounting history.
+- Trash Bin records user soft-deletes/restores, product/supplier active-state changes, and purchase voids. Purchase records are not physically deleted or directly restorable.
 
 ## Changelog
 
+- 2026-10-12 — Added actor-attributed Trash Bin event storage, admin listing/filtering, safe product/supplier/user restores, and purchase-void visibility. Migration and Edge Function deployment are pending.
 - 2026-10-12 — Documented the Supabase location and current retention behavior for print requests.
-- 2026-10-12 — Prepared a plan to expand the admin Trash Bin with actor-attributed deletion/deactivation/void history; no implementation or schema change made.
 - 2026-10-12 — Removed the cashier print-request confirmation, added profile-name display and an audited admin receipt editor for pending sale requests, and added validation/calculation tests. The migration is not applied.
 - 2026-10-12 — Added an editable POS cart discount, Rs 200 hard maximum, role-cap clamping, and discounted receipt coverage.
 - 2026-10-12 — Guarded the Manage Users page against missing list-response arrays and added a clear stale-service notice; no function, SQL, or deployment changes.
@@ -137,15 +138,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T14:12:28.828Z
+Generated at (UTC): 2026-10-12T15:20:25.871Z
 Git branch: pos/checkout-discount
 
 Last 5 commit subjects:
+- trash bin
 - modify
 - print request
 - Add capped editable cart discount input
 - Enforce POS discount caps in shared calculator
-- user errror
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -164,11 +165,12 @@ npm scripts:
 - - `test:master-data`: `tsx --test src/components/masterDataSimilarity.test.ts`
 - - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
 - - `test:print-request-editor`: `tsx --test src/utils/printRequestEditor.test.ts`
+- - `test:trash-bin`: `tsx --test src/utils/trashBin.test.ts`
 - - `test:report`: `tsx --test src/utils/salesReport.test.ts`
 - - `test:discount`: `tsx --test src/utils/discount.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:permissions && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -231,6 +233,7 @@ src/
     src/components/SuppliersView.tsx
     src/components/TemplatePreviewModal.tsx
     src/components/TopNav.tsx
+    src/components/TrashBinView.tsx
     src/components/WhatsAppRemindersView.tsx
   src/config/
     src/config/developer.ts
@@ -266,6 +269,8 @@ src/
     src/utils/supabase.ts
     src/utils/supabaseError.test.ts
     src/utils/supabaseError.ts
+    src/utils/trashBin.test.ts
+    src/utils/trashBin.ts
 ```
 
 Test files:
@@ -282,6 +287,7 @@ Test files:
 - src/utils/receipt.test.ts
 - src/utils/salesReport.test.ts
 - src/utils/supabaseError.test.ts
+- src/utils/trashBin.test.ts
 - supabase/functions/manage-users/policy.test.ts
 
 Environment variable names from .env.example files (values are not read into this block):
