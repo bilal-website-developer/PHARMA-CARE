@@ -90,16 +90,18 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
-- **Discovery only:** Barcode support currently consists of product/unit barcode fields, Products-page Code 128 label printing, and search filters; no dedicated Label Studio or shared scanner utility exists. No barcode feature changes were made.
+- **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, a Products-page barcode column/actions, label print dialog, and a POS keyboard-scanner flow matching the local product barcode/code are present. Unit-barcode scanning, shop-aware cross-table uniqueness, the full per-product Edit/Print/Make action set, and scanner/printer hardware verification remain outstanding. Live migration application is owner-reported only and was not independently queried.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
-- **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
+- **Next:** `docs/MASTER_PLAN.md` is approved with owner decisions recorded. The active branch is `master-plan/implementation`; the first package is the staging bootstrap/catalog comparison in `docs/STAGING_BOOTSTRAP.md`. Stop before writing multi-shop migrations until the owner returns SELECT-only results. Track package state in `docs/EXECUTION_PROGRESS.md`; hardware scanning/printing remains unverified.
 
 ## Known issues and Later
 
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
-- Barcode assignment, label sizing/printing, and scanning are not implemented as a complete workflow. Checked-in baseline/migrations show barcode columns but no barcode uniqueness index; verify live schema and duplicates before adding one.
+- Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops; label printing is locally implemented, while scanner behavior is POS-local and hardware output is unverified. Owner reported manually running the barcode SQL, but no live schema query was performed in this checkout.
+- Supabase bootstrap hazard: `supabase/baseline/00_baseline_schema.sql` is a reconstructed schema reference, not a complete dump. The migration directory also contains timestamped barcode rollback files; do not apply them as forward migrations. Bootstrap instructions and metadata-only comparison queries are in `docs/STAGING_BOOTSTRAP.md`.
+- Approved business rule: positive stock in `ACTIVE`/`NEAR_EXPIRY` batches for an active medicine remains sellable through expiry (`expiry_date >= current_date`). Existing FEFO helper/docs currently use a stricter boundary and must be reconciled before sale persistence is implemented.
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
 - Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
@@ -122,6 +124,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-12 — Recorded owner-approved W1-W7 execution decisions, created `master-plan/implementation` from `barcode/labels` commit `adf3606`, and prepared staging bootstrap/catalog comparison plus execution progress checklist; stopped before SQL execution or multi-shop migration work.
+- 2026-10-12 — Added `docs/MASTER_PLAN.md` with evidence-based W1-W7 status, multi-shop security design, staging test plan, and approval-gated execution order; no application code or database operations were performed.
 - 2026-10-12 — Added POS barcode scan support for keyboard/scan input: matching by product barcode or internal code, quick add-to-cart behavior, and scanner-mode UI with a manual entry fallback.
 - 2026-10-12 — Completed Phase 1 barcode generation work: server-side EAN-13 barcode assignment RPCs, missing-barcode bulk assignment, and product-page generate actions; validation helpers and renderer error states remain in place.
 - 2026-10-12 — Completed read-only barcode/label Phase 0 discovery; no application or SQL changes.
@@ -138,27 +142,11 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
 
-## Barcode migration run order
+## Legacy barcode migrations and staging
 
-The checked-in migration files are ready for manual application in the target Supabase project. Run them in this order and verify after each step:
+Do **not** apply `20261012180000_assign_medicine_barcodes.sql` or `20261012181000_medicines_barcode_unique_index.sql` to the current project. They are legacy, pre-multi-shop migrations and are listed only for a clean staging bootstrap to reproduce the checked-in legacy state; see `docs/STAGING_BOOTSTRAP.md`.
 
-1. `supabase/migrations/20261012180000_assign_medicine_barcodes.sql`
-   - Check: `select proname from pg_proc where proname like 'assign_%' order by proname;`
-2. `supabase/migrations/20261012181000_medicines_barcode_unique_index.sql`
-   - Check: `select indexname, indexdef from pg_indexes where schemaname = 'public' and indexname = 'medicines_barcode_unique';`
-3. After each file, issue: `notify pgrst, 'reload schema';`
-
-Before enabling the unique index in production, review duplicate non-empty barcode values with:
-
-```sql
-select barcode, count(*)
-from public.medicines
-where barcode is not null and btrim(barcode) <> ''
-group by barcode
-having count(*) > 1;
-```
-
-If duplicates exist, clean them before applying the index migration.
+The future per-shop barcode cutover must backfill one registry across both `medicines.barcode` and `medicine_units.barcode`, enforce unique `(shop_id, normalized_barcode)`, and replace the global medicine-only index. As part of that cutover, explicitly drop `public.medicines_barcode_unique` with `DROP INDEX IF EXISTS`; replace the old assignment functions and global sequence with shop-scoped registry claims/counters. Do not run the timestamped barcode rollback files as forward migrations. A rollback must not blindly recreate the global index if different shops now share a manufacturer barcode.
 
 ## Working agreements with the owner
 
@@ -168,15 +156,15 @@ If duplicates exist, clean them before applying the index migration.
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T18:04:47.821Z
-Git branch: barcode/labels
+Generated at (UTC): 2026-10-12T18:41:45.744Z
+Git branch: master-plan/implementation
 
 Last 5 commit subjects:
+- barcode
 - trash
 - trash bin
 - modify
 - print request
-- Add capped editable cart discount input
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
