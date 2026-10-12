@@ -83,7 +83,6 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** Products and Master Data redesigns; Stock Inventory UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. The role-and-permission-scoped `can_view_cost()` migration is local and awaits application.
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
-- **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** Reconcile context/docs with live Supabase state when the owner supplies verification; build server-backed POS posting, Sales History, Dashboard/Reports, and POS-safe product catalog as approved.
 
 ## Known issues and Later
@@ -96,7 +95,6 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Supplier contact insert/update/deactivation is still performed directly by the browser; consider a permission-checked RPC plan.
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
 - POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
-- Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
 - Memo-number sequencing and gap-free guarantees are unknown.
 
 ## Changelog
@@ -104,7 +102,6 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - 2026-10-12 — Redesigned only the Products filter toolbar with a compact responsive layout and debounced search; added tested active-filter chips, removal, and clear-all logic.
 - 2026-10-12 — Audited `src/` for direct Supabase queries to the tables in the direct-access revoke migration; none found. This is a source-only audit and does not verify live database state.
 - 2026-10-12 — Added a role-and-permission-scoped `can_view_cost()` migration; direct table revokes remain owned by the already-applied 4c migration. The new migration is not applied.
-- 2026-10-12 — Recorded owner-reported ACL audit and staged anon/table-DML/profile lockdown proposal. The migrations and rollbacks are files only; no database was accessed or changed.
 - 2026-10-10 — Added maintained project context, generator, hook setup, and AI working agreements; `docs/PROJECT_CONTEXT.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `package.json`, `scripts/`, `.githooks/`.
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
@@ -117,15 +114,15 @@ History: Earlier work delivered Products and Master Data redesigns, Pharmacy Mem
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T09:53:41.140Z
+Generated at (UTC): 2026-10-12T09:54:51.306Z
 Git branch: products/compact-filter-toolbar
 
 Last 5 commit subjects:
+- Redesign Products filter toolbar
 - chore: add applied stock, cost visibility and revoke migrations
 - Tooling: context update script and hook
 - Docs: add project context
 - feat: rebuild stock inventory page
-- style: align inventory pages with design reference
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
