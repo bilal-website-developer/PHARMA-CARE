@@ -6,6 +6,7 @@ import {
   DEFAULT_PHARMACY_MEMO_SETTINGS,
   MemoData,
   ReceiptFormat,
+  escapeHtml,
   buildMemoData,
   buildPaymentMemoData,
   readBillingPreferences,
@@ -75,6 +76,17 @@ test('escapes user-provided receipt fields', () => {
   const html = renderReceipt('modern', 'a4', data);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+test('escapes hostile label text in HTML text and attribute contexts', () => {
+  const hostileText = `<img src=x onerror=alert(1)> </script><script>alert(1)</script> "quoted" 'single'`;
+  const printMarkup = `<div aria-label="${escapeHtml(hostileText)}">${escapeHtml(hostileText)}</div>`;
+
+  assert.equal(
+    printMarkup,
+    '<div aria-label="&lt;img src=x onerror=alert(1)&gt; &lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt; &quot;quoted&quot; &#39;single&#39;">&lt;img src=x onerror=alert(1)&gt; &lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt; &quot;quoted&quot; &#39;single&#39;</div>',
+  );
+  assert.doesNotMatch(printMarkup, /<script>|<img/);
 });
 
 test('gracefully handles missing browser storage', () => {

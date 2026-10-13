@@ -254,7 +254,7 @@ export function buildPaymentMemoData(payment: {
   };
 }
 
-const escapeHtml = (value: unknown): string => {
+export const escapeHtml = (value: unknown): string => {
   const text = value === null || value === undefined ? '' : String(value);
   return text.replace(/[&<>"']/g, (character) => {
     const entities: Record<string, string> = {

@@ -44,7 +44,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, and purchase workflows use server RPCs; Suppliers still has direct table reads/writes. Authorization and persistence are not uniform across every screen.
 - Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, audited receipt-only modification, and profile Trash Bin events use database RPCs/Edge Functions.
 - Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters.
-- In-memory/mock data: POS sales, customers/ledgers, cash transactions, and controlled-drug logs are initialized from `src/data/mockPharmacyData.ts` in `App.tsx`; these app-state values do not persist or synchronize. The Products and Stock Inventory screens separately load server data.
+- In-memory/mock data: POS product catalog now loads from the cashier-safe `pos_catalog()` RPC, but POS sales, customers/ledgers, cash transactions, and controlled-drug logs remain initialized from `src/data/mockPharmacyData.ts` in `App.tsx`; these app-state values do not persist or synchronize. The Products and Stock Inventory screens separately load server data.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
 - Shared production data behavior depends on Supabase deployment and the live schema, which may differ from checked-in migrations.
 
@@ -61,7 +61,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 ## Business rules
 
 - Persisted money columns and calculation fields use integer paisa; `sale_items.discount_percent` is numeric.
-- Batch sale allocation in `src/utils/fefo.ts` uses FEFO: positive eligible stock only, `ACTIVE`/`NEAR_EXPIRY`, expiry strictly after today, then received date and ID for tie-breaking. It rejects an insufficient allocation rather than returning a partial sale. Server-side enforcement depends on the deployed RPC/schema and must be verified there.
+- Batch sale allocation in `src/utils/fefo.ts` uses FEFO: positive eligible stock only, `ACTIVE`/`NEAR_EXPIRY`, expiry today or later, then received date and ID for tie-breaking. It rejects an insufficient allocation rather than returning a partial sale. Server-side enforcement depends on the deployed RPC/schema and must be verified there.
+- Expiry is a stock-batch field, not a medicine/product-master field. Product setup does not require expiry, but every purchase batch currently requires a future expiry date; no-expiry batches are not supported by the schema or sale/alert rules.
 - Do not permit negative stock. Verify the server transaction and constraints as well as frontend allocation before relying on this in production.
 - Stock alerts use sellable stock from positive, unexpired (`expiry_date >= current_date`), `ACTIVE`/`NEAR_EXPIRY` batches for active medicines. Alert low/out counts require `min_stock_alert > 0`; the alert RPC returns no cost, MRP, supplier, or cost-derived value and is available to every active, non-deleted profile regardless of module permission. The existing Products `out_of_stock` KPI does not apply the positive-reorder-threshold condition, so its count may exceed alert out counts. The migration is pending manual application.
 - Cost and profit/margin are internal data, not Pharmacy Memo print fields. Receipt rendering displays sale amounts/totals and is styled black on white. Do not add cost, purchase price, profit, or margin to customer-facing slips.
@@ -105,6 +106,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Current code still grants Admin roles every module and keeps Settings Admin-only; the approved staff Settings checkbox, per-shop profile, and Super Admin-only identity editing are plan-only and unimplemented. Apply only after the staging and ACL gates.
 - DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
+- User-reported POS and low-stock pages showed an invalid/expired JWT at sign-in. Until authentication works, neither RPC can be verified against the live project. After re-authentication, POS additionally requires an active medicine with at least one sale unit and positive eligible batch stock; low-stock alerts require `min_stock_alert > 0` and sellable stock at or below that threshold (zero stock is classified as out-of-stock). Confirm migrations `20261013140000_stock_alerts_summary.sql` and `20261013150000_pos_catalog.sql` are applied before diagnosing further.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
 - Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Product label printing supports linear formats only; QR-code generation is not implemented. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
@@ -118,7 +120,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Several screens still use mock/in-memory data; identify persistence from the current component before changing it.
 - Supplier contact insert/update/deactivation is still performed directly by the browser; consider a permission-checked RPC plan.
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
-- POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
+- POS product browsing now uses the live, permission-checked `pos_catalog()` RPC and its response excludes cost data. POS sale posting and POS/Dashboard/Reports sales data remain local/demo and must be rebuilt around permission-checked RPCs before treating their hidden fields as a security boundary.
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
 - Current server-side invoice/memo allocators are unknown/not implemented in this checkout. The approved target is sequential and unique per shop; gap-free guarantees are deferred unless concurrency, rollback, retry, and failure tests prove them.
 - Discount rules to enforce inside the future post_sale RPC: per-role maximum percent, discount never above the bill, never below batch cost (cashier only sees a generic 'Discount not allowed'), discount stored in paisa with the sale, audit_logs entry for discounts above a threshold.
@@ -132,6 +134,10 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Removed the POS demo product feed and added the cashier-authorized, cost-free `pos_catalog()` RPC, typed response validation, live stock-event refresh, and empty/loading/error states. Added migration and rollback files; neither has been applied and no SQL was run. POS sales remain local/in-memory.
+- 2026-10-13 — Rechecked POS/catalog and low-stock behavior after user reported products/alerts missing. `npm run lint`, `npm test` (120 tests), and `npm run build` pass. Local browser reaches the login screen, but no authenticated page/RPC smoke test was possible because the supplied screenshot shows an expired/invalid JWT. No database/demo rows were added; live migration status remains unknown.
+- 2026-10-13 — Confirmed with owner to keep expiry mandatory per received stock batch, with no database rule change. Documented that product setup itself does not need an expiry date.
+- 2026-10-13 — Added a cart sale-unit selector to POS. It recalculates the line price and checks FEFO stock in base units when changing unit or quantity; tested 1-tablet, 10-tablet strip, and pack conversions. Type-check, targeted tests, full test suite, and production build pass. Database still must contain the desired sale units/prices and valid batches; authenticated live UI could not be tested due the reported expired JWT.
 - 2026-10-13 — Added the header low-stock alert bell and per-user unseen state, permission-aware navigation, and stock-mutation refresh events. Added a SECURITY DEFINER summary RPC and rollback for manual application; no SQL was run and no migration was applied.
 - 2026-10-13 — Added `docs/MULTI_SHOP_FULL_PLAN.md` and aligned `MASTER_PLAN.md`/context to the owner's confirmed decisions; clarified staging → ACL reconciliation → staging migrations/tests → production order, compensating Auth/Postgres provisioning, per-shop sequential/unique numbering, staging inventory counts, server-backed shop identity, Settings access rules, support/seeding/suspension decisions. Documentation only; no code, SQL, migration, or deployment changes.
 - 2026-10-13 — Initial follow-on plan request captured before the owner confirmed decisions; superseded by the detailed plan and aligned master plan above.
@@ -173,15 +179,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-13T10:18:13.345Z
-Git branch: feature/low-stock-alerts
+Generated at (UTC): 2026-10-13T14:20:27.599Z
+Git branch: security/label-escaping
 
 Last 5 commit subjects:
+- feat: add header low stock alerts
 - plan for admin access
 - chore: enable stricter TypeScript checks
 - chore: remove unused imports and locals
 - docs: record barcode client UI progress
-- docs: record baseline measurements
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -197,6 +203,7 @@ npm scripts:
 - - `test:stock-inventory`: `tsx --test src/components/inventory/stockInventoryLogic.test.ts`
 - - `test:inventory-products`: `tsx --test src/components/inventory/productImportLogic.test.ts`
 - - `test:stock-alerts`: `tsx --test src/data/stockAlertLogic.test.ts`
+- - `test:pos-catalog`: `tsx --test src/data/posCatalogLogic.test.ts`
 - - `test:product-filters`: `tsx --test src/components/inventory/productFilterLogic.test.ts`
 - - `test:master-data`: `tsx --test src/components/masterDataSimilarity.test.ts`
 - - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
@@ -208,7 +215,7 @@ npm scripts:
 - - `test:labels`: `tsx --test src/utils/labelUtils.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -282,6 +289,9 @@ src/
     src/constants/brand.ts
   src/data/
     src/data/mockPharmacyData.ts
+    src/data/posCatalog.ts
+    src/data/posCatalogLogic.test.ts
+    src/data/posCatalogLogic.ts
     src/data/stockAlertLogic.test.ts
     src/data/stockAlertLogic.ts
     src/data/stockAlerts.ts
@@ -328,6 +338,7 @@ Test files:
 - src/components/inventory/productImportLogic.test.ts
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
+- src/data/posCatalogLogic.test.ts
 - src/data/stockAlertLogic.test.ts
 - src/permissions.test.ts
 - src/utils/discount.test.ts

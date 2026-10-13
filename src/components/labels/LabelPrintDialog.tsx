@@ -8,6 +8,7 @@ import {
   validateLabelQuantities,
   type BarcodeFormat,
 } from '../../utils/labelUtils';
+import { escapeHtml } from '../../utils/receipt';
 
 export type LabelSize = '30x20' | '50x30' | '58x40' | 'a4';
 export type LabelFieldKey = 'name' | 'strength' | 'generic' | 'expiry' | 'mrp';
@@ -132,19 +133,19 @@ export function LabelPrintDialog({ open, products, onClose }: LabelPrintDialogPr
         return svg.outerHTML;
       })();
 
-      const expiryText = showFields.expiry ? (product.expiry ? `Exp: ${safeText(product.expiry)}` : 'Exp: —') : '';
+      const expiryText = showFields.expiry ? (product.expiry ? `Exp: ${escapeHtml(safeText(product.expiry))}` : 'Exp: —') : '';
       const priceText = showFields.mrp && product.price_paisa !== null ? `MRP ${new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(product.price_paisa / 100)}` : '';
       const metaParts = [
-        showFields.strength && product.strength ? safeText(product.strength) : '',
-        showFields.generic ? safeText(product.generic_name) : '',
+        showFields.strength && product.strength ? escapeHtml(safeText(product.strength)) : '',
+        showFields.generic ? escapeHtml(safeText(product.generic_name)) : '',
       ].filter(Boolean);
 
       return `
-        <article class="label-item" aria-label="${safeText(product.brand_name)} label">
-          ${showFields.name ? `<div class="label-head">${safeText(product.brand_name)}</div>` : ''}
+        <article class="label-item" aria-label="${escapeHtml(safeText(product.brand_name))} label">
+          ${showFields.name ? `<div class="label-head">${escapeHtml(safeText(product.brand_name))}</div>` : ''}
           ${metaParts.length ? `<div class="label-meta">${metaParts.join(' • ')}</div>` : ''}
           <div class="label-barcode">${svgMarkup}</div>
-          <div class="label-code">${safeText(barcodeValue)}</div>
+          <div class="label-code">${escapeHtml(safeText(barcodeValue))}</div>
           <div class="label-foot">${[expiryText, priceText].filter(Boolean).join(' • ')}</div>
         </article>
       `;
