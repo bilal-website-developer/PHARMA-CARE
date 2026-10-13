@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, Printer, RefreshCw, X } from 'lucide-react';
-import * as XLSX from '@e965/xlsx';
 import { UserRole } from '../types/pharmacy';
 import { isAdminRole } from '../permissions';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
@@ -161,6 +160,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
     setExporting(true);
     setError('');
     try {
+      const XLSX = await import('@e965/xlsx');
       const { data, error: queryError } = await supabase.rpc('purchase_history', {
         p_search: search || null,
         p_payment_type: paymentType || null,

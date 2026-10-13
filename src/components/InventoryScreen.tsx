@@ -1,9 +1,9 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Barcode, Download, FileUp, Grid2X2, List, Pencil, Plus, Printer, RefreshCw, ScanLine, Search, X,
 } from 'lucide-react';
 import { usePermissions } from '../permissions';
-import { LabelPrintDialog, type LabelPrintItem } from './labels/LabelPrintDialog';
+import type { LabelPrintItem } from './labels/LabelPrintDialog';
 import { BarcodeScannerTest } from './BarcodeScannerTest';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
@@ -25,6 +25,7 @@ import {
 import { StockInventory } from './inventory/StockInventory';
 
 const PAGE_SIZE = 25;
+const LabelPrintDialog = lazy(() => import('./labels/LabelPrintDialog').then(({ LabelPrintDialog: Dialog }) => ({ default: Dialog })));
 const FIELD = 'w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 const FILTER_PILL = 'w-auto max-w-full rounded-full border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 const PANEL = 'rounded-xl border border-border bg-surface shadow-xs';
@@ -1227,11 +1228,19 @@ function ProductsCatalog({
         </div>
       </section>
 
-      <LabelPrintDialog
-        open={labelDialogProducts.length > 0}
-        products={labelDialogProducts}
-        onClose={() => setLabelDialogProducts([])}
-      />
+      {labelDialogProducts.length > 0 && (
+        <Suspense fallback={
+          <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-surface/90 p-4 text-text">
+            <span className="rounded-card border border-border bg-surface px-5 py-4 text-sm font-semibold shadow-lg">Loading barcode labels…</span>
+          </div>
+        }>
+          <LabelPrintDialog
+            open
+            products={labelDialogProducts}
+            onClose={() => setLabelDialogProducts([])}
+          />
+        </Suspense>
+      )}
       <BarcodeScannerTest
         open={scannerTestOpen}
         scanValue={scanValue}

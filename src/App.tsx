@@ -1,4 +1,4 @@
-import React, { Component, useState, useEffect } from 'react';
+import React, { Component, lazy, Suspense, useState, useEffect } from 'react';
 import {
   Product,
   Customer,
@@ -16,22 +16,8 @@ import {
 import { Sidebar, NavItemKey } from './components/Sidebar';
 import { TopNav } from './components/TopNav';
 import { DashboardView } from './components/DashboardView';
-import { POSBillingView } from './components/POSBillingView';
-import { TemplatePreviewModal } from './components/TemplatePreviewModal';
-import { EndOfDayModal } from './components/EndOfDayModal';
-import { SettingsView } from './components/SettingsView';
-import { MasterDataView } from './components/MasterDataView';
-import { WhatsAppRemindersView } from './components/WhatsAppRemindersView';
-import { CustomerLedgerScreen } from './components/CustomerLedgerScreen';
-import { CashBookScreen } from './components/CashBookScreen';
-import { ReportsScreen } from './components/ReportsScreen';
-import { InventoryScreen } from './components/InventoryScreen';
-import type { ProductFilter } from './components/InventoryScreen';
-import { SuppliersView } from './components/SuppliersView';
-import { RepositoryReviewView } from './components/RepositoryReviewView';
 import { LoginView } from './components/LoginView';
-import { ChangePasswordModal, ManageUsersView } from './components/ManageUsersView';
-import { TrashBinView } from './components/TrashBinView';
+import type { ProductFilter } from './components/InventoryScreen';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
 import { isAdminRole, PermissionsProvider, usePermissions } from './permissions';
@@ -50,12 +36,27 @@ import {
   savePharmacyMemoSettings,
 } from './utils/storeSettings';
 import PharmaLogo from './components/PharmaLogo';
-import { HelpSupportView } from './components/HelpSupportView';
-import { StockPurchaseView } from './components/StockPurchaseView';
-import { PurchaseHistoryView } from './components/PurchaseHistoryView';
-import { MyPrintRequestsView } from './components/MyPrintRequestsView';
-import { PrintRequestsAdminView } from './components/PrintRequestsAdminView';
-import { printReceipt, PrintReceiptHandler } from './utils/printWorkflow';
+import type { PrintReceiptHandler } from './utils/printWorkflow';
+
+const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
+const InventoryScreen = lazy(() => import('./components/InventoryScreen').then(({ InventoryScreen: View }) => ({ default: View })));
+const MasterDataView = lazy(() => import('./components/MasterDataView').then(({ MasterDataView: View }) => ({ default: View })));
+const WhatsAppRemindersView = lazy(() => import('./components/WhatsAppRemindersView').then(({ WhatsAppRemindersView: View }) => ({ default: View })));
+const CustomerLedgerScreen = lazy(() => import('./components/CustomerLedgerScreen').then(({ CustomerLedgerScreen: View }) => ({ default: View })));
+const ReportsScreen = lazy(() => import('./components/ReportsScreen').then(({ ReportsScreen: View }) => ({ default: View })));
+const CashBookScreen = lazy(() => import('./components/CashBookScreen').then(({ CashBookScreen: View }) => ({ default: View })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(({ SettingsView: View }) => ({ default: View })));
+const SuppliersView = lazy(() => import('./components/SuppliersView').then(({ SuppliersView: View }) => ({ default: View })));
+const StockPurchaseView = lazy(() => import('./components/StockPurchaseView').then(({ StockPurchaseView: View }) => ({ default: View })));
+const PurchaseHistoryView = lazy(() => import('./components/PurchaseHistoryView').then(({ PurchaseHistoryView: View }) => ({ default: View })));
+const HelpSupportView = lazy(() => import('./components/HelpSupportView').then(({ HelpSupportView: View }) => ({ default: View })));
+const TrashBinView = lazy(() => import('./components/TrashBinView').then(({ TrashBinView: View }) => ({ default: View })));
+const ManageUsersView = lazy(() => import('./components/ManageUsersView').then(({ ManageUsersView: View }) => ({ default: View })));
+const ChangePasswordModal = lazy(() => import('./components/ManageUsersView').then(({ ChangePasswordModal: View }) => ({ default: View })));
+const MyPrintRequestsView = lazy(() => import('./components/MyPrintRequestsView').then(({ MyPrintRequestsView: View }) => ({ default: View })));
+const PrintRequestsAdminView = lazy(() => import('./components/PrintRequestsAdminView').then(({ PrintRequestsAdminView: View }) => ({ default: View })));
+const TemplatePreviewModal = lazy(() => import('./components/TemplatePreviewModal').then(({ TemplatePreviewModal: View }) => ({ default: View })));
+const EndOfDayModal = lazy(() => import('./components/EndOfDayModal').then(({ EndOfDayModal: View }) => ({ default: View })));
 
 const NAV_PATHS: Record<NavItemKey, string> = {
   dashboard: '/',
@@ -281,11 +282,14 @@ function PharmacyWorkspace({
   const currentRole = session.role;
   const currentUserName = session.displayName;
   const handlePrintReceipt: PrintReceiptHandler = React.useCallback(
-    (type, payload, options) => printReceipt(type, payload, {
-      role: currentRole,
-      permissions: session.permissions,
-      onNotice: (text, error = false) => setPrintNotice({ text, error }),
-    }, options),
+    async (type, payload, options) => {
+      const { printReceipt } = await import('./utils/printWorkflow');
+      return printReceipt(type, payload, {
+        role: currentRole,
+        permissions: session.permissions,
+        onNotice: (text, error = false) => setPrintNotice({ text, error }),
+      }, options);
+    },
     [currentRole, session.permissions],
   );
 
@@ -753,6 +757,8 @@ function PharmacyWorkspace({
           ) : !canPage(activeItem) ? (
             <p role="alert" className="rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">No access. Redirecting to Dashboard.</p>
           ) : (
+          <ScreenLoadBoundary key={activeItem}>
+          <Suspense fallback={<ScreenLoading />}>
           <>
           {activeItem === 'dashboard' && (
             <DashboardView
@@ -892,42 +898,95 @@ function PharmacyWorkspace({
           {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}
           {activeItem === 'print-requests' && <PrintRequestsAdminView onPrintReceipt={handlePrintReceipt} />}
           </>
+          </Suspense>
+          </ScreenLoadBoundary>
           )}
         </main>
       </div>
 
       {/* ── Global Template Preview Modal (Screenshots 1-4, 68-80) ─────────── */}
       {showTemplatePreview && (
-        <TemplatePreviewModal
-          companyName={companyName}
-          initialTemplate={previewTemplate}
-          initialFormat={billingPreferences.format}
-          memoSettings={memoSettings}
-          canApply={isAdminRole(currentRole)}
-          onApply={(template: BillingTemplate, format: ReceiptFormat) => {
-            updateBillingPreferences({ template, format });
-            setShowTemplatePreview(false);
-          }}
-          onClose={() => setShowTemplatePreview(false)}
-        />
+        <Suspense fallback={<ScreenLoading />}>
+          <TemplatePreviewModal
+            companyName={companyName}
+            initialTemplate={previewTemplate}
+            initialFormat={billingPreferences.format}
+            memoSettings={memoSettings}
+            canApply={isAdminRole(currentRole)}
+            onApply={(template: BillingTemplate, format: ReceiptFormat) => {
+              updateBillingPreferences({ template, format });
+              setShowTemplatePreview(false);
+            }}
+            onClose={() => setShowTemplatePreview(false)}
+          />
+        </Suspense>
       )}
 
       {/* ── End of Day Summary Modal (Screenshot 5) ─────────────────────────── */}
       {showCloseDayModal && (
-        <EndOfDayModal
-          onClose={() => setShowCloseDayModal(false)}
-          cashSalesPKR={cashSalesPKR}
-          creditSalesPKR={creditSalesPKR}
-          totalSalesPKR={totalSalesPKR}
-          expensesPKR={expensesPKR}
-          purchasesPKR={0}
-          grossProfitPKR={grossProfitPKR}
-          netCashInHandPKR={netCashInHandPKR}
-        />
+        <Suspense fallback={<ScreenLoading />}>
+          <EndOfDayModal
+            onClose={() => setShowCloseDayModal(false)}
+            cashSalesPKR={cashSalesPKR}
+            creditSalesPKR={creditSalesPKR}
+            totalSalesPKR={totalSalesPKR}
+            expensesPKR={expensesPKR}
+            purchasesPKR={0}
+            grossProfitPKR={grossProfitPKR}
+            netCashInHandPKR={netCashInHandPKR}
+          />
+        </Suspense>
       )}
-      {showPasswordDialog && <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />}
+      {showPasswordDialog && (
+        <Suspense fallback={<ScreenLoading />}>
+          <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />
+        </Suspense>
+      )}
     </div>
   );
+}
+
+function ScreenLoading() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-[30vh] flex-col items-center justify-center gap-3 rounded-card border border-border bg-surface p-6 text-text"
+    >
+      <span className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-primary" aria-hidden="true" />
+      <span className="text-sm font-semibold">Loading page…</span>
+    </div>
+  );
+}
+
+class ScreenLoadBoundary extends Component<
+  React.PropsWithChildren,
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section role="alert" className="rounded-card border border-border bg-surface p-6 text-center text-text">
+          <h2 className="font-bold">This page could not be loaded.</h2>
+          <p className="mt-2 text-sm text-muted">Check your connection and retry.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Retry
+          </button>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 class AppErrorBoundary extends Component<

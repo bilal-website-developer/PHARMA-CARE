@@ -24,7 +24,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 
 ## Folder map
 
-- `src/App.tsx`: app shell, navigation state, demo/mock data and page routing.
+- `src/App.tsx`: eager app shell, navigation state, demo/mock data and page routing; non-Dashboard screens and modal views are lazy-loaded with visible loading/error states.
 - `src/components/POSScreen.tsx`, `POSBillingView.tsx`: POS workflow, cart and completed-sale printing.
 - `src/utils/receipt.ts`, `printSnapshot.ts`, `printWorkflow.ts`: Pharmacy Memo rendering, safe print snapshots, and print-request workflow.
 - `src/components/SettingsView.tsx`, `TemplatePreviewModal.tsx`: receipt template/paper settings and preview.
@@ -35,7 +35,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - Other feature screens in `src/components/` include Dashboard, Reports, Suppliers, Cash Book, Controlled Drugs, Master Data, and print-request administration.
 - `src/utils/`, `src/types/`, `src/data/`: reusable logic, TypeScript domain shapes, and mock pharmacy data.
 - `supabase/migrations/`, `supabase/functions/`, `supabase/baseline/`: database migrations, Edge Functions, and a supplied schema snapshot.
-- `docs/`: database references, redesign progress, and this context.
+- `docs/`: database references, `MASTER_PLAN.md`, `MULTI_SHOP_FULL_PLAN.md`, execution progress, redesign notes, and this context.
 - `scripts/`, `.githooks/`: context generation and commit-hook tooling.
 - `public/`: static assets and fonts.
 
@@ -66,7 +66,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Cost and profit/margin are internal data, not Pharmacy Memo print fields. Receipt rendering displays sale amounts/totals and is styled black on white. Do not add cost, purchase price, profit, or margin to customer-facing slips.
 - Cost-bearing base tables stay inaccessible to `anon` and `authenticated`; read cost only through permission-checked RPCs. Do not grant direct `SELECT` on `stock_batches`, because its RLS read policy includes `pos` and exposes all selectable columns to Cashier.
 - Pharmacy Memo supports 58mm and 80mm thermal layouts (and A4); black text on white background. Return/payment memo rendering exists, but an end-to-end return workflow is not established.
-- Gap-free sequential memo numbering is a desired business rule, but the current checkout does not establish a persisted server-side allocator for Pharmacy Memo numbers: enforcement is **unknown**. Do not promise gap-free numbering until implemented and verified.
+- Invoice, memo, and purchase numbers are planned to be sequential and unique per shop. Gap-free numbering is not promised unless concurrency, rollback, retry, and failure tests prove it. Current checkout does not establish persisted server-side invoice/memo allocators; enforcement remains unknown.
 
 ## Conventions and decisions
 
@@ -92,15 +92,19 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
 - **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, and barcode printing are present. Client package commit `818af6c` adds Edit/Print/Make actions on product rows, cards, and a product-details dialog; per-product label quantities (1–200) with a 1,000-label job cap; a scanner test dialog; and fast keyboard-scanner handling in Products search and POS. Label printing requires an assigned barcode; it no longer falls back to the product code. Missing barcode-generation RPCs show an explicit notice. This package changed no SQL/schema and applied no migration. Real scanner/printer hardware remains untested.
 - **W6 TypeScript baseline:** `strict` and `noUnusedParameters` are enabled after both command-line measurements returned zero diagnostics. `noUnusedLocals` remains disabled because its 16 remaining diagnostics are in preserved components and the retained `RepositoryReviewView` import. The broader source cleanup is committed as `cce45bb`; ESLint packages/config remain pending owner approval and TypeScript 7 compatibility review. Details and release-date evidence are in `docs/EXECUTION_PROGRESS.md`.
+- **W7 client bundle optimization:** Sidebar screens and modal views load on demand (Dashboard, login, and shell remain eager); Purchase History XLSX, receipt print workflow, and barcode label code are deferred until used. Loading and retryable screen-error states are present. First-load production gzip measured 172.26 kB, down from 418.24 kB and below the 200 kB target. Lint, tests, and build pass; see `docs/EXECUTION_PROGRESS.md` for emitted chunk sizes. Physical slow/offline-network and route-refresh checks remain manual.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
 - **Next:** `docs/MASTER_PLAN.md` is approved with owner decisions recorded. The active branch is `master-plan/implementation`; the staging bootstrap/catalog comparison in `docs/STAGING_BOOTSTRAP.md` remains the gate before any multi-shop migration. Package 3's client-only barcode UI is complete; track further package state in `docs/EXECUTION_PROGRESS.md`. Hardware scanning/printing remains unverified.
 
 ## Known issues and Later
 
+- Owner-approved multi-shop decisions and the detailed implementation plan are in `docs/MULTI_SHOP_FULL_PLAN.md` and `docs/MASTER_PLAN.md`: one user per shop; Super Admin has a separate audited target-shop catalog-seeding write but no general business-data access; emergency-only, explicitly audited support access where technically possible; suspension blocks sign-in and business operations; licence/billing dates deferred; staff-selectable Settings, while shop Admins retain all own-shop modules and cannot edit identity. Shop identity/receipt details must use one server-backed profile. No implementation or database changes have been made for these decisions.
+- Current code still grants Admin roles every module and keeps Settings Admin-only; the approved staff Settings checkbox, per-shop profile, and Super Admin-only identity editing are plan-only and unimplemented. Apply only after the staging and ACL gates.
+- DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
-- Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
+- Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Product label printing supports linear formats only; QR-code generation is not implemented. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
 - Supabase bootstrap hazard: `supabase/baseline/00_baseline_schema.sql` is a reconstructed schema reference, not a complete dump. The migration directory also contains timestamped barcode rollback files; do not apply them as forward migrations. Bootstrap instructions and metadata-only comparison queries are in `docs/STAGING_BOOTSTRAP.md`.
 - Approved business rule: positive stock in `ACTIVE`/`NEAR_EXPIRY` batches for an active medicine remains sellable through expiry (`expiry_date >= current_date`). Existing FEFO helper/docs currently use a stricter boundary and must be reconciled before sale persistence is implemented.
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
@@ -113,7 +117,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
 - POS, Dashboard, and Reports still use local demo sales/product data that can carry cost and profit values client-side; rebuild those pages around permission-checked RPCs before treating their hidden fields as a security boundary.
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS; anon table/sequence privileges are removed by the planned lockdown. Default function EXECUTE privileges are unchanged in this round and remain an optional hardening item.
-- Memo-number sequencing and gap-free guarantees are unknown.
+- Current server-side invoice/memo allocators are unknown/not implemented in this checkout. The approved target is sequential and unique per shop; gap-free guarantees are deferred unless concurrency, rollback, retry, and failure tests prove them.
 - Discount rules to enforce inside the future post_sale RPC: per-role maximum percent, discount never above the bill, never below batch cost (cashier only sees a generic 'Discount not allowed'), discount stored in paisa with the sale, audit_logs entry for discounts above a threshold.
 - Enforce the Rs 200 maximum discount and the role percent caps inside the future post_sale RPC; make the Rs 200 limit editable in Settings.
 
@@ -125,7 +129,12 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Added `docs/MULTI_SHOP_FULL_PLAN.md` and aligned `MASTER_PLAN.md`/context to the owner's confirmed decisions; clarified staging → ACL reconciliation → staging migrations/tests → production order, compensating Auth/Postgres provisioning, per-shop sequential/unique numbering, staging inventory counts, server-backed shop identity, Settings access rules, support/seeding/suspension decisions. Documentation only; no code, SQL, migration, or deployment changes.
+- 2026-10-13 — Initial follow-on plan request captured before the owner confirmed decisions; superseded by the detailed plan and aligned master plan above.
+- 2026-10-13 — Recorded reported DBCode SQL language-server timeout/connection-close logs as an editor diagnostic; no project code or database changes.
+- 2026-10-13 — Clarified product label capability: the site can print linear barcode labels; QR-code generation is not currently implemented.
 - 2026-10-13 — Removed cleanable unused imports/locals in `cce45bb`; enabled TypeScript `strict` and `noUnusedParameters` after both measured zero errors. `noUnusedLocals` remains disabled due protected-file findings; recorded an ESLint proposal pending approval.
+- 2026-10-13 — Lazy-loaded non-Dashboard screens, receipt print workflow, barcode label dialog, and Purchase History XLSX. First-load gzip fell from 418.24 kB to 172.26 kB; lint, tests, and build passed. Full output chunk measurements are in `docs/EXECUTION_PROGRESS.md`.
 - 2026-10-13 — Recorded production build/gzip, separate TypeScript diagnostic, and unused-code baseline measurements in `docs/EXECUTION_PROGRESS.md`; no source, configuration, or SQL was changed.
 - 2026-10-12 — Completed client-only barcode UI/scanner package in `818af6c`: product row/card/details actions, per-product label quantities and print-job limits, scanner test and POS/Products scan handling. Full tests, TypeScript lint/check, and production build passed; no SQL or migrations changed. Commit hook also included its generated context update.
 - 2026-10-12 — Recorded owner-approved W1-W7 execution decisions, created `master-plan/implementation` from `barcode/labels` commit `adf3606`, and prepared staging bootstrap/catalog comparison plus execution progress checklist; stopped before SQL execution or multi-shop migration work.
@@ -160,15 +169,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-12T19:21:54.027Z
-Git branch: master-plan/implementation
+Generated at (UTC): 2026-10-13T08:29:07.960Z
+Git branch: 2ndmain
 
 Last 5 commit subjects:
+- chore: enable stricter TypeScript checks
 - chore: remove unused imports and locals
 - docs: record barcode client UI progress
 - docs: record baseline measurements
 - Add barcode client UI and scanner support
-- docs: log bootstrap query refinement
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
