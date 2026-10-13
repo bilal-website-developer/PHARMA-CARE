@@ -4,13 +4,17 @@ import { ChevronDown, KeyRound, LogOut, Type } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import { supabase } from '../utils/supabase';
 import PharmaLogo from './PharmaLogo';
+import { StockAlertBell } from './StockAlertBell';
 
 interface TopNavProps {
   currentRole: UserRole;
   username: string;
+  userId: string;
   activeTitle: string;
   onChangePassword: () => void;
   onLogout: () => void;
+  onOpenStockInventory: (medicineId: string | null) => void;
+  onOpenProducts: (searchText: string | null) => void;
 }
 
 const largeUiKey = (userName: string) => `pharma-care.largeUi.${userName}`;
@@ -27,9 +31,12 @@ function readLargeUiPreference(userName: string): boolean {
 export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
   username,
+  userId,
   activeTitle,
   onChangePassword,
   onLogout,
+  onOpenStockInventory,
+  onOpenProducts,
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(username));
   const [profileOpen, setProfileOpen] = useState(false);
@@ -157,7 +164,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
         <div className="flex items-center gap-1 rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
           <button
             type="button"
@@ -209,6 +216,13 @@ export const TopNav: React.FC<TopNavProps> = ({
         >
           Animations: {animationsEnabled ? 'On' : 'Off'}
         </button>
+
+        <StockAlertBell
+          userId={userId}
+          animationsEnabled={animationsEnabled}
+          onOpenStockInventory={onOpenStockInventory}
+          onOpenProducts={onOpenProducts}
+        />
 
         <span
           role="status"

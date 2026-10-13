@@ -4,6 +4,7 @@ import { UserRole } from '../types/pharmacy';
 import { isAdminRole } from '../permissions';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
+import { dispatchStockChanged } from '../utils/stockAlertsEvents';
 
 interface HistoryItem {
   medicine_id: string;
@@ -235,6 +236,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
         p_reason: reason,
       });
       if (voidError) throw voidError;
+      dispatchStockChanged();
       setNotice(`${purchase.pr_no} was voided.`);
       await load();
       if (selected?.id === purchase.id) setSelected({ ...selected, status: 'void', void_reason: reason });

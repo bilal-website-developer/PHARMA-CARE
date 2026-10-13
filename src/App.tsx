@@ -403,14 +403,39 @@ function PharmacyWorkspace({
 
   const [productFilter, setProductFilter] = React.useState<ProductFilter>(null);
   const [stockMedicineId, setStockMedicineId] = React.useState<string | null>(null);
+  const [stockInitialTab, setStockInitialTab] = React.useState<'all' | 'near-expiry' | 'expired' | 'low-stock'>('all');
+  const [stockNavigationKey, setStockNavigationKey] = React.useState(0);
+  const [alertProductSearch, setAlertProductSearch] = React.useState<string | null>(null);
+  const [alertProductsLowStockOnly, setAlertProductsLowStockOnly] = React.useState(false);
+  const [alertProductNavigationKey, setAlertProductNavigationKey] = React.useState(0);
   const viewFilteredProducts = React.useCallback((filter: Exclude<ProductFilter, null>) => {
     setProductFilter(filter);
     navigateTo('products');
   }, [navigateTo]);
-  const viewProductBatches = React.useCallback((medicineId: string) => {
+  const viewProductBatches = React.useCallback((medicineId: string | null, initialTab: 'all' | 'low-stock' = 'all') => {
     setStockMedicineId(medicineId);
+    setStockInitialTab(initialTab);
+    setStockNavigationKey((current) => current + 1);
     navigateTo('stock-inventory');
   }, [navigateTo]);
+  const openStockAlertProducts = React.useCallback((searchText: string | null) => {
+    setProductFilter(null);
+    setAlertProductSearch(searchText);
+    setAlertProductsLowStockOnly(true);
+    setAlertProductNavigationKey((current) => current + 1);
+    navigateTo('products');
+  }, [navigateTo]);
+
+  useEffect(() => {
+    if (activeItem !== 'stock-inventory') {
+      setStockMedicineId(null);
+      setStockInitialTab('all');
+    }
+    if (activeItem !== 'products') {
+      setAlertProductSearch(null);
+      setAlertProductsLowStockOnly(false);
+    }
+  }, [activeItem]);
 
   // Main Datasets
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -734,9 +759,12 @@ function PharmacyWorkspace({
         <TopNav
           currentRole={currentRole}
           username={currentUserName}
+          userId={session.userId}
           activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
           onChangePassword={() => setShowPasswordDialog(true)}
           onLogout={onLogout}
+          onOpenStockInventory={(medicineId) => viewProductBatches(medicineId, 'low-stock')}
+          onOpenProducts={openStockAlertProducts}
         />
 
         {/* Dynamic Screen View */}
@@ -791,10 +819,13 @@ function PharmacyWorkspace({
 
           {activeItem === 'products' && (
             <InventoryScreen
+              key={`stock-alert-products-${alertProductNavigationKey}`}
               mode="products"
               currentRole={currentRole}
               currentUserId={session.userId}
               initialFilter={productFilter}
+              initialSearch={alertProductSearch}
+              initialLowStockOnly={alertProductsLowStockOnly}
               onFilterApplied={() => setProductFilter(null)}
               onViewBatches={viewProductBatches}
             />
@@ -804,9 +835,11 @@ function PharmacyWorkspace({
 
           {activeItem === 'stock-inventory' && (
             <InventoryScreen
+              key={`stock-inventory-${stockNavigationKey}`}
               mode="stock"
               currentRole={currentRole}
               initialMedicineId={stockMedicineId}
+              initialStockTab={stockInitialTab}
               onClearMedicineFilter={() => setStockMedicineId(null)}
             />
           )}

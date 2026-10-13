@@ -5,6 +5,7 @@ import {
 import { usePermissions } from '../permissions';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
+import { dispatchStockChanged } from '../utils/stockAlertsEvents';
 
 interface PurchaseUnit {
   id: string;
@@ -308,6 +309,7 @@ export function StockPurchaseView({
         })),
       });
       if (error) throw error;
+      dispatchStockChanged();
       const posted = data as PostedPurchase;
       clearForm();
       const refreshError = await refreshProducts();

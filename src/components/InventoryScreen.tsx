@@ -8,6 +8,7 @@ import { BarcodeScannerTest } from './BarcodeScannerTest';
 import { fetchAllSupabaseRows } from '../utils/fetchAllSupabaseRows';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
+import { dispatchStockChanged } from '../utils/stockAlertsEvents';
 import { useBarcodeScanner } from '../utils/useBarcodeScanner';
 import {
   BulkActionBar, ConfirmDialog, DataTable, ExpiryChip, FilterChip, KpiCard, StockBar, StatusChip,
@@ -33,6 +34,7 @@ const BUTTON = 'inline-flex items-center justify-center gap-2 rounded-control bg
 const SECONDARY = 'inline-flex items-center justify-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface/80 disabled:opacity-50';
 
 type ViewMode = 'products' | 'stock';
+type StockInitialTab = 'all' | 'near-expiry' | 'expired' | 'low-stock';
 export type ProductFilter = { field: 'category' | 'company'; value: string } | null;
 type DrugClass = 'OTC' | 'RX' | 'CONTROLLED' | 'NARCOTIC';
 type StorageCondition = 'ROOM_TEMPERATURE' | 'COOL' | 'COLD_REFRIGERATED';
@@ -282,7 +284,10 @@ export function InventoryScreen({
   currentRole: _currentRole,
   currentUserId,
   initialFilter = null,
+  initialSearch = null,
+  initialLowStockOnly = false,
   initialMedicineId = null,
+  initialStockTab = 'all',
   onFilterApplied,
   onViewBatches,
   onClearMedicineFilter,
@@ -291,7 +296,10 @@ export function InventoryScreen({
   currentRole: string;
   currentUserId?: string;
   initialFilter?: ProductFilter;
+  initialSearch?: string | null;
+  initialLowStockOnly?: boolean;
   initialMedicineId?: string | null;
+  initialStockTab?: StockInitialTab;
   onFilterApplied?: () => void;
   onViewBatches?: (medicineId: string) => void;
   onClearMedicineFilter?: () => void;
@@ -299,20 +307,30 @@ export function InventoryScreen({
   return mode === 'products'
     ? <ProductsCatalog
       initialFilter={initialFilter}
+      initialSearch={initialSearch}
+      initialLowStockOnly={initialLowStockOnly}
       userId={currentUserId ?? 'unknown'}
       onFilterApplied={onFilterApplied}
       onViewBatches={onViewBatches}
     />
-    : <StockInventory initialMedicineId={initialMedicineId} onClearMedicineFilter={onClearMedicineFilter} />;
+    : <StockInventory
+      initialMedicineId={initialMedicineId}
+      initialTab={initialStockTab}
+      onClearMedicineFilter={onClearMedicineFilter}
+    />;
 }
 
 function ProductsCatalog({
   initialFilter,
+  initialSearch,
+  initialLowStockOnly,
   userId,
   onFilterApplied,
   onViewBatches,
 }: {
   initialFilter: ProductFilter;
+  initialSearch: string | null;
+  initialLowStockOnly: boolean;
   userId: string;
   onFilterApplied?: () => void;
   onViewBatches?: (medicineId: string) => void;
@@ -323,13 +341,13 @@ function ProductsCatalog({
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [brands, setBrands] = useState<CategoryOption[]>([]);
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState(initialSearch ?? '');
+  const [searchInput, setSearchInput] = useState(initialSearch ?? '');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [lowStockOnly, setLowStockOnly] = useState(initialLowStockOnly);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortColumn, setSortColumn] = useState<'name' | 'stock' | 'expiry' | 'mrp'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -407,6 +425,13 @@ function ProductsCatalog({
     setPage(1);
     onFilterApplied?.();
   }, [initialFilter, onFilterApplied]);
+
+  useEffect(() => {
+    setSearchInput(initialSearch ?? '');
+    setSearch(initialSearch ?? '');
+    setLowStockOnly(initialLowStockOnly);
+    setPage(1);
+  }, [initialSearch, initialLowStockOnly]);
 
   const loadOptions = useCallback(async () => {
     const client = supabase;
@@ -769,6 +794,7 @@ function ProductsCatalog({
         rows: validRows.map(({ line, values }) => ({ ...values, line })),
       });
       if (importError) throw importError;
+      dispatchStockChanged();
       if (!isRecord(data) || typeof data.imported_count !== 'number') {
         throw new Error('The import service returned an invalid response.');
       }
@@ -796,6 +822,7 @@ function ProductsCatalog({
         value,
       });
       if (updateError) throw updateError;
+      dispatchStockChanged();
       if (typeof data !== 'number') throw new Error('The bulk-update service returned an invalid response.');
       setSelectedIds([]);
       setConfirmBulkDeactivate(false);
@@ -1011,6 +1038,7 @@ function ProductsCatalog({
         p_units: units,
       });
       if (saveError) throw saveError;
+      dispatchStockChanged();
       setShowForm(false);
       setNotice(editing ? 'Product updated.' : 'Product added.');
       await loadProducts();
@@ -1035,6 +1063,7 @@ function ProductsCatalog({
         value: null,
       });
       if (updateError) throw updateError;
+      dispatchStockChanged();
       setPendingStatusChange(null);
       setNotice(`${medicine.brand_name} ${active ? 'activated' : 'deactivated'}.`);
       await loadProducts();

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { getSupabaseErrorMessage } from '../../utils/supabaseError';
+import { dispatchStockChanged } from '../../utils/stockAlertsEvents';
 import {
   ConfirmDialog, DataTable, EmptyState, ExpiryChip, FilterChip, KpiCard, SegmentedTabs,
   Skeleton, StockBar, StatusChip,
@@ -249,12 +250,14 @@ function stockListArgs({
 
 export function StockInventory({
   initialMedicineId,
+  initialTab = 'all',
   onClearMedicineFilter,
 }: {
   initialMedicineId: string | null;
+  initialTab?: BatchTab;
   onClearMedicineFilter?: () => void;
 }) {
-  const [tab, setTab] = useState<StockTab>('all');
+  const [tab, setTab] = useState<StockTab>(initialTab);
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [sort, setSort] = useState<StockSort>('expiry_asc');
@@ -300,6 +303,11 @@ export function StockInventory({
   const loadSequence = useRef(0);
   const movementSequence = useRef(0);
   const pickerSequence = useRef(0);
+
+  useEffect(() => {
+    setTab(initialTab);
+    setPage(1);
+  }, [initialMedicineId, initialTab]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setAppliedSearch(search.trim()), 250);
@@ -551,6 +559,7 @@ export function StockInventory({
         p_reason: reason,
       });
       if (rpcError) throw rpcError;
+      dispatchStockChanged();
       if (typeof data !== 'number' || data !== adjustmentPreview.resultingQuantity) {
         throw new Error('The stock adjustment response did not match the reviewed quantity.');
       }
@@ -578,6 +587,7 @@ export function StockInventory({
         p_reason: 'expired',
       });
       if (rpcError) throw rpcError;
+      dispatchStockChanged();
       setNotice(`Batch ${writeOffBatch.batch_number} written off. The batch remains in inventory history.`);
       setWriteOffBatch(null);
       await load();

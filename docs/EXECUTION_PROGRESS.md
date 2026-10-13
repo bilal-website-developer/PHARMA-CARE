@@ -18,7 +18,7 @@
 | 4. W2 schema foundation and Shop 1 backfill | Blocked on package 1 and prerequisite approvals | — | None | None | Not run |
 | 5. W2 tenant RLS, RPC, and Edge Function isolation | Blocked on package 4, two-shop test design, and staging | — | None | None | Not run |
 | 6. W4 persistence and transactional `complete_sale` | Blocked on package 5 | — | None | None | Not run |
-| 7. W3 stock alerts | Blocked on package 5 | — | None | None | Not run |
+| 7. W3 stock alerts | Header alerts implemented for current single-shop schema; shop-scoped follow-up remains blocked on package 5 | — | `20261013140000_stock_alerts_summary.sql` plus rollback | Not applied; owner applies manually | `npm run lint`, `npm test`, `npm run build` passed; database/grant checks not run |
 | 8. W5 per-shop cross-table barcode registry and RPCs | Blocked on package 4 and duplicate inventory | — | None | None | Not run |
 | 9. W6 unused checks and ESLint (`react-hooks`) | Unused cleanup committed; strict/noUnusedParameters enabled; noUnusedLocals and ESLint await owner decision | `cce45bb` + this commit | None | None | `npm run lint`, `npm test`, `npm run build` passed |
 | 10. W7 performance and hygiene | Client first-load optimization complete; remaining hygiene pending | — | None | None | `npm run lint`, `npm test`, `npm run build` passed; first-load gzip 172.26 kB |

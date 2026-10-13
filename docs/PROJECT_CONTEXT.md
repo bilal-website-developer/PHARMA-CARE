@@ -43,7 +43,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 
 - Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, and purchase workflows use server RPCs; Suppliers still has direct table reads/writes. Authorization and persistence are not uniform across every screen.
 - Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, audited receipt-only modification, and profile Trash Bin events use database RPCs/Edge Functions.
-- Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, and other UI settings. These do not synchronize across counters.
+- Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters.
 - In-memory/mock data: POS sales, customers/ledgers, cash transactions, and controlled-drug logs are initialized from `src/data/mockPharmacyData.ts` in `App.tsx`; these app-state values do not persist or synchronize. The Products and Stock Inventory screens separately load server data.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
 - Shared production data behavior depends on Supabase deployment and the live schema, which may differ from checked-in migrations.
@@ -63,6 +63,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Persisted money columns and calculation fields use integer paisa; `sale_items.discount_percent` is numeric.
 - Batch sale allocation in `src/utils/fefo.ts` uses FEFO: positive eligible stock only, `ACTIVE`/`NEAR_EXPIRY`, expiry strictly after today, then received date and ID for tie-breaking. It rejects an insufficient allocation rather than returning a partial sale. Server-side enforcement depends on the deployed RPC/schema and must be verified there.
 - Do not permit negative stock. Verify the server transaction and constraints as well as frontend allocation before relying on this in production.
+- Stock alerts use sellable stock from positive, unexpired (`expiry_date >= current_date`), `ACTIVE`/`NEAR_EXPIRY` batches for active medicines. Alert low/out counts require `min_stock_alert > 0`; the alert RPC returns no cost, MRP, supplier, or cost-derived value and is available to every active, non-deleted profile regardless of module permission. The existing Products `out_of_stock` KPI does not apply the positive-reorder-threshold condition, so its count may exceed alert out counts. The migration is pending manual application.
 - Cost and profit/margin are internal data, not Pharmacy Memo print fields. Receipt rendering displays sale amounts/totals and is styled black on white. Do not add cost, purchase price, profit, or margin to customer-facing slips.
 - Cost-bearing base tables stay inaccessible to `anon` and `authenticated`; read cost only through permission-checked RPCs. Do not grant direct `SELECT` on `stock_batches`, because its RLS read policy includes `pos` and exposes all selectable columns to Cashier.
 - Pharmacy Memo supports 58mm and 80mm thermal layouts (and A4); black text on white background. Return/payment memo rendering exists, but an end-to-end return workflow is not established.
@@ -75,11 +76,13 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Keep client-facing cost fields nullable/redacted by the server when visibility is denied; never turn unknown cost into zero in UI.
 - Date: 2026-10-10 — Inventory lists, statistics, movements, adjustments, and write-offs use stock RPCs to keep paging/filtering and mutations server-side.
 - Date: 2026-10-10 — Product data uses server-side list/stat/import RPCs; cost visibility is decided server-side rather than trusted to client hiding.
+- Date: 2026-10-13 — Stock alerts are server-counted, visible to every active signed-in profile, and never include cost-bearing fields. Navigation is permission-gated in the header; seen alert keys are per-user and browser-local.
 - Date: 2026-10-12 — Cost access is role-and-permission scoped by `can_view_cost()`; Cashier is always denied, Accountants are read-only, and Manager access requires a relevant module permission. The migration is pending application.
 - Date: 2026-10-09 — Pharmacy Memo uses a shared sanitized renderer for 58mm/80mm and A4; template and paper preferences remain browser-local because shared settings storage is not implemented.
 
 ## Current status
 
+- **Added; migration pending:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; not applied by the assistant.
 - **Done:** Phase 1 barcode validation and server-side generation work for `medicines.barcode`: reusable EAN-13 validation helpers, barcode renderer error handling, and product-page bulk generation actions. The corresponding migration files are staged under `supabase/migrations/20261012180000_assign_medicine_barcodes.sql` and the companion unique-index migration.
 - **Done:** Product barcode labels now open a dedicated print dialog with size/copies/field controls and a live preview; the old raw popup path was replaced by the reusable label dialog while preserving the product-page barcode generation flow.
 - **Done:** Products and Master Data redesigns; Stock Inventory UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
@@ -129,6 +132,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Added the header low-stock alert bell and per-user unseen state, permission-aware navigation, and stock-mutation refresh events. Added a SECURITY DEFINER summary RPC and rollback for manual application; no SQL was run and no migration was applied.
 - 2026-10-13 — Added `docs/MULTI_SHOP_FULL_PLAN.md` and aligned `MASTER_PLAN.md`/context to the owner's confirmed decisions; clarified staging → ACL reconciliation → staging migrations/tests → production order, compensating Auth/Postgres provisioning, per-shop sequential/unique numbering, staging inventory counts, server-backed shop identity, Settings access rules, support/seeding/suspension decisions. Documentation only; no code, SQL, migration, or deployment changes.
 - 2026-10-13 — Initial follow-on plan request captured before the owner confirmed decisions; superseded by the detailed plan and aligned master plan above.
 - 2026-10-13 — Recorded reported DBCode SQL language-server timeout/connection-close logs as an editor diagnostic; no project code or database changes.
@@ -169,15 +173,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-13T08:29:07.960Z
-Git branch: 2ndmain
+Generated at (UTC): 2026-10-13T10:18:13.345Z
+Git branch: feature/low-stock-alerts
 
 Last 5 commit subjects:
+- plan for admin access
 - chore: enable stricter TypeScript checks
 - chore: remove unused imports and locals
 - docs: record barcode client UI progress
 - docs: record baseline measurements
-- Add barcode client UI and scanner support
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -192,6 +196,7 @@ npm scripts:
 - - `test:inventory-ui`: `tsx --test src/components/inventory/inventoryUiLogic.test.ts`
 - - `test:stock-inventory`: `tsx --test src/components/inventory/stockInventoryLogic.test.ts`
 - - `test:inventory-products`: `tsx --test src/components/inventory/productImportLogic.test.ts`
+- - `test:stock-alerts`: `tsx --test src/data/stockAlertLogic.test.ts`
 - - `test:product-filters`: `tsx --test src/components/inventory/productFilterLogic.test.ts`
 - - `test:master-data`: `tsx --test src/components/masterDataSimilarity.test.ts`
 - - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
@@ -203,7 +208,7 @@ npm scripts:
 - - `test:labels`: `tsx --test src/utils/labelUtils.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -264,6 +269,7 @@ src/
     src/components/RepositoryReviewView.tsx
     src/components/SettingsView.tsx
     src/components/Sidebar.tsx
+    src/components/StockAlertBell.tsx
     src/components/StockPurchaseView.tsx
     src/components/SuppliersView.tsx
     src/components/TemplatePreviewModal.tsx
@@ -276,6 +282,9 @@ src/
     src/constants/brand.ts
   src/data/
     src/data/mockPharmacyData.ts
+    src/data/stockAlertLogic.test.ts
+    src/data/stockAlertLogic.ts
+    src/data/stockAlerts.ts
   src/index.css
   src/main.tsx
   src/permissions.test.ts
@@ -301,6 +310,7 @@ src/
     src/utils/receipt.ts
     src/utils/salesReport.test.ts
     src/utils/salesReport.ts
+    src/utils/stockAlertsEvents.ts
     src/utils/storageMigration.ts
     src/utils/storeSettings.ts
     src/utils/supabase.ts
@@ -318,6 +328,7 @@ Test files:
 - src/components/inventory/productImportLogic.test.ts
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
+- src/data/stockAlertLogic.test.ts
 - src/permissions.test.ts
 - src/utils/discount.test.ts
 - src/utils/fefo.test.ts
