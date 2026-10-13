@@ -1,5 +1,14 @@
 import { Batch, BatchAllocation, BatchStatus } from '../types/pharmacy';
 
+export interface FefoBatch {
+  id: string;
+  batchNumber: string;
+  expiryDate: string;
+  receivedDate: string;
+  quantitySmallestUnit: number;
+  status: BatchStatus;
+}
+
 export function localIsoDate(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -8,7 +17,7 @@ export function localIsoDate(date = new Date()): string {
 }
 
 export function allocateFefo(
-  batches: Batch[],
+  batches: readonly FefoBatch[],
   requiredSmallestUnits: number,
   today = localIsoDate()
 ): BatchAllocation[] {
@@ -22,7 +31,7 @@ export function allocateFefo(
         Number.isSafeInteger(batch.quantitySmallestUnit) &&
         batch.quantitySmallestUnit > 0 &&
         (batch.status === BatchStatus.ACTIVE || batch.status === BatchStatus.NEAR_EXPIRY) &&
-        batch.expiryDate > today
+        batch.expiryDate >= today
     )
     .sort(
       (a, b) =>

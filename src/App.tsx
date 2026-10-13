@@ -1,18 +1,21 @@
 import React, { Component, lazy, Suspense, useState, useEffect } from 'react';
 import {
-  Product,
   Customer,
   CashTransaction,
   CompletedSale,
-  DrugClass,
   PaymentMethod,
+  LedgerEntry,
 } from './types/pharmacy';
 import {
   INITIAL_PRODUCTS,
-  INITIAL_CUSTOMERS,
-  INITIAL_LEDGER_ENTRIES,
-  INITIAL_CASH_TRANSACTIONS,
 } from './data/mockPharmacyData';
+import {
+  loadCustomerAccountsSummary,
+  loadPosCustomers,
+  loadSalesHistory,
+  recordCustomerPayment,
+  saveCustomer,
+} from './data/sales';
 import { Sidebar, NavItemKey } from './components/Sidebar';
 import { TopNav } from './components/TopNav';
 import { DashboardView } from './components/DashboardView';
@@ -37,6 +40,7 @@ import {
 } from './utils/storeSettings';
 import PharmaLogo from './components/PharmaLogo';
 import type { PrintReceiptHandler } from './utils/printWorkflow';
+import { STOCK_CHANGED_EVENT } from './utils/stockAlertsEvents';
 
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
 const InventoryScreen = lazy(() => import('./components/InventoryScreen').then(({ InventoryScreen: View }) => ({ default: View })));
@@ -438,76 +442,56 @@ function PharmacyWorkspace({
   }, [activeItem]);
 
   // Main Datasets
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
-  const [ledgerEntries, setLedgerEntries] = useState(INITIAL_LEDGER_ENTRIES);
-  const [transactions, setTransactions] = useState<CashTransaction[]>(INITIAL_CASH_TRANSACTIONS);
-  const [completedSales, setCompletedSales] = useState<CompletedSale[]>([
-    {
-      id: 'demo-sale-1',
-      invoiceNumber: 'INV-87654321',
-      timestamp: '06/10/2026, 11:54:23 pm',
-      cashierName: 'Bilal Cashier (POS 1)',
-      customerName: 'Walk-in Customer',
-      customerPhone: '',
-      items: [
-        {
-          productId: 'prod-1',
-          productName: 'Panadol Extra 500mg/65mg',
-          genericName: 'Paracetamol + Caffeine',
-          batchId: 'b-101',
-          batchNumber: 'PE-2401',
-          expiryDate: '2026-12-31',
-          drugClass: DrugClass.OTC,
-          unitName: 'Strip (10 Tabs)',
-          conversionFactor: 10,
-          quantityInUnit: 1,
-          mrpPaisaPerUnit: 6500,
-          costPaisaPerUnit: 4800,
-          discountPercent: 0,
-          lineTotalPaisa: 6500,
-        },
-        {
-          productId: 'prod-2',
-          productName: 'Augmentin 625mg',
-          genericName: 'Amoxicillin + Clavulanic Acid',
-          batchId: 'b-201',
-          batchNumber: 'AUG-889',
-          expiryDate: '2026-11-15',
-          drugClass: DrugClass.RX,
-          unitName: 'Pack (14 Tabs)',
-          conversionFactor: 14,
-          quantityInUnit: 1,
-          mrpPaisaPerUnit: 48000,
-          costPaisaPerUnit: 38000,
-          discountPercent: 0,
-          lineTotalPaisa: 48000,
-        },
-        {
-          productId: 'prod-6',
-          productName: 'Mixtard 30 HM 100IU (Insulin 70/30)',
-          genericName: 'Biphasic Isophane Insulin Human',
-          batchId: 'b-601',
-          batchNumber: 'NN-MIX-304',
-          expiryDate: '2027-03-31',
-          drugClass: DrugClass.RX,
-          unitName: 'Vial (10ml)',
-          conversionFactor: 1,
-          quantityInUnit: 1,
-          mrpPaisaPerUnit: 145000,
-          costPaisaPerUnit: 122000,
-          discountPercent: 0,
-          lineTotalPaisa: 145000,
-        },
-      ],
-      subtotalPaisa: 199500,
-      discountPaisa: 0,
-      totalPaisa: 199500,
-      paymentMethod: PaymentMethod.CASH,
-      amountTenderedPaisa: 199500,
-      changePaisa: 0,
-    },
-  ]);
+  const products = INITIAL_PRODUCTS;
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>({});
+  const [transactions, setTransactions] = useState<CashTransaction[]>([]);
+  const [completedSales, setCompletedSales] = useState<CompletedSale[]>([]);
+  const [dataLoadError, setDataLoadError] = useState('');
+
+  useEffect(() => {
+    if (!session) {
+      setCustomers([]);
+      setLedgerEntries({});
+      setCompletedSales([]);
+      setDataLoadError('');
+      return;
+    }
+
+    let active = true;
+    setDataLoadError('');
+    const reportLoadError = (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Could not load saved business data.';
+      if (active) setDataLoadError((previous) => previous ? `${previous} ${message}` : message);
+    };
+
+    if (session.permissions.includes('customers')) {
+      void loadCustomerAccountsSummary().then((accounts) => {
+        if (!active) return;
+        setCustomers(accounts.customers);
+        setLedgerEntries(accounts.ledgerEntries);
+      }).catch(reportLoadError);
+    } else if (session.permissions.includes('pos')) {
+      void loadPosCustomers().then((loadedCustomers) => {
+        if (active) setCustomers(loadedCustomers);
+      }).catch(reportLoadError);
+    } else {
+      setCustomers([]);
+      setLedgerEntries({});
+    }
+
+    if (session.permissions.includes('sales_history')) {
+      void loadSalesHistory().then((sales) => {
+        if (active) setCompletedSales(sales);
+      }).catch(reportLoadError);
+    } else {
+      setCompletedSales([]);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [session?.userId, session?.permissions]);
 
   // Global Modals
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
@@ -557,25 +541,7 @@ function PharmacyWorkspace({
 
   const handleSaleComplete = (sale: CompletedSale) => {
     setCompletedSales((prev) => [sale, ...prev]);
-
-    setProducts((prev) =>
-      prev.map((product) => {
-        const saleAllocations = sale.items.flatMap((item) =>
-          item.productId === product.id ? item.batchAllocations ?? [] : []
-        );
-        return saleAllocations.length === 0
-          ? product
-          : {
-              ...product,
-              batches: product.batches.map((batch) => {
-                const soldQuantity = saleAllocations
-                  .filter((allocation) => allocation.batchId === batch.id)
-                  .reduce((sum, allocation) => sum + allocation.quantitySmallestUnit, 0);
-                return { ...batch, quantitySmallestUnit: batch.quantitySmallestUnit - soldQuantity };
-              }),
-            };
-      })
-    );
+    window.dispatchEvent(new CustomEvent(STOCK_CHANGED_EVENT));
 
     if (sale.paymentMethod === PaymentMethod.CASH) {
       const tx: CashTransaction = {
@@ -590,66 +556,24 @@ function PharmacyWorkspace({
       setTransactions((prev) => [tx, ...prev]);
     }
 
-    if (sale.paymentMethod === PaymentMethod.CREDIT && sale.customerName) {
-      const customer = customers.find((c) => c.name === sale.customerName);
-      if (customer) {
-        setCustomers((prev) =>
-          prev.map((c) =>
-            c.id === customer.id
-              ? { ...c, currentBalancePaisa: c.currentBalancePaisa + sale.totalPaisa }
-              : c
-          )
-        );
-
-        const newLedgerItem = {
-          id: `led-${Date.now()}`,
-          date: new Date().toISOString().split('T')[0],
-          type: 'INVOICE' as const,
-          referenceNo: sale.invoiceNumber,
-          description: `POS Credit Sale (${sale.items.length} items)`,
-          debitPaisa: sale.totalPaisa,
-          creditPaisa: 0,
-          runningBalancePaisa: customer.currentBalancePaisa + sale.totalPaisa,
-        };
-
-        setLedgerEntries((prev) => ({
-          ...prev,
-          [customer.id]: [newLedgerItem, ...(prev[customer.id] || [])],
-        }));
-      }
+    if (session?.permissions.includes('pos')) {
+      void loadPosCustomers().then(setCustomers).catch((error: unknown) => {
+        setDataLoadError(error instanceof Error ? error.message : 'Could not refresh POS customers.');
+      });
+    }
+    if (session?.permissions.includes('customers')) {
+      void loadCustomerAccountsSummary().then((accounts) => {
+        setCustomers(accounts.customers);
+        setLedgerEntries(accounts.ledgerEntries);
+      }).catch((error: unknown) => {
+        setDataLoadError(error instanceof Error ? error.message : 'Could not refresh customer accounts.');
+      });
     }
   };
 
-  const handleRecordPayment = (customerId: string, amountPaisa: number, note: string) => {
-    setCustomers((prev) =>
-      prev.map((c) =>
-        c.id === customerId
-          ? { ...c, currentBalancePaisa: Math.max(0, c.currentBalancePaisa - amountPaisa) }
-          : c
-      )
-    );
-
+  const handleRecordPayment = async (customerId: string, amountPaisa: number, note: string) => {
+    const result = await recordCustomerPayment(customerId, amountPaisa, note);
     const customer = customers.find((c) => c.id === customerId);
-    const newBal = Math.max(0, (customer?.currentBalancePaisa || 0) - amountPaisa);
-    const paymentDateTime = new Date().toISOString();
-    const paymentReference = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const newLedgerItem = {
-      id: `led-${Date.now()}`,
-      date: paymentDateTime.split('T')[0],
-      type: 'PAYMENT' as const,
-      referenceNo: paymentReference,
-      description: note || 'Counter Payment Received',
-      debitPaisa: 0,
-      creditPaisa: amountPaisa,
-      runningBalancePaisa: newBal,
-    };
-
-    setLedgerEntries((prev) => ({
-      ...prev,
-      [customerId]: [newLedgerItem, ...(prev[customerId] || [])],
-    }));
-
     const tx: CashTransaction = {
       id: `tx-${Date.now()}`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -660,7 +584,28 @@ function PharmacyWorkspace({
       handledBy: currentUserName,
     };
     setTransactions((prev) => [tx, ...prev]);
-    return { referenceNo: paymentReference, dateTime: paymentDateTime, balanceAfterPaisa: newBal };
+    if (session?.permissions.includes('customers')) {
+      void loadCustomerAccountsSummary().then((accounts) => {
+        setCustomers(accounts.customers);
+        setLedgerEntries(accounts.ledgerEntries);
+      }).catch((error: unknown) => {
+        setDataLoadError(error instanceof Error ? error.message : 'Payment was recorded, but accounts could not refresh.');
+      });
+    }
+    return result;
+  };
+
+  const handleAddCustomer = async (input: {
+    name: string;
+    phone: string;
+    cnic: string;
+    address: string;
+    creditLimitPaisa: number;
+  }): Promise<Customer> => {
+    const customer = await saveCustomer(input);
+    setCustomers((previous) => [...previous, customer]);
+    setLedgerEntries((previous) => ({ ...previous, [customer.id]: [] }));
+    return customer;
   };
 
   // Calculations for End of Day modal
@@ -681,15 +626,20 @@ function PharmacyWorkspace({
       .filter((t) => t.isOutflow)
       .reduce((sum, t) => sum + t.amountPaisa, 0) / 100;
 
-  const totalCostPKR =
-    completedSales.reduce((sum, s) => {
-      return (
-        sum +
-        s.items.reduce((itemSum, item) => itemSum + item.costPaisaPerUnit * item.quantityInUnit, 0)
-      );
-    }, 0) / 100;
+  const hasCompleteSaleCosts = completedSales.every((sale) =>
+    sale.items.every((item) => item.costPaisaPerUnit !== null)
+  );
+  const totalCostPKR = hasCompleteSaleCosts
+    ? completedSales.reduce((sum, sale) =>
+        sum + sale.items.reduce(
+          (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
+          0,
+        ), 0) / 100
+    : null;
 
-  const grossProfitPKR = Math.max(0, totalSalesPKR - totalCostPKR);
+  const grossProfitPKR = totalCostPKR === null
+    ? null
+    : Math.max(0, totalSalesPKR - totalCostPKR);
   const netCashInHandPKR = Math.max(0, cashSalesPKR - expensesPKR);
 
   const getPageTitle = (key: NavItemKey): string => {
@@ -802,8 +752,8 @@ function PharmacyWorkspace({
 
           {activeItem === 'pos' && (
             <POSBillingView
-              products={products}
               customers={customers}
+              currentUserId={session.userId}
               currentRole={currentRole}
               permissions={session.permissions}
               currentUserName={currentUserName}
@@ -854,10 +804,7 @@ function PharmacyWorkspace({
               currentUserName={currentUserName}
               currentRole={currentRole}
               onPrintReceipt={handlePrintReceipt}
-              onAddCustomer={(c) => {
-                setCustomers((prev) => [...prev, c]);
-                setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
-              }}
+              onAddCustomer={handleAddCustomer}
             />
           )}
 
@@ -871,10 +818,7 @@ function PharmacyWorkspace({
               currentUserName={currentUserName}
               currentRole={currentRole}
               onPrintReceipt={handlePrintReceipt}
-              onAddCustomer={(c) => {
-                setCustomers((prev) => [...prev, c]);
-                setLedgerEntries((prev) => ({ ...prev, [c.id]: [] }));
-              }}
+              onAddCustomer={handleAddCustomer}
             />
           )}
 

@@ -56,7 +56,7 @@ test('splits a sale across batches', () => {
   assert.deepEqual(result.map(({ quantitySmallestUnit }) => quantitySmallestUnit), [3, 2]);
 });
 
-test('skips expired batches and stock expiring today', () => {
+test('includes stock expiring today and skips expired or unsellable batches', () => {
   const result = allocateFefo(
     [
       batch('expired', '2026-10-06', 10, '2026-01-01'),
@@ -66,10 +66,10 @@ test('skips expired batches and stock expiring today', () => {
       batch('returned', '2026-10-10', 10, '2026-01-05', BatchStatus.RETURNED),
       batch('valid', '2026-10-11', 1, '2026-01-06', BatchStatus.NEAR_EXPIRY),
     ],
-    1,
+    10,
     '2026-10-07'
   );
-  assert.deepEqual(result.map(({ batchId }) => batchId), ['valid']);
+  assert.deepEqual(result.map(({ batchId }) => batchId), ['today']);
 });
 
 test('rejects insufficient eligible stock without returning partial allocations', () => {

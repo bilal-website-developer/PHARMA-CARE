@@ -17,12 +17,18 @@ import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow'
 interface CustomerLedgerScreenProps {
   customers: Customer[];
   ledgerEntries: Record<string, LedgerEntry[]>;
-  onRecordPayment: (customerId: string, amountPaisa: number, note: string) => {
+  onRecordPayment: (customerId: string, amountPaisa: number, note: string) => Promise<{
     referenceNo: string;
     dateTime: string;
     balanceAfterPaisa: number;
-  };
-  onAddCustomer: (customer: Customer) => void;
+  }>;
+  onAddCustomer: (customer: {
+    name: string;
+    phone: string;
+    cnic: string;
+    address: string;
+    creditLimitPaisa: number;
+  }) => Promise<Customer>;
   memoSettings: PharmacyMemoSettings;
   memoFormat: ReceiptFormat;
   currentUserName: string;
@@ -47,6 +53,8 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   const [paymentAmountPKR, setPaymentAmountPKR] = useState<number>(0);
   const [paymentNote, setPaymentNote] = useState('Cash received on counter');
   const [paymentPrintNotice, setPaymentPrintNotice] = useState('');
+  const [customerSaveError, setCustomerSaveError] = useState('');
+  const [savingCustomer, setSavingCustomer] = useState(false);
 
   // New Customer Modal
   const [showNewCustModal, setShowNewCustModal] = useState(false);
@@ -68,7 +76,13 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId || paymentAmountPKR <= 0) return;
-    const payment = onRecordPayment(selectedCustomerId, paymentAmountPKR * 100, paymentNote);
+    let payment: Awaited<ReturnType<typeof onRecordPayment>>;
+    try {
+      payment = await onRecordPayment(selectedCustomerId, Math.round(paymentAmountPKR * 100), paymentNote);
+    } catch (error) {
+      setPaymentPrintNotice(`Payment could not be recorded. ${error instanceof Error ? error.message : 'Please try again.'}`);
+      return;
+    }
     try {
       const snapshot = buildPrintSnapshot(buildPaymentMemoData({
         referenceNo: payment.referenceNo,
@@ -89,23 +103,29 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
     setPaymentAmountPKR(0);
   };
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName) return;
-    const newCust: Customer = {
-      id: `cust-${Date.now()}`,
-      name: newName,
-      phone: newPhone || '0300-0000000',
-      cnic: newCnic,
-      creditLimitPaisa: newCreditLimit * 100,
-      currentBalancePaisa: 0,
-      address: 'Local Customer',
-    };
-    onAddCustomer(newCust);
-    setSelectedCustomerId(newCust.id);
-    setShowNewCustModal(false);
-    setNewName('');
-    setNewPhone('');
+    if (!newName.trim()) return;
+    setCustomerSaveError('');
+    setSavingCustomer(true);
+    try {
+      const newCustomer = await onAddCustomer({
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        cnic: newCnic.trim(),
+        address: '',
+        creditLimitPaisa: Math.round(newCreditLimit * 100),
+      });
+      setSelectedCustomerId(newCustomer.id);
+      setShowNewCustModal(false);
+      setNewName('');
+      setNewPhone('');
+      setNewCnic('');
+    } catch (error) {
+      setCustomerSaveError(error instanceof Error ? error.message : 'Could not save customer.');
+    } finally {
+      setSavingCustomer(false);
+    }
   };
 
   return (
@@ -336,7 +356,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-emerald-900 mb-1">Phone Number *</label>
+                <label className="block font-semibold text-emerald-900 mb-1">Phone Number</label>
                 <input
                   type="text"
                   placeholder="0300-1234567"
@@ -368,19 +388,22 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
               </div>
             </div>
 
+            {customerSaveError && <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-text">{customerSaveError}</p>}
             <div className="flex items-center justify-end gap-2 pt-2 border-t">
               <button
                 type="button"
                 onClick={() => setShowNewCustModal(false)}
+                disabled={savingCustomer}
                 className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                disabled={savingCustomer}
                 className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg"
               >
-                Create Khata
+                {savingCustomer ? 'Saving…' : 'Create Khata'}
               </button>
             </div>
           </form>

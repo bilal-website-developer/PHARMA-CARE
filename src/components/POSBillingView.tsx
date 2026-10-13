@@ -14,10 +14,9 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  Product,
+  PaymentMethod,
   CartItem,
   UserRole,
-  PaymentMethod,
   Customer,
   CompletedSale,
   MAX_DISCOUNT_PAISA,
@@ -39,10 +38,15 @@ import { APP_NAME } from '../constants/brand';
 import { DiscountBox } from './DiscountBox';
 import { computeDiscount, DiscountMode, formatDiscountLimit } from '../utils/discount';
 import { findProductByScan, normalizeScannedValue, useBarcodeScanner } from '../utils/useBarcodeScanner';
+import { loadPosCatalog } from '../data/posCatalog';
+import { getRequiredSmallestUnits, type PosCatalogProduct } from '../data/posCatalogLogic';
+import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
+import { postSale, type PostSaleInput } from '../data/sales';
+import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
 
 interface POSBillingViewProps {
-  products: Product[];
   customers: Customer[];
+  currentUserId: string;
   currentRole: UserRole;
   permissions: readonly string[];
   currentUserName: string;
@@ -56,11 +60,10 @@ interface POSBillingViewProps {
 }
 
 export const POSBillingView: React.FC<POSBillingViewProps> = ({
-  products,
   customers,
+  currentUserId,
   currentRole,
   permissions,
-  currentUserName,
   companyName,
   billingTemplate,
   receiptFormat,
@@ -69,6 +72,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   onSaleComplete,
   onOpenTemplatePreview,
 }) => {
+  const [products, setProducts] = useState<PosCatalogProduct[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogRetry, setCatalogRetry] = useState(0);
   // Top Tabs
   const [activeTopTab, setActiveTopTab] = useState<'sale' | 'quotation' | 'search-quote' | 'barcode'>(
     'sale'
@@ -90,10 +97,43 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [discountNotice, setDiscountNotice] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
+  const [splitCashPaymentPKR, setSplitCashPaymentPKR] = useState<number>(0);
+  const [isPostingSale, setIsPostingSale] = useState(false);
   const [saleError, setSaleError] = useState('');
   const [printNotice, setPrintNotice] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const { lastScanned, resetScan } = useBarcodeScanner({ enabled: activeTopTab === 'barcode' });
+
+  useEffect(() => {
+    let active = true;
+    let requestSequence = 0;
+    const refreshCatalog = () => {
+      const requestId = ++requestSequence;
+      setCatalogLoading(true);
+      setCatalogError('');
+      void loadPosCatalog()
+        .then((catalog) => {
+          if (active && requestId === requestSequence) setProducts(catalog);
+        })
+        .catch((error: unknown) => {
+          if (active && requestId === requestSequence) {
+            setProducts([]);
+            setCatalogError(error instanceof Error ? error.message : 'Could not load the POS catalog.');
+          }
+        })
+        .finally(() => {
+          if (active && requestId === requestSequence) setCatalogLoading(false);
+        });
+    };
+    const handleStockChanged = () => refreshCatalog();
+
+    refreshCatalog();
+    window.addEventListener(STOCK_CHANGED_EVENT, handleStockChanged);
+    return () => {
+      active = false;
+      window.removeEventListener(STOCK_CHANGED_EVENT, handleStockChanged);
+    };
+  }, [currentUserId, catalogRetry]);
 
   // Modals
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -155,9 +195,15 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
     ? Math.max(0, Math.round(tenderedAmountPKR * 100))
     : 0;
-  const changeDuePaisa = Math.max(0, tenderedAmountPaisa - totalPaisa);
+  const changeDuePaisa = paymentMethod === 'CASH'
+    ? Math.max(0, tenderedAmountPaisa - totalPaisa)
+    : 0;
   const changeDuePKR = changeDuePaisa / 100;
   const previousTotalPaisa = useRef(totalPaisa);
+  const selectPaymentMethod = (method: 'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT') => {
+    setPaymentMethod(method);
+    if (method === 'SPLIT') setSplitCashPaymentPKR(Math.floor(totalPaisa / 2) / 100);
+  };
 
   useEffect(() => {
     if (cart.length === 0) {
@@ -193,16 +239,45 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [totalPaisa, tenderedAmountPaisa]);
 
   // Add Product to Cart
-  const handleAddToCart = (product: Product) => {
-    const defaultUnit = product.units.find((u) => u.isDefaultSaleUnit) || product.units[0];
-    if (!defaultUnit) {
+  const handleAddToCart = (product: PosCatalogProduct) => {
+    const existingItem = cart.find((item) => item.productId === product.id);
+    const preferredUnit = existingItem
+      ? product.units.find((unit) => unit.id === existingItem.unitId)
+      : product.units.find((unit) => unit.isDefaultSaleUnit);
+    const firstUnit = preferredUnit ?? product.units[0];
+    if (!firstUnit) {
       setSaleError('This product has no configured sale unit.');
       return;
     }
-    let targetBatch: Product['batches'][number] | undefined;
+    const unitsToTry = existingItem
+      ? [firstUnit]
+      : [
+          firstUnit,
+          ...product.units
+            .filter((unit) => unit.id !== firstUnit.id)
+            .sort((left, right) => left.conversionFactor - right.conversionFactor),
+        ];
+    let saleUnit: PosCatalogProduct['units'][number] | undefined;
+    let targetBatch: PosCatalogProduct['batches'][number] | undefined;
+    let lastAllocationError: unknown;
+    const quantity = (existingItem?.quantityInUnit ?? 0) + 1;
     try {
-      const allocation = allocateFefo(product.batches, defaultUnit.conversionFactor, localIsoDate());
-      targetBatch = product.batches.find((batch) => batch.id === allocation[0].batchId);
+      for (const unit of unitsToTry) {
+        try {
+          const allocation = allocateFefo(
+            product.batches,
+            getRequiredSmallestUnits(quantity, unit.conversionFactor),
+            localIsoDate(),
+          );
+          saleUnit = unit;
+          targetBatch = product.batches.find((batch) => batch.id === allocation[0].batchId);
+          break;
+        } catch (error) {
+          lastAllocationError = error;
+          if (existingItem) throw error;
+        }
+      }
+      if (!saleUnit) throw lastAllocationError ?? new RangeError('No sale unit can be fulfilled from current stock.');
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : 'Unable to allocate stock for this item.');
       return;
@@ -231,23 +306,42 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         batchNumber: targetBatch?.batchNumber || 'B-01',
         expiryDate: targetBatch?.expiryDate || '2027-12-31',
         drugClass: product.drugClass,
-        unitName: defaultUnit.name,
-        conversionFactor: defaultUnit.conversionFactor,
+        unitId: saleUnit.id,
+        unitName: saleUnit.name,
+        conversionFactor: saleUnit.conversionFactor,
         quantityInUnit: 1,
-        mrpPaisaPerUnit: defaultUnit.pricePerUnitPaisa,
-        costPaisaPerUnit: targetBatch?.costPricePaisa || 0,
+        mrpPaisaPerUnit: saleUnit.pricePerUnitPaisa,
+        costPaisaPerUnit: null,
         discountPercent: 0,
-        lineTotalPaisa: defaultUnit.pricePerUnitPaisa,
+        lineTotalPaisa: saleUnit.pricePerUnitPaisa,
       };
       return [...prev, newItem];
     });
   };
 
   const updateQuantity = (idx: number, delta: number) => {
+    const item = cart[idx];
+    const product = products.find((candidate) => candidate.id === item?.productId);
+    const unit = product?.units.find((candidate) => candidate.id === item.unitId);
+    if (!item || !product || !unit) {
+      setSaleError('The selected product or sale unit is no longer available. Refresh the POS catalog.');
+      return;
+    }
+    const newQty = item.quantityInUnit + delta;
+    if (newQty > 0) {
+      try {
+        allocateFefo(
+          product.batches,
+          getRequiredSmallestUnits(newQty, unit.conversionFactor),
+          localIsoDate(),
+        );
+      } catch (error) {
+        setSaleError(error instanceof Error ? error.message : 'Unable to allocate stock for this item.');
+        return;
+      }
+    }
     setCart((prev) => {
       const copy = [...prev];
-      const item = copy[idx];
-      const newQty = item.quantityInUnit + delta;
       if (newQty <= 0) return copy.filter((_, i) => i !== idx);
       copy[idx] = {
         ...item,
@@ -256,13 +350,46 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       };
       return copy;
     });
+    setSaleError('');
+  };
+
+  const changeCartUnit = (idx: number, unitId: string) => {
+    const item = cart[idx];
+    const product = products.find((candidate) => candidate.id === item?.productId);
+    const unit = product?.units.find((candidate) => candidate.id === unitId);
+    if (!item || !product || !unit) {
+      setSaleError('The selected sale unit is unavailable. Refresh the POS catalog.');
+      return;
+    }
+    try {
+      allocateFefo(
+        product.batches,
+        getRequiredSmallestUnits(item.quantityInUnit, unit.conversionFactor),
+        localIsoDate(),
+      );
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : 'Unable to allocate stock for this sale unit.');
+      return;
+    }
+
+    setCart((prev) => prev.map((current, currentIndex) => currentIndex === idx
+      ? {
+          ...current,
+          unitId: unit.id,
+          unitName: unit.name,
+          conversionFactor: unit.conversionFactor,
+          mrpPaisaPerUnit: unit.pricePerUnitPaisa,
+          lineTotalPaisa: current.quantityInUnit * unit.pricePerUnitPaisa,
+        }
+      : current));
+    setSaleError('');
   };
 
   const filteredProducts = products.filter((p) => {
     const matchSearch =
       p.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.genericName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode.includes(searchQuery) ||
+      (p.barcode?.includes(searchQuery) ?? false) ||
       p.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchCat = selectedCategory === 'ALL' || p.category === selectedCategory;
     const matchBrand = selectedBrand === 'ALL' || p.company === selectedBrand;
@@ -318,6 +445,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   };
 
   const handleCompleteSale = () => {
+    if (isPostingSale) return;
     if (cart.length === 0) return;
     const finalDiscount = computeDiscount({
       billPaisa: subtotalPaisa,
@@ -344,7 +472,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         if (!product) throw new RangeError(`Product ${item.productName} is no longer available.`);
         const batchAllocations = allocateFefo(
           product.batches,
-          item.quantityInUnit * item.conversionFactor,
+          getRequiredSmallestUnits(item.quantityInUnit, item.conversionFactor),
           localIsoDate()
         );
         const firstBatch = product.batches.find((batch) => batch.id === batchAllocations[0].batchId);
@@ -364,52 +492,78 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
     setSaleError('');
     const customer = customers.find((c) => c.id === selectedCustomerId);
-    const sale: CompletedSale = {
-      id: `sale-${Date.now()}`,
-      invoiceNumber: `INV-${Math.floor(1000000 + Math.random() * 9000000)}`,
-      timestamp: new Intl.DateTimeFormat('en-GB', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-      }).format(new Date()),
-      cashierName: currentUserName,
-      customerName: customer ? customer.name : walkInName,
-      customerPhone: customer?.phone || '0300-1234567',
-      items,
-      subtotalPaisa,
+    const splitCashPaisa = Math.round(splitCashPaymentPKR * 100);
+    let payments: PostSaleInput['payments'];
+    let tenderedPaisa: number;
+    if (paymentMethod === 'CREDIT') {
+      if (!customer) {
+        setSaleError('Select a registered customer before making a credit sale.');
+        return;
+      }
+      payments = [{ paymentMethod: PaymentMethod.CREDIT, amountPaisa: totalPaisa }];
+      tenderedPaisa = 0;
+    } else if (paymentMethod === 'ONLINE') {
+      payments = [{ paymentMethod: PaymentMethod.EASYPAISA, amountPaisa: totalPaisa }];
+      tenderedPaisa = totalPaisa;
+    } else if (paymentMethod === 'SPLIT') {
+      if (splitCashPaisa <= 0 || splitCashPaisa >= totalPaisa) {
+        setSaleError('A split payment needs a positive cash amount and a positive online amount.');
+        return;
+      }
+      payments = [
+        { paymentMethod: PaymentMethod.CASH, amountPaisa: splitCashPaisa },
+        { paymentMethod: PaymentMethod.EASYPAISA, amountPaisa: totalPaisa - splitCashPaisa },
+      ];
+      tenderedPaisa = totalPaisa;
+    } else {
+      tenderedPaisa = tenderedAmountPaisa || totalPaisa;
+      if (tenderedPaisa < totalPaisa) {
+        setSaleError('Tendered cash cannot be less than the bill total.');
+        return;
+      }
+      payments = [{ paymentMethod: PaymentMethod.CASH, amountPaisa: totalPaisa }];
+    }
+
+    const saleItems: PostSaleInput['items'] = [];
+    for (const item of items) {
+      if (!item.unitId) {
+        setSaleError(`Choose a configured sale unit for ${item.productName}.`);
+        return;
+      }
+      saleItems.push({
+        medicineId: item.productId,
+        unitId: item.unitId,
+        quantityInUnit: item.quantityInUnit,
+      });
+    }
+    const saleInput: PostSaleInput = {
+      customerId: customer?.id ?? null,
+      customerName: customer?.name ?? walkInName,
+      items: saleItems,
       discountPaisa,
-      totalPaisa,
       roundingPaisa,
-      paymentMethod:
-        paymentMethod === 'ONLINE'
-          ? PaymentMethod.EASYPAISA
-          : paymentMethod === 'CREDIT'
-          ? PaymentMethod.CREDIT
-          : PaymentMethod.CASH,
-      amountTenderedPaisa:
-        paymentMethod === 'CASH'
-          ? (tenderedAmountPaisa || totalPaisa)
-          : totalPaisa,
-      changePaisa: changeDuePaisa,
+      tenderedPaisa,
+      payments,
     };
 
-    onSaleComplete(sale);
-    setShowCheckoutModal(false);
-    setSaleCompleteModal(sale);
-    if (memoSettings.autoPrint) {
-      if (canPrintReceipt(currentRole, permissions, 'sale')) {
-        window.setTimeout(() => { void printSaleReceipt(sale, true); }, 0);
-      } else {
-        setPrintNotice('Auto-print is disabled for this account. Use Request print to ask an admin.');
+    setIsPostingSale(true);
+    void postSale(saleInput).then((sale) => {
+      onSaleComplete(sale);
+      setShowCheckoutModal(false);
+      setSaleCompleteModal(sale);
+      if (memoSettings.autoPrint) {
+        if (canPrintReceipt(currentRole, permissions, 'sale')) {
+          window.setTimeout(() => { void printSaleReceipt(sale, true); }, 0);
+        } else {
+          setPrintNotice('Auto-print is disabled for this account. Use Request print to ask an admin.');
+        }
       }
-    }
-    setCart([]);
-    setDiscount({ mode: 'percent', value: '' });
-    setTenderedAmountPKR(0);
+      setCart([]);
+      setDiscount({ mode: 'percent', value: '' });
+      setTenderedAmountPKR(0);
+    }).catch((error: unknown) => {
+      setSaleError(error instanceof Error ? error.message : 'Could not complete the sale.');
+    }).finally(() => setIsPostingSale(false));
   };
 
   return (
@@ -481,6 +635,18 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left 7 Cols: Product Catalog & Fast Search */}
         <div className="lg:col-span-7 space-y-3">
+          {catalogError && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+              <span>{catalogError}</span>
+              <button
+                type="button"
+                onClick={() => setCatalogRetry((retry) => retry + 1)}
+                className="shrink-0 rounded-lg border border-red-300 bg-white px-2.5 py-1 font-bold text-red-800"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {/* Search Bar & Filters (Matching Screenshot 7) */}
           <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
@@ -567,6 +733,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
           {/* Product Chips Grid (Matching Screenshot 7) */}
           <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[580px] overflow-y-auto pr-1">
+            {catalogLoading && products.length === 0 && (
+              <div role="status" className="col-span-full rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                Loading live product catalog...
+              </div>
+            )}
             {filteredProducts.map((p) => {
               const defaultUnit = p.units.find((u) => u.isDefaultSaleUnit) || p.units[0];
               const totalStock = p.batches.reduce((sum, b) => sum + b.quantitySmallestUnit, 0);
@@ -581,6 +752,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     <span className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition block truncate">
                       {p.brandName}
                     </span>
+                    {p.strength && (
+                      <span className="text-[10px] text-slate-500 block truncate">{p.strength}</span>
+                    )}
                     <span className="text-[10px] text-slate-500 block truncate">
                       {p.genericName} • {p.company}
                     </span>
@@ -602,6 +776,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </button>
               );
             })}
+            {!catalogLoading && !catalogError && filteredProducts.length === 0 && (
+              <div className="col-span-full rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                {products.length === 0 ? 'No sellable products are available.' : 'No products match your search.'}
+              </div>
+            )}
           </div>
         </div>
 
@@ -652,6 +831,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   Quick
                 </button>
               </div>
+              <SaleReturnsPanel
+                canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
+                  && permissions.includes('sales_history')}
+                canRestock={permissions.includes('stock_inventory')}
+              />
             </div>
 
             {/* Customer Select Row (Matching Screenshot 7) */}
@@ -697,8 +881,24 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     <div className="flex-1 pr-2 truncate">
                       <div className="font-bold text-slate-900 truncate">{item.productName}</div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        Rs. {(item.mrpPaisaPerUnit / 100).toFixed(0)} × {item.quantityInUnit}
+                        Rs. {(item.mrpPaisaPerUnit / 100).toFixed(0)} × {item.quantityInUnit} · {item.unitName}
                       </div>
+                      {products.find((product) => product.id === item.productId)?.units.length ? (
+                        <label className="mt-1 block max-w-44">
+                          <span className="sr-only">Sale unit for {item.productName}</span>
+                          <select
+                            value={item.unitId ?? ''}
+                            onChange={(event) => changeCartUnit(idx, event.target.value)}
+                            className="w-full rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            {products.find((product) => product.id === item.productId)?.units.map((unit) => (
+                              <option key={unit.id} value={unit.id}>
+                                {unit.name} · {unit.conversionFactor} base units · Rs. {(unit.pricePerUnitPaisa / 100).toFixed(2)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -742,7 +942,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             {/* Subtotal & Quick Discount Row */}
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-slate-600 font-medium">
-                Subtotal ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)} pcs):{' '}
+                Subtotal ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)} sale units):{' '}
                 <strong className="text-slate-900 font-mono">Rs. {subtotalPKR.toFixed(0)}</strong>
               </span>
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
@@ -811,37 +1011,44 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             </div>
 
             {/* Tendered Cash & Quick Cash Pills (Matching Screenshot 62) */}
-            <div className="flex items-center gap-1.5 text-xs flex-wrap">
-              <div className="flex items-center gap-1 flex-1">
-                <span className="text-[11px] font-semibold text-slate-600">Tendered:</span>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={tenderedAmountPKR || ''}
-                  onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
-                  className="w-20 px-2 py-1 text-xs border border-slate-300 rounded font-mono font-bold"
-                />
-                <button
-                  onClick={() => setTenderedAmountPKR(totalPKR)}
-                  className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded"
-                >
-                  Exact
-                </button>
-              </div>
-
-              {/* Quick cash pills */}
-              <div className="flex items-center gap-1 text-[10px]">
-                {[50, 100, 500, 1000, 5000].map((amt) => (
+            {paymentMethod === 'CASH' && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <div className="flex flex-1 items-center gap-1">
+                  <span className="text-[11px] font-semibold text-muted">Tendered:</span>
+                  <input
+                    type="number"
+                    min={totalPKR}
+                    step="0.01"
+                    placeholder="0"
+                    value={tenderedAmountPKR || ''}
+                    onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
+                    className="w-20 rounded-control border border-border bg-surface px-2 py-1 font-mono text-xs font-bold text-text"
+                  />
                   <button
-                    key={amt}
-                    onClick={() => setTenderedAmountPKR(amt)}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200"
+                    type="button"
+                    onClick={() => setTenderedAmountPKR(totalPKR)}
+                    className="rounded-control bg-primary px-2 py-1 text-[10px] font-bold text-white"
                   >
-                    Rs.{amt}
+                    Exact
                   </button>
-                ))}
+                </div>
+                <div className="flex items-center gap-1 text-[10px]">
+                  {[50, 100, 500, 1000, 5000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setTenderedAmountPKR(amt)}
+                      className="rounded-control border border-border bg-surface px-1.5 py-0.5 font-semibold text-text hover:bg-surface-muted"
+                    >
+                      Rs.{amt}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            {paymentMethod === 'SPLIT' && (
+              <p className="text-xs text-muted">Set cash and online amounts in the checkout window.</p>
+            )}
 
             {/* Change Due Banner (Wapis Karein) (Matching Screenshot 10, 62) */}
             {changeDuePKR > 0 && (
@@ -859,7 +1066,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             {/* Payment Methods Chips (Matching Screenshot 61) */}
             <div className="pos-payment-methods grid grid-cols-4 gap-1.5 text-xs pt-1">
               <button
-                onClick={() => setPaymentMethod('CASH')}
+                onClick={() => selectPaymentMethod('CASH')}
                 aria-pressed={paymentMethod === 'CASH'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'CASH'
@@ -870,7 +1077,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 Cash
               </button>
               <button
-                onClick={() => setPaymentMethod('ONLINE')}
+                onClick={() => selectPaymentMethod('ONLINE')}
                 aria-pressed={paymentMethod === 'ONLINE'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'ONLINE'
@@ -881,7 +1088,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 Online
               </button>
               <button
-                onClick={() => setPaymentMethod('CREDIT')}
+                onClick={() => selectPaymentMethod('CREDIT')}
                 aria-pressed={paymentMethod === 'CREDIT'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'CREDIT'
@@ -892,7 +1099,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 Credit
               </button>
               <button
-                onClick={() => setPaymentMethod('SPLIT')}
+                onClick={() => selectPaymentMethod('SPLIT')}
                 aria-pressed={paymentMethod === 'SPLIT'}
                 className={`py-1 rounded-lg border font-bold text-[11px] transition ${
                   paymentMethod === 'SPLIT'
@@ -966,7 +1173,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 onChange={handleDiscountChange}
               />
 
-              <div className="order-2">
+              {paymentMethod === 'CASH' && <div className="order-2">
                 <div className="flex justify-between font-bold text-slate-700 mb-1">
                   <span>RECEIVED / TENDERED AMOUNT</span>
                   <span className="font-mono">Bill: Rs. {totalPKR.toFixed(2)}</span>
@@ -979,10 +1186,30 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
                   className="w-full px-3 py-2 text-base font-black font-mono border-2 border-blue-500 rounded-xl focus:outline-none"
                 />
-              </div>
+              </div>}
+              {paymentMethod === 'SPLIT' && (
+                <div className="order-2 grid grid-cols-1 gap-3 rounded-control border border-border bg-surface-muted p-3 sm:grid-cols-2">
+                  <label className="text-sm font-semibold text-text">
+                    Cash portion (Rs)
+                    <input
+                      type="number"
+                      min="0.01"
+                      max={Math.max(0, totalPKR - 0.01)}
+                      step="0.01"
+                      value={splitCashPaymentPKR || ''}
+                      onChange={(event) => setSplitCashPaymentPKR(Number(event.target.value))}
+                      className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 font-mono text-text"
+                    />
+                  </label>
+                  <p className="self-end text-sm text-text">
+                    Online portion: Rs. {(Math.max(0, totalPaisa - Math.round(splitCashPaymentPKR * 100)) / 100).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted sm:col-span-2">Both amounts must be greater than zero. Split payments record exact cash and online portions.</p>
+                </div>
+              )}
 
               {/* Quick Cash pills */}
-              <div className="order-3 flex items-center gap-1.5 flex-wrap">
+              {paymentMethod === 'CASH' && <div className="order-3 flex items-center gap-1.5 flex-wrap">
                 <button
                   onClick={() => setTenderedAmountPKR(totalPKR)}
                   className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 text-white rounded-lg"
@@ -998,7 +1225,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     Rs. {amt}
                   </button>
                 ))}
-              </div>
+              </div>}
 
               {/* Change Banner */}
               {discountPaisa > 0 && (
@@ -1027,7 +1254,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     <button
                       key={m}
                       type="button"
-                      onClick={() => setPaymentMethod(m)}
+                      onClick={() => selectPaymentMethod(m)}
                       className={`py-1.5 rounded-lg border font-bold text-[11px] ${
                         paymentMethod === m
                           ? 'bg-blue-600 text-white border-blue-700'
@@ -1049,9 +1276,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </button>
                 <button
                   onClick={handleCompleteSale}
-                  className="flex-1 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition"
+                  disabled={isPostingSale}
+                  className="flex-1 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition disabled:opacity-60"
                 >
-                  ✓ Complete Sale (Rs. {totalPKR.toFixed(2)})
+                  {isPostingSale ? 'Saving sale…' : `✓ Complete Sale (Rs. ${totalPKR.toFixed(2)})`}
                 </button>
               </div>
             </div>

@@ -11,16 +11,23 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
   const canSeeProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
 
   const totalRevenuePaisa = sales.reduce((sum, s) => sum + s.totalPaisa, 0);
-  const totalCostPaisa = canSeeProfit ? sales.reduce((sum, s) => {
-    return (
-      sum +
-      s.items.reduce((itemSum, item) => itemSum + item.costPaisaPerUnit * item.quantityInUnit, 0)
-    );
-  }, 0) : 0;
+  const hasCompleteSaleCosts = sales.every((sale) =>
+    sale.items.every((item) => item.costPaisaPerUnit !== null)
+  );
+  const totalCostPaisa = canSeeProfit && hasCompleteSaleCosts
+    ? sales.reduce((sum, sale) =>
+        sum + sale.items.reduce(
+          (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
+          0,
+        ), 0)
+    : null;
 
-  const grossProfitPaisa = totalRevenuePaisa - totalCostPaisa;
-  const grossMarginPercent =
-    totalRevenuePaisa > 0 ? ((grossProfitPaisa / totalRevenuePaisa) * 100).toFixed(1) : '0.0';
+  const grossProfitPaisa = totalCostPaisa === null ? null : totalRevenuePaisa - totalCostPaisa;
+  const grossMarginPercent = grossProfitPaisa === null
+    ? null
+    : totalRevenuePaisa > 0
+      ? ((grossProfitPaisa / totalRevenuePaisa) * 100).toFixed(1)
+      : '0.0';
   const isCashier = currentRole === UserRole.CASHIER;
 
   return (
@@ -59,7 +66,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
             <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
               <span className="text-xs font-semibold text-emerald-700">Gross Profit (Paisa)</span>
               <div className="report-stat-value text-2xl font-bold font-mono text-emerald-700 mt-1">
-                Rs {(grossProfitPaisa / 100).toFixed(2)}
+                {grossProfitPaisa === null ? 'Unavailable' : `Rs ${(grossProfitPaisa / 100).toFixed(2)}`}
               </div>
               <span className="text-[11px] text-emerald-600">Revenue minus COGS</span>
             </div>
@@ -67,7 +74,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
             <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
               <span className="text-xs font-semibold text-emerald-700">Gross Margin %</span>
               <div className="report-stat-value text-2xl font-bold font-mono text-emerald-800 mt-1">
-                {grossMarginPercent}%
+                {grossMarginPercent === null ? 'Unavailable' : `${grossMarginPercent}%`}
               </div>
               <span className="text-[11px] text-emerald-600">Profit percentage</span>
             </div>

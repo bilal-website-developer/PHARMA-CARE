@@ -475,7 +475,9 @@ export const POSScreen: React.FC<POSScreenProps> = ({
                       <span>• Batch: {item.batchNumber}</span>
                       {currentRole !== UserRole.CASHIER && (
                         <span className="text-[10px] text-emerald-600">
-                          (Cost: Rs {(item.costPaisaPerUnit / 100).toFixed(0)})
+                          {item.costPaisaPerUnit === null
+                            ? '(Cost unavailable)'
+                            : `(Cost: Rs ${(item.costPaisaPerUnit / 100).toFixed(0)})`}
                         </span>
                       )}
                     </div>

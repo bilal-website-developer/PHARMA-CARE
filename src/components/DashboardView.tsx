@@ -66,13 +66,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .filter((s) => s.paymentMethod === 'CREDIT')
       .reduce((sum, s) => sum + s.totalPaisa, 0) / 100;
 
-  const todayProfitPKR = canViewProfit
+  const todayProfitPKR = canViewProfit && todaySales.every((sale) =>
+    sale.items.every((item) => item.costPaisaPerUnit !== null)
+  )
     ? todaySales.reduce(
         (sum, sale) =>
           sum +
           sale.totalPaisa -
           sale.items.reduce(
-            (itemSum, item) => itemSum + item.costPaisaPerUnit * item.quantityInUnit,
+            (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
             0
           ),
         0
@@ -174,7 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             {canViewProfit ? (
               <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
-                Rs. {todayProfitPKR?.toFixed(0)}
+                {todayProfitPKR === null ? 'Unavailable' : `Rs. ${todayProfitPKR.toFixed(0)}`}
               </span>
             ) : (
               <span className="text-sm font-bold text-slate-700 flex items-center gap-1">

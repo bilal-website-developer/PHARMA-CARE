@@ -67,7 +67,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Stock alerts use sellable stock from positive, unexpired (`expiry_date >= current_date`), `ACTIVE`/`NEAR_EXPIRY` batches for active medicines. Alert low/out counts require `min_stock_alert > 0`; the alert RPC returns no cost, MRP, supplier, or cost-derived value and is available to every active, non-deleted profile regardless of module permission. The existing Products `out_of_stock` KPI does not apply the positive-reorder-threshold condition, so its count may exceed alert out counts. The migration is pending manual application.
 - Cost and profit/margin are internal data, not Pharmacy Memo print fields. Receipt rendering displays sale amounts/totals and is styled black on white. Do not add cost, purchase price, profit, or margin to customer-facing slips.
 - Cost-bearing base tables stay inaccessible to `anon` and `authenticated`; read cost only through permission-checked RPCs. Do not grant direct `SELECT` on `stock_batches`, because its RLS read policy includes `pos` and exposes all selectable columns to Cashier.
-- Pharmacy Memo supports 58mm and 80mm thermal layouts (and A4); black text on white background. Return/payment memo rendering exists, but an end-to-end return workflow is not established.
+- Pharmacy Memo supports 58mm and 80mm thermal layouts (and A4); black text on white background. Return/payment memo rendering exists. A source-level sale-return request/review workflow is wired in POS; live end-to-end behavior remains unverified.
+- Implemented return policy in the unapplied/unverified client and SQL workflow: only sealed, intact, same-sale-batch units with at least the configured shelf-life threshold, within the configured return window, and not refrigerated, controlled, or narcotic may be restocked; a Manager/Admin must approve, with `sales_history` and `stock_inventory` required for restock. Cashiers with POS may request returns but cannot approve. Other dispositions are `QUARANTINE` or `WRITE_OFF` without increasing sellable stock. Refunds use original line totals in integer paisa; credit-sale returns update customer credit/ledger. Cumulative returns cannot exceed quantity sold; multiple partial-return transactions are allowed.
 - Invoice, memo, and purchase numbers are planned to be sequential and unique per shop. Gap-free numbering is not promised unless concurrency, rollback, retry, and failure tests prove it. Current checkout does not establish persisted server-side invoice/memo allocators; enforcement remains unknown.
 
 ## Conventions and decisions
@@ -77,13 +78,16 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Keep client-facing cost fields nullable/redacted by the server when visibility is denied; never turn unknown cost into zero in UI.
 - Date: 2026-10-10 — Inventory lists, statistics, movements, adjustments, and write-offs use stock RPCs to keep paging/filtering and mutations server-side.
 - Date: 2026-10-10 — Product data uses server-side list/stat/import RPCs; cost visibility is decided server-side rather than trusted to client hiding.
-- Date: 2026-10-13 — Stock alerts are server-counted, visible to every active signed-in profile, and never include cost-bearing fields. Navigation is permission-gated in the header; seen alert keys are per-user and browser-local.
+- Date: 2026-10-13 — Stock alerts are server-counted, visible to every active signed-in profile, and never include cost-bearing fields. Navigation is permission-gated in the header; seen alert keys are per-user and browser-local. Owner reports the `stock_alerts_summary(integer)` RPC metadata is verified: `SECURITY DEFINER`, `search_path=public`, anon execute false, authenticated execute true.
+- Date: 2026-10-13 — Owner reports the corrected `20261013160000_persist_sales_and_returns.sql` migration applied. Owner-shared metadata query verified `SECURITY DEFINER`, `search_path=public`, `anon EXECUTE=false`, and `authenticated EXECUTE=true` for its 13 RPCs and `pos_catalog()`. End-to-end behavior remains unverified. Return totals are capped cumulatively at the sold quantity; multiple partial-return transactions remain possible.
 - Date: 2026-10-12 — Cost access is role-and-permission scoped by `can_view_cost()`; Cashier is always denied, Accountants are read-only, and Manager access requires a relevant module permission. The migration is pending application.
 - Date: 2026-10-09 — Pharmacy Memo uses a shared sanitized renderer for 58mm/80mm and A4; template and paper preferences remain browser-local because shared settings storage is not implemented.
 
 ## Current status
 
-- **Added; migration pending:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; not applied by the assistant.
+- **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing.
+- **Verified in history:** The low-stock alert feature is committed as `da7ed5d` on `feature/low-stock-alerts`; it is present in that commit, not missing from the repository history.
+- **Fixed in `b62b547`:** Product-controlled label text is HTML-escaped in generated print markup using the shared receipt helper; hostile markup and quoted attribute payloads are covered by tests. The existing receipt/memo rendering behavior is unchanged.
 - **Done:** Phase 1 barcode validation and server-side generation work for `medicines.barcode`: reusable EAN-13 validation helpers, barcode renderer error handling, and product-page bulk generation actions. The corresponding migration files are staged under `supabase/migrations/20261012180000_assign_medicine_barcodes.sql` and the companion unique-index migration.
 - **Done:** Product barcode labels now open a dedicated print dialog with size/copies/field controls and a live preview; the old raw popup path was replaced by the reusable label dialog while preserving the product-page barcode generation flow.
 - **Done:** Products and Master Data redesigns; Stock Inventory UI and server-function consumers; shared receipt renderer, POS printing, and print-request approval workflow. The owner reported Phase 4a migrations were run and verified. `docs/REDESIGN_PROGRESS.md` still labels Phase 4 pending; the newer source and owner report supersede that stale status.
@@ -91,7 +95,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. The role-and-permission-scoped `can_view_cost()` migration is local and awaits application.
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
-- **Done:** POS checkout uses shared amount/percentage discounts, role-based limits, and integer-paisa receipt totals; split payment remains UI-only.
+- **Implemented locally; migration and RPC ACLs owner-reported verified:** POS checkout posts sales through `post_sale`, supports server-recorded cash/online/credit/split payments, and updates customer credit state. Owner reports `20261013160000_persist_sales_and_returns.sql` applied successfully after fixing two SQL syntax errors, and shared query results verify its RPC ACL/security metadata. Runtime sale/return behavior has not yet been verified.
+- **SQL Editor corrections:** Fixed the apostrophe in the payment exception text (`customer''s`) and the missing empty-array fallback closing expression in `pending_sale_returns()`.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
 - **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, and barcode printing are present. Client package commit `818af6c` adds Edit/Print/Make actions on product rows, cards, and a product-details dialog; per-product label quantities (1–200) with a 1,000-label job cap; a scanner test dialog; and fast keyboard-scanner handling in Products search and POS. Label printing requires an assigned barcode; it no longer falls back to the product code. Missing barcode-generation RPCs show an explicit notice. This package changed no SQL/schema and applied no migration. Real scanner/printer hardware remains untested.
@@ -106,6 +111,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Current code still grants Admin roles every module and keeps Settings Admin-only; the approved staff Settings checkbox, per-shop profile, and Super Admin-only identity editing are plan-only and unimplemented. Apply only after the staging and ACL gates.
 - DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
+- Readiness: POS sales and return writes are now wired to draft RPCs in local source, but the migrations remain unapplied and database behavior is unverified. Do not treat sales, balances, or related reports as production accounting records until the migration is reviewed, deployed, and reconciled server-side. Customers, ledgers, and cash-book state also contain local/mock paths.
 - User-reported POS and low-stock pages showed an invalid/expired JWT at sign-in. Until authentication works, neither RPC can be verified against the live project. After re-authentication, POS additionally requires an active medicine with at least one sale unit and positive eligible batch stock; low-stock alerts require `min_stock_alert > 0` and sellable stock at or below that threshold (zero stock is classified as out-of-stock). Confirm migrations `20261013140000_stock_alerts_summary.sql` and `20261013150000_pos_catalog.sql` are applied before diagnosing further.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` and the updated `manage-users` Edge Function are local until migration and function deployment.
@@ -115,7 +121,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
 - Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
-- No end-to-end return workflow or Sales History reprint path; the renderer supports return memos and print-request review separately.
+- Sale-return request/review is implemented in source and the owner reports its SQL migration applied, but end-to-end sale/return behavior is not yet verified against the database. Sales History reprint is not implemented; return memo rendering and print-request review are separate.
 - Direct ESC/POS printer-driver support is not implemented; browser printing uses the browser print dialog.
 - Several screens still use mock/in-memory data; identify persistence from the current component before changing it.
 - Supplier contact insert/update/deactivation is still performed directly by the browser; consider a permission-checked RPC plan.
@@ -134,6 +140,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-13 — Fixed stored XSS in product-label printing by escaping user-controlled text/attributes with the shared HTML helper; added hostile-input tests. Full lint, test suite, and production build pass. Read-only readiness audit confirmed that POS sales/stock deduction, customer accounting, and medicine returns are not yet durable; no SQL or deployment was performed.
+- 2026-10-13 — Owner approved the medicine-return safety, refund, approval, and configurable-window policy. Design must be reviewed before implementation; durable sale posting and batch allocations are a prerequisite.
 - 2026-10-13 — Removed the POS demo product feed and added the cashier-authorized, cost-free `pos_catalog()` RPC, typed response validation, live stock-event refresh, and empty/loading/error states. Added migration and rollback files; neither has been applied and no SQL was run. POS sales remain local/in-memory.
 - 2026-10-13 — Rechecked POS/catalog and low-stock behavior after user reported products/alerts missing. `npm run lint`, `npm test` (120 tests), and `npm run build` pass. Local browser reaches the login screen, but no authenticated page/RPC smoke test was possible because the supplied screenshot shows an expired/invalid JWT. No database/demo rows were added; live migration status remains unknown.
 - 2026-10-13 — Confirmed with owner to keep expiry mandatory per received stock batch, with no database rule change. Documented that product setup itself does not need an expiry date.
@@ -179,15 +187,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-13T14:20:27.599Z
+Generated at (UTC): 2026-10-13T19:53:33.126Z
 Git branch: security/label-escaping
 
 Last 5 commit subjects:
+- Fix stored XSS in product label printing
 - feat: add header low stock alerts
 - plan for admin access
 - chore: enable stricter TypeScript checks
 - chore: remove unused imports and locals
-- docs: record barcode client UI progress
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -274,6 +282,7 @@ src/
     src/components/PurchaseHistoryView.tsx
     src/components/ReportsScreen.tsx
     src/components/RepositoryReviewView.tsx
+    src/components/returns/
     src/components/SettingsView.tsx
     src/components/Sidebar.tsx
     src/components/StockAlertBell.tsx
@@ -292,6 +301,10 @@ src/
     src/data/posCatalog.ts
     src/data/posCatalogLogic.test.ts
     src/data/posCatalogLogic.ts
+    src/data/returnLogic.test.ts
+    src/data/returnLogic.ts
+    src/data/saleReturns.ts
+    src/data/sales.ts
     src/data/stockAlertLogic.test.ts
     src/data/stockAlertLogic.ts
     src/data/stockAlerts.ts
@@ -339,6 +352,7 @@ Test files:
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
 - src/data/posCatalogLogic.test.ts
+- src/data/returnLogic.test.ts
 - src/data/stockAlertLogic.test.ts
 - src/permissions.test.ts
 - src/utils/discount.test.ts

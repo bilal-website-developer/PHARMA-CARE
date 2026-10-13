@@ -46,6 +46,7 @@ export enum PaymentMethod {
   EASYPAISA = 'EASYPAISA',
   JAZZCASH = 'JAZZCASH',
   CREDIT = 'CREDIT',
+  SPLIT = 'SPLIT',
 }
 
 export interface ProductUnit {
@@ -101,11 +102,12 @@ export interface CartItem {
   batchNumber: string;
   expiryDate: string;
   drugClass: DrugClass;
+  unitId?: string;
   unitName: string;
   conversionFactor: number;
   quantityInUnit: number;
   mrpPaisaPerUnit: number;
-  costPaisaPerUnit: number;
+  costPaisaPerUnit: number | null;
   discountPercent: number;
   lineTotalPaisa: number;
   batchAllocations?: BatchAllocation[];
@@ -118,6 +120,7 @@ export interface Customer {
   cnic?: string;
   creditLimitPaisa: number;
   currentBalancePaisa: number; // positive = customer owes money
+  storeCreditPaisa?: number;
   address?: string;
 }
 
@@ -169,6 +172,7 @@ export interface CompletedSale {
   cashierName: string;
   customerName?: string;
   customerPhone?: string;
+  customerId?: string;
   items: CartItem[];
   subtotalPaisa: number;
   discountPaisa: number;
