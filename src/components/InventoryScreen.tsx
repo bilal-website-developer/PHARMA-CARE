@@ -286,6 +286,8 @@ export function InventoryScreen({
   initialFilter = null,
   initialSearch = null,
   initialLowStockOnly = false,
+  addProductRequest = 0,
+  onAddProductRequestHandled,
   initialMedicineId = null,
   initialStockTab = 'all',
   onFilterApplied,
@@ -298,6 +300,8 @@ export function InventoryScreen({
   initialFilter?: ProductFilter;
   initialSearch?: string | null;
   initialLowStockOnly?: boolean;
+  addProductRequest?: number;
+  onAddProductRequestHandled?: (request: number) => void;
   initialMedicineId?: string | null;
   initialStockTab?: StockInitialTab;
   onFilterApplied?: () => void;
@@ -309,6 +313,8 @@ export function InventoryScreen({
       initialFilter={initialFilter}
       initialSearch={initialSearch}
       initialLowStockOnly={initialLowStockOnly}
+      addProductRequest={addProductRequest}
+      onAddProductRequestHandled={onAddProductRequestHandled}
       userId={currentUserId ?? 'unknown'}
       onFilterApplied={onFilterApplied}
       onViewBatches={onViewBatches}
@@ -324,6 +330,8 @@ function ProductsCatalog({
   initialFilter,
   initialSearch,
   initialLowStockOnly,
+  addProductRequest,
+  onAddProductRequestHandled,
   userId,
   onFilterApplied,
   onViewBatches,
@@ -331,6 +339,8 @@ function ProductsCatalog({
   initialFilter: ProductFilter;
   initialSearch: string | null;
   initialLowStockOnly: boolean;
+  addProductRequest: number;
+  onAddProductRequestHandled?: (request: number) => void;
   userId: string;
   onFilterApplied?: () => void;
   onViewBatches?: (medicineId: string) => void;
@@ -374,6 +384,7 @@ function ProductsCatalog({
   const [editing, setEditing] = useState<Medicine | null>(null);
   const [viewingMedicine, setViewingMedicine] = useState<Medicine | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const handledAddProductRequestRef = useRef(0);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<ProductFormValues>(() => initialProductForm());
@@ -972,6 +983,15 @@ function ProductsCatalog({
     setShowForm(true);
     setNotice('');
   };
+
+  useEffect(() => {
+    if (addProductRequest === 0
+      || addProductRequest <= handledAddProductRequestRef.current
+      || !canEditProducts) return;
+    handledAddProductRequestRef.current = addProductRequest;
+    openCreate();
+    onAddProductRequestHandled?.(addProductRequest);
+  }, [addProductRequest, canEditProducts, onAddProductRequestHandled]);
 
   const openEdit = (medicine: Medicine) => {
     setViewingMedicine(null);

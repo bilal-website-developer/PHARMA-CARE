@@ -275,6 +275,8 @@ function PharmacyWorkspace({
   const [activeItem, setActiveItem] = useState<NavItemKey>(
     routeToNavItem(initialPath) ?? 'dashboard'
   );
+  const [addProductRequest, setAddProductRequest] = useState(0);
+  const [handledAddProductRequest, setHandledAddProductRequest] = useState(0);
   const [isPageNotFound, setIsPageNotFound] = useState(
     initialPath !== '/' && initialPath !== '/login' && routeToNavItem(initialPath) === null
   );
@@ -695,6 +697,10 @@ function PharmacyWorkspace({
       <Sidebar
         activeItem={activeItem}
         onSelectItem={navigateTo}
+        onAddProduct={() => {
+          setAddProductRequest((request) => request + 1);
+          navigateTo('products');
+        }}
         isCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
         pendingPrintCount={pendingPrintCount}
@@ -776,6 +782,8 @@ function PharmacyWorkspace({
               initialFilter={productFilter}
               initialSearch={alertProductSearch}
               initialLowStockOnly={alertProductsLowStockOnly}
+              addProductRequest={addProductRequest > handledAddProductRequest ? addProductRequest : 0}
+              onAddProductRequestHandled={(request) => setHandledAddProductRequest((handled) => Math.max(handled, request))}
               onFilterApplied={() => setProductFilter(null)}
               onViewBatches={viewProductBatches}
             />
