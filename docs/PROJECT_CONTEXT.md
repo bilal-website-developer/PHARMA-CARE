@@ -192,15 +192,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-14T07:40:21.751Z
+Generated at (UTC): 2026-10-14T07:40:42.210Z
 Git branch: security/revoke-public-execute
 
 Last 5 commit subjects:
+- security: close public function and table grants
 - return bill
 - Fix stored XSS in product label printing
 - feat: add header low stock alerts
 - plan for admin access
-- chore: enable stricter TypeScript checks
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
