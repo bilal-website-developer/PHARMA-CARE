@@ -85,7 +85,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Current status
 
-- **Current checkout:** branch `security/label-escaping`, HEAD `a10e6ee` (`return bill`). No SQL or deployment was performed in the read-only audit; the working tree was clean before audit reports were created.
+- **Current checkout:** branch `main`, HEAD `94dcbc2` (`feat: add sidebar shortcut for product creation`), fast-forwarded from `ui/sidebar-add-product`. The accumulated local development history, including `2ndmain`, is now on `main`; SQL migrations have not been applied by this merge.
 - **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing.
 - **Verified in history:** The low-stock alert feature is committed as `da7ed5d` on `feature/low-stock-alerts`; it is present in that commit, not missing from the repository history.
 - **Fixed in `b62b547`:** Product-controlled label text is HTML-escaped in generated print markup using the shared receipt helper; hostile markup and quoted attribute payloads are covered by tests. The existing receipt/memo rendering behavior is unchanged.
@@ -141,6 +141,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-15 — Fast-forwarded `main` to the accumulated `ui/sidebar-add-product` history, which contains `2ndmain` and all other local development branches. No SQL or deployment was performed.
 - 2026-10-14 — Read-only code/database/security/logic/returns audit recorded in `docs/audit/`. Local lint, 18 test scripts (122 tests), build, and production dependency audit pass. No SQL, deployment, demo data, or application-code change was made for the audit. Key current risks: missing active-POS prescription enforcement, forward-folder rollback files, dashboard sample stock KPIs, in-memory Cash Book, and return/report settlement gaps.
 - 2026-10-14 — Clarified the return-audit count reconciliation: the earlier aggregate did not have a recoverable numbered checklist, and the only supported row-level status change is the sale-void interaction moving from PARTIAL to MISSING. Documentation only; no code, SQL, or deployment.
 - 2026-10-14 — Updated audit findings from owner-supplied live ACL/RLS output: direct return-table privileges are false with RLS enabled; anon EXECUTE is true on 16 SECURITY DEFINER functions; authenticated table grants need policy/column review. Return migration ledger status and runtime authorization remain unverified. No SQL, code, or deployment.
