@@ -35,6 +35,7 @@ import {
 import {
   readCompanyName,
   readPharmacyMemoSettings,
+  readShopProfile,
   saveCompanyName,
   savePharmacyMemoSettings,
 } from './utils/storeSettings';
@@ -697,10 +698,6 @@ function PharmacyWorkspace({
       <Sidebar
         activeItem={activeItem}
         onSelectItem={navigateTo}
-        onAddProduct={() => {
-          setAddProductRequest((request) => request + 1);
-          navigateTo('products');
-        }}
         isCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
         pendingPrintCount={pendingPrintCount}
@@ -835,7 +832,14 @@ function PharmacyWorkspace({
           )}
 
           {activeItem === 'sales-history' && (
-            <ReportsScreen sales={completedSales} currentRole={currentRole} />
+            <ReportsScreen
+              sales={completedSales}
+              currentRole={currentRole}
+              storeName={companyName}
+              address={readShopProfile().city}
+              phone={readShopProfile().phone}
+              generatedBy={currentUserName}
+            />
           )}
 
           {activeItem === 'expenses' && (
@@ -846,13 +850,18 @@ function PharmacyWorkspace({
           )}
 
           {activeItem === 'reports' && (
-            <ReportsScreen sales={completedSales} currentRole={currentRole} />
+            <ReportsScreen
+              sales={completedSales}
+              currentRole={currentRole}
+              storeName={companyName}
+              address={readShopProfile().city}
+              phone={readShopProfile().phone}
+              generatedBy={currentUserName}
+            />
           )}
 
           {activeItem === 'settings' && (
             <SettingsView
-              sales={completedSales}
-              currentUserName={currentUserName}
               activeTemplate={billingPreferences.template}
               canEditBilling={isAdminRole(currentRole)}
               onTemplateChange={(template: BillingTemplate) =>

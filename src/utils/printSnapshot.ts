@@ -23,6 +23,8 @@ export type PrintSnapshot = {
     | 'printTax'
     | 'duplicateLabel'
     | 'numberDigits'
+    | 'logoUrl'
+    | 'printLogo'
   >;
   format: ReceiptFormat;
   template: BillingTemplate;
@@ -155,6 +157,8 @@ export function parsePrintSnapshot(value: unknown): PrintSnapshot {
       printTax: settings.printTax,
       duplicateLabel: settings.duplicateLabel,
       numberDigits,
+      logoUrl: typeof settings.logoUrl === 'string' ? settings.logoUrl : '',
+      printLogo: typeof settings.printLogo === 'boolean' ? settings.printLogo : true,
     },
     format: value.format as ReceiptFormat,
     template: value.template as BillingTemplate,

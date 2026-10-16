@@ -19,8 +19,7 @@ import {
   withReceiptTheme,
 } from '../utils/receipt';
 import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
-import { CompletedSale } from '../types/pharmacy';
-import { PrintSalesReport } from './PrintSalesReport';
+import { readShopLogo, saveShopLogo } from '../utils/storeSettings';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
 const DEFAULT_DEBT_TEMPLATE =
@@ -31,14 +30,17 @@ interface SavedShopProfile {
   city: string;
   urduFooter: string;
   debtTemplate: string;
+  logoUrl?: string;
 }
 
 function readSavedShopProfile(): SavedShopProfile {
+  const fallbackLogo = readShopLogo();
   const defaults = {
     phone: '',
     city: '',
     urduFooter: 'شکریہ! دوبارہ تشریف لائیں',
     debtTemplate: DEFAULT_DEBT_TEMPLATE,
+    logoUrl: fallbackLogo,
   };
   try {
     const saved = globalThis.localStorage?.getItem(SETTINGS_STORAGE_KEY);
@@ -51,6 +53,7 @@ function readSavedShopProfile(): SavedShopProfile {
       city: typeof values.city === 'string' ? values.city : defaults.city,
       urduFooter: typeof values.urduFooter === 'string' ? values.urduFooter : defaults.urduFooter,
       debtTemplate: typeof values.debtTemplate === 'string' ? values.debtTemplate : defaults.debtTemplate,
+      logoUrl: typeof values.logoUrl === 'string' ? values.logoUrl : fallbackLogo,
     };
   } catch {
     return defaults;
@@ -58,8 +61,6 @@ function readSavedShopProfile(): SavedShopProfile {
 }
 
 interface SettingsViewProps {
-  sales: CompletedSale[];
-  currentUserName: string;
   companyName: string;
   onSaveCompanyName: (companyName: string) => boolean;
   activeTemplate: BillingTemplate;
@@ -74,8 +75,6 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
-  sales,
-  currentUserName,
   companyName,
   onSaveCompanyName,
   activeTemplate,
@@ -94,15 +93,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [city, setCity] = useState(savedShopProfile.city);
   const [urduFooter, setUrduFooter] = useState(savedShopProfile.urduFooter);
   const [debtTemplate, setDebtTemplate] = useState(savedShopProfile.debtTemplate);
+  const [logoUrl, setLogoUrl] = useState<string>(() => savedShopProfile.logoUrl || readShopLogo());
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert('Logo file must be smaller than 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === 'string') {
+        setLogoUrl(result);
+        setMemoSettings((current) => ({ ...current, logoUrl: result }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoUrl('');
+    setMemoSettings((current) => ({ ...current, logoUrl: '' }));
+  };
+
   const memoPreview = useMemo(() => {
     try {
       return {
         html: withReceiptTheme(renderPharmacyMemo(
           { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
-          { ...memoSettings, storeName: memoSettings.storeName || shopName },
+          {
+            ...memoSettings,
+            storeName: memoSettings.storeName || shopName,
+            logoUrl,
+            printLogo: memoSettings.printLogo !== false,
+          },
           memoFormat
         )),
         warning: '',
@@ -117,6 +146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           customerName: 'احمد',
           paymentMode: 'CASH',
           status: 'PAID',
+          logoUrl,
           items: PHARMACY_MEMO_TEST_FIXTURE.lines.map((line) => ({
             name: line.name,
             batchNo: line.batch ?? '',
@@ -139,7 +169,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       };
     }
   },
-    [memoFormat, memoSettings, shopName]
+    [memoFormat, memoSettings, shopName, logoUrl]
   );
 
   const handleSave = (e: React.FormEvent) => {
@@ -150,17 +180,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         city,
         urduFooter,
         debtTemplate,
+        logoUrl: canEditBilling ? logoUrl : savedShopProfile.logoUrl,
       }));
+      if (canEditBilling) {
+        saveShopLogo(logoUrl);
+      }
     } catch {
       window.alert('Contact phone, location, invoice footer, and reminder template could not be saved in this browser.');
       return;
     }
-    if (!onSaveCompanyName(shopName)) {
+    if (canEditBilling && !onSaveCompanyName(shopName)) {
       setSavedSuccess(false);
       window.alert('Contact phone, location, invoice footer, and reminder template were saved, but the shop name could not be saved.');
       return;
     }
-    if (!onMemoSettingsChange({ ...memoSettings, storeName: memoSettings.storeName.trim() || shopName })) {
+    if (!onMemoSettingsChange({
+      ...memoSettings,
+      storeName: canEditBilling ? (memoSettings.storeName.trim() || shopName) : memoSettings.storeName,
+      logoUrl: canEditBilling ? logoUrl : memoSettings.logoUrl,
+      printLogo: memoSettings.printLogo !== false,
+    })) {
       window.alert('Shop details were saved, but Pharmacy Memo settings could not be saved. Check the required fields and browser storage.');
       return;
     }
@@ -181,16 +220,79 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="space-y-3 text-xs">
           <div>
-            <label className="mb-1 block font-semibold text-text">Store / Shop Name</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-semibold text-text">Store / Shop Name</label>
+              {!canEditBilling && (
+                <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                  Admin Only
+                </span>
+              )}
+            </div>
             <input
               type="text"
               value={shopName}
+              disabled={!canEditBilling}
               onChange={(e) => setShopName(e.target.value)}
-              className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
+              className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:opacity-60 disabled:cursor-not-allowed"
             />
+            {!canEditBilling && (
+              <p className="mt-1 text-[11px] text-muted">Only Admin and Super Admin can edit the shop name.</p>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Shop Logo upload */}
+          <div className="pt-1">
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-semibold text-text">Shop Logo</label>
+              {!canEditBilling && (
+                <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                  Admin Only
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex h-16 w-32 items-center justify-center rounded-lg border border-dashed border-border bg-surface p-1">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Shop Logo Preview" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <span className="text-[10px] text-muted">No custom logo</span>
+                )}
+              </div>
+              {canEditBilling ? (
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-control border border-border bg-white px-3 py-1.5 text-xs font-semibold text-text hover:bg-surface">
+                      <span>{logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
+                    </label>
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="rounded-control border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        Remove Logo
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Supports PNG, JPG, SVG, WebP (max 2MB). Appears in the top header and on printed slips.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted">
+                  Only Admin and Super Admin can upload or change the shop logo.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
               <label className="mb-1 block font-semibold text-text">Contact Phone</label>
               <input
@@ -366,13 +468,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {[
+              ['printLogo', 'Print shop logo on slips'],
               ['showBatchExpiry', 'Print batch and expiry'],
               ['printTax', 'Print sales tax row'],
               ['duplicateLabel', 'Label reprints as DUPLICATE'],
               ['autoPrint', 'Auto-print after completing a sale'],
             ].map(([key, label]) => (
               <label key={key} className="flex items-center gap-2 text-xs font-semibold text-text">
-                <input type="checkbox" checked={memoSettings[key as keyof PharmacyMemoSettings] as boolean} onChange={(event) => setMemoSettings({ ...memoSettings, [key]: event.target.checked })} className="accent-[var(--primary)]" />
+                <input
+                  type="checkbox"
+                  checked={Boolean(key === 'printLogo' ? memoSettings.printLogo !== false : memoSettings[key as keyof PharmacyMemoSettings])}
+                  onChange={(event) => setMemoSettings({ ...memoSettings, [key]: event.target.checked })}
+                  className="accent-[var(--primary)]"
+                />
                 {label}
               </label>
             ))}
@@ -400,10 +508,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {memoPreviewOpen ? 'Hide live preview' : 'Show live preview'}
           </button>
           <button type="button" disabled={!canEditBilling} onClick={() => {
-            if (!onMemoSettingsChange({ ...memoSettings, storeName: memoSettings.storeName.trim() || shopName })) {
+            if (!onMemoSettingsChange({
+              ...memoSettings,
+              storeName: memoSettings.storeName.trim() || shopName,
+              logoUrl,
+              printLogo: memoSettings.printLogo !== false,
+            })) {
               window.alert('Could not save Pharmacy Memo settings. Check that the store name, terminal, notes, and digit count are valid.');
               return;
             }
+            saveShopLogo(logoUrl);
             setSavedSuccess(true);
             setTimeout(() => setSavedSuccess(false), 2500);
           }} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
@@ -412,7 +526,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button type="button" onClick={() => {
             void onPrintReceipt('sale', buildPrintSnapshot(
               PHARMACY_MEMO_TEST_FIXTURE,
-              { ...memoSettings, storeName: memoSettings.storeName || shopName },
+              {
+                ...memoSettings,
+                storeName: memoSettings.storeName || shopName,
+                logoUrl,
+                printLogo: memoSettings.printLogo !== false,
+              },
               memoFormat,
               'pharmacy-memo',
             )).catch((error: unknown) => {
@@ -429,13 +548,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </>}
       </section>
 
-      <PrintSalesReport
-        sales={sales}
-        storeName={shopName}
-        address={city}
-        phone={phone}
-        generatedBy={currentUserName}
-      />
 
       {/* ── WhatsApp Messaging Templates (Matching Screenshot 51 & 52) ────── */}
       <div className="space-y-3 rounded-card border border-border bg-white p-6 shadow-xs">

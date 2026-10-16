@@ -18,6 +18,8 @@ export interface PharmacyMemoSettings {
   duplicateLabel: boolean;
   autoPrint: boolean;
   numberDigits: number;
+  logoUrl?: string;
+  printLogo?: boolean;
 }
 
 export type PharmacyMemoRenderSettings = Omit<PharmacyMemoSettings, 'autoPrint'>;
@@ -147,6 +149,8 @@ export const DEFAULT_PHARMACY_MEMO_SETTINGS: PharmacyMemoSettings = {
   duplicateLabel: true,
   autoPrint: false,
   numberDigits: 6,
+  logoUrl: '',
+  printLogo: true,
 };
 
 export const PHARMACY_MEMO_TEST_FIXTURE: MemoData = {
@@ -179,6 +183,7 @@ export interface ReceiptData {
   paymentMode: string;
   status: 'PAID' | 'CREDIT' | 'PARTIAL';
   isDuplicate?: boolean;
+  logoUrl?: string;
   items: Array<{
     name: string;
     company?: string;
@@ -275,7 +280,7 @@ const money = (paisa: number): string => {
 
 export function receiptDataFromSale(
   sale: CompletedSale,
-  store: Partial<Pick<ReceiptData, 'storeName' | 'address' | 'phone' | 'ntn' | 'footerEnglish' | 'footerUrdu'>> = {}
+  store: Partial<Pick<ReceiptData, 'storeName' | 'address' | 'phone' | 'ntn' | 'footerEnglish' | 'footerUrdu' | 'logoUrl'>> = {}
 ): ReceiptData {
   const isCredit = sale.paymentMethod === PaymentMethod.CREDIT;
   const paid = isCredit ? 0 : sale.amountTenderedPaisa;
@@ -292,6 +297,7 @@ export function receiptDataFromSale(
     customerPhone: sale.customerPhone,
     paymentMode: sale.paymentMethod,
     status: isCredit ? 'CREDIT' : balanceDue > 0 ? (paid > 0 ? 'PARTIAL' : 'CREDIT') : 'PAID',
+    logoUrl: store.logoUrl,
     items: sale.items.map((item) => ({
       name: item.productName,
       batchNo: item.batchNumber,
@@ -313,7 +319,8 @@ export function receiptDataFromSale(
 }
 
 function thermalMarkup(template: BillingTemplate, data: ReceiptData): string {
-  const header = `<header class="center"><img class="brand-logo" src="/pharma-care-512.png" alt="${escapeHtml(APP_NAME)}"><h1>${escapeHtml(data.storeName)}</h1>${data.address ? `<div>${escapeHtml(data.address)}</div>` : ''}${data.phone ? `<div>${escapeHtml(data.phone)}</div>` : ''}</header>`;
+  const logo = data.logoUrl || '/pharma-care-512.png';
+  const header = `<header class="center"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(data.storeName || APP_NAME)}"><h1>${escapeHtml(data.storeName)}</h1>${data.address ? `<div>${escapeHtml(data.address)}</div>` : ''}${data.phone ? `<div>${escapeHtml(data.phone)}</div>` : ''}</header>`;
   const meta = `<section class="meta"><strong>Invoice: ${escapeHtml(data.invoiceNo)}</strong><div>Date: ${escapeHtml(data.dateTime)}</div><div>Customer: ${escapeHtml(data.customerName)}</div><div>Cashier: ${escapeHtml(data.cashierName)}</div><div>Payment: ${escapeHtml(data.paymentMode)}</div></section>`;
   const rows = data.items.map((item) => `<div class="item"><strong>${escapeHtml(item.name)}</strong><div class="muted">Batch ${escapeHtml(item.batchNo)} · Exp ${escapeHtml(item.expiry)}</div><div class="row"><span>${item.qty} ${escapeHtml(item.unit)} × ${money(item.unitPrice)}</span><strong>${money(item.lineTotal)}</strong></div></div>`).join('');
   const items = `<section><h2>ITEMS (${data.items.length} total)</h2>${rows}</section>`;
@@ -325,10 +332,11 @@ function thermalMarkup(template: BillingTemplate, data: ReceiptData): string {
 }
 
 function a4Markup(template: BillingTemplate, data: ReceiptData): string {
+  const logo = data.logoUrl || '/pharma-care-512.png';
   const taxTitle = data.ntn ? 'TAX INVOICE' : 'INVOICE';
   const title = template === 'professional' ? taxTitle : 'INVOICE';
   const band = template === 'simple' ? '' : 'band';
-  const header = `<header class="${band}"><div class="brand-heading"><img class="brand-logo" src="/pharma-care-512.png" alt="${escapeHtml(APP_NAME)}"><div><h1>${escapeHtml(data.storeName)}</h1>${data.address ? `<div>${escapeHtml(data.address)}</div>` : ''}${data.phone ? `<div>${escapeHtml(data.phone)}</div>` : ''}</div></div><div class="invoice"><strong>${title}</strong><h2># ${escapeHtml(data.invoiceNo)}</h2><div>${escapeHtml(data.dateTime)}</div></div></header>`;
+  const header = `<header class="${band}"><div class="brand-heading"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(data.storeName || APP_NAME)}"><div><h1>${escapeHtml(data.storeName)}</h1>${data.address ? `<div>${escapeHtml(data.address)}</div>` : ''}${data.phone ? `<div>${escapeHtml(data.phone)}</div>` : ''}</div></div><div class="invoice"><strong>${title}</strong><h2># ${escapeHtml(data.invoiceNo)}</h2><div>${escapeHtml(data.dateTime)}</div></div></header>`;
   const info = `<section class="info"><div><small>BILL TO</small><strong>${escapeHtml(data.customerName)}</strong>${data.customerPhone ? `<span>${escapeHtml(data.customerPhone)}</span>` : ''}</div><div><small>CASHIER</small><strong>${escapeHtml(data.cashierName)}</strong></div><div><small>PAYMENT</small><strong>${escapeHtml(data.paymentMode)}</strong><span class="status">${data.status}</span></div></section>`;
   const rows = data.items.map((item, index) => `<tr><td>${index + 1}</td><td><strong>${escapeHtml(item.name)}</strong>${item.company ? `<small>${escapeHtml(item.company)}</small>` : ''}<em>Batch ${escapeHtml(item.batchNo)} · Exp ${escapeHtml(item.expiry)}</em></td><td>${item.qty} ${escapeHtml(item.unit)}</td><td>${money(item.unitPrice)}</td><td>${money(item.lineTotal)}</td></tr>`).join('');
   const table = `<table><thead><tr><th>#</th><th>DESCRIPTION</th><th>QTY</th><th>UNIT PRICE</th><th>TOTAL</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -418,7 +426,11 @@ export function renderPharmacyMemo(
   const phoneLine = phone
     ? phone.includes(':') ? phone : `CELL: ${phone}`
     : '';
-  const header = `<header class="store"><strong>${escapeHtml(settings.storeName)}</strong>${settings.address.trim() ? `<span>${escapeHtml(settings.address)}</span>` : ''}${phoneLine ? `<span>${escapeHtml(phoneLine)}</span>` : ''}</header>`;
+  const shouldPrintLogo = settings.printLogo !== false && Boolean(settings.logoUrl);
+  const logoMarkup = shouldPrintLogo
+    ? `<div class="memo-logo-wrap"><img class="memo-logo" src="${escapeHtml(settings.logoUrl!)}" alt="${escapeHtml(settings.storeName)}"></div>`
+    : '';
+  const header = `<header class="store">${logoMarkup}<strong>${escapeHtml(settings.storeName)}</strong>${settings.address.trim() ? `<span>${escapeHtml(settings.address)}</span>` : ''}${phoneLine ? `<span>${escapeHtml(phoneLine)}</span>` : ''}</header>`;
   const customerArea = data.customerName !== undefined
     ? `<div class="customer-name"${direction(data.customerName)}>${escapeHtml(data.customerName)}</div>`
     : `<div class="customer-blank"></div>`;
@@ -446,7 +458,7 @@ export function renderPharmacyMemo(
   const article = `<main class="memo ${isA4 ? 'a4' : ''}">${customerArea}${duplicate}${title}${header}${meta}${table}${totals}<section class="notes"><strong>Note:</strong>${notes}</section>${footer}</main>`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${data.kind === 'PAYMENT' ? 'Payment Memo' : 'Cash Memo'}</title><style>
     @font-face{font-family:'Noto Nastaliq Urdu';src:url('/fonts/noto-nastaliq-urdu-arabic.woff2') format('woff2');font-style:normal;font-weight:400;font-display:swap}
-    *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif}.memo{width:${width};padding:0;margin:0 auto;font-size:${format === 'thermal58' ? '10.5px' : '12px'};line-height:1.35;color:#000}.memo.a4{width:80mm;margin:0 auto}.customer-blank{height:9mm;border-bottom:1px solid #000;margin-bottom:2mm}.customer-name{min-height:9mm;border-bottom:1px solid #000;margin-bottom:2mm;padding-top:1mm}.urdu-text{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq','Urdu Typesetting',serif;direction:rtl;text-align:right}.memo-title{text-align:center;font-weight:bold;margin:1mm 0}.store{text-align:center;font-size:1em;margin:0 0 2mm}.store strong{display:block;text-transform:uppercase;font-size:1.4em}.store span{display:block}.meta{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #000;padding:1mm 0}.date{text-align:right}.original{padding:1mm 0}.table-head,.item{display:grid;grid-template-columns:9% minmax(0,1fr) 20% 22%;gap:1mm;align-items:start}.table-head{border:1px solid #000;padding:1mm 0;text-align:right}.table-head strong:nth-child(2){text-align:left}.item{padding:1.5mm 0;border-bottom:1px dotted #000}.qty{text-align:left}.description{overflow-wrap:anywhere}.description small{display:block;font-size:.85em}.rate,.line-total{text-align:right;overflow-wrap:anywhere}.totals{display:flex;justify-content:space-between;border-top:1px solid #000;margin-top:2mm;padding-top:1mm}.total-details{width:64%}.row{display:flex;justify-content:space-between;gap:2mm}.net{display:flex;flex-wrap:nowrap;white-space:nowrap;justify-content:space-between;gap:1mm;border:1px solid #000;padding:1.5mm;margin-top:1mm;font-size:1.05em;font-weight:bold}.net strong{white-space:nowrap}.payment{border-top:1px solid #000;border-bottom:1px solid #000;padding:3mm 0;margin:2mm 0}.payment .row{padding:1mm 0}.notes{border-top:1px solid #000;margin-top:2mm;padding-top:1mm}.notes div{margin-top:1mm;overflow-wrap:anywhere}.memo footer{display:flex;justify-content:space-between;gap:1mm;border-top:1px solid #000;margin-top:4mm;padding-top:2mm;font-size:.82em}.memo footer span{max-width:33%;overflow-wrap:anywhere}.memo footer span:nth-child(2){text-align:center}.memo footer span:last-child{text-align:right}.memo{padding-bottom:10mm}.memo.a4{padding-top:0}@page{size:${isA4 ? 'A4' : `${format === 'thermal58' ? '58mm' : '80mm'} auto`};margin:0}@media print{html,body{width:100%;margin:0}.memo{margin:0 auto;break-after:auto}.item{break-inside:avoid}.memo.a4{margin:0 auto}}
+    *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif}.memo{width:${width};padding:0;margin:0 auto;font-size:${format === 'thermal58' ? '10.5px' : '12px'};line-height:1.35;color:#000}.memo.a4{width:80mm;margin:0 auto}.customer-blank{height:9mm;border-bottom:1px solid #000;margin-bottom:2mm}.customer-name{min-height:9mm;border-bottom:1px solid #000;margin-bottom:2mm;padding-top:1mm}.urdu-text{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq','Urdu Typesetting',serif;direction:rtl;text-align:right}.memo-title{text-align:center;font-weight:bold;margin:1mm 0}.memo-logo-wrap{text-align:center;margin:0 auto 2mm}.memo-logo{max-height:16mm;max-width:45mm;object-fit:contain;margin:0 auto;display:block}.store{text-align:center;font-size:1em;margin:0 0 2mm}.store strong{display:block;text-transform:uppercase;font-size:1.4em}.store span{display:block}.meta{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #000;padding:1mm 0}.date{text-align:right}.original{padding:1mm 0}.table-head,.item{display:grid;grid-template-columns:9% minmax(0,1fr) 20% 22%;gap:1mm;align-items:start}.table-head{border:1px solid #000;padding:1mm 0;text-align:right}.table-head strong:nth-child(2){text-align:left}.item{padding:1.5mm 0;border-bottom:1px dotted #000}.qty{text-align:left}.description{overflow-wrap:anywhere}.description small{display:block;font-size:.85em}.rate,.line-total{text-align:right;overflow-wrap:anywhere}.totals{display:flex;justify-content:space-between;border-top:1px solid #000;margin-top:2mm;padding-top:1mm}.total-details{width:64%}.row{display:flex;justify-content:space-between;gap:2mm}.net{display:flex;flex-wrap:nowrap;white-space:nowrap;justify-content:space-between;gap:1mm;border:1px solid #000;padding:1.5mm;margin-top:1mm;font-size:1.05em;font-weight:bold}.net strong{white-space:nowrap}.payment{border-top:1px solid #000;border-bottom:1px solid #000;padding:3mm 0;margin:2mm 0}.payment .row{padding:1mm 0}.notes{border-top:1px solid #000;margin-top:2mm;padding-top:1mm}.notes div{margin-top:1mm;overflow-wrap:anywhere}.memo footer{display:flex;justify-content:space-between;gap:1mm;border-top:1px solid #000;margin-top:4mm;padding-top:2mm;font-size:.82em}.memo footer span{max-width:33%;overflow-wrap:anywhere}.memo footer span:nth-child(2){text-align:center}.memo footer span:last-child{text-align:right}.memo{padding-bottom:10mm}.memo.a4{padding-top:0}@page{size:${isA4 ? 'A4' : `${format === 'thermal58' ? '58mm' : '80mm'} auto`};margin:0}@media print{html,body{width:100%;margin:0}.memo{margin:0 auto;break-after:auto}.item{break-inside:avoid}.memo.a4{margin:0 auto}}
   </style></head><body>${article}</body></html>`;
 }
 

@@ -1,13 +1,18 @@
 import React from 'react';
-import { EyeOff, ShoppingBag } from 'lucide-react';
+import { EyeOff, Percent, Receipt, ShoppingBag, TrendingUp } from 'lucide-react';
 import { CompletedSale, UserRole } from '../types/pharmacy';
+import { PrintSalesReport } from './PrintSalesReport';
 
 interface ReportsScreenProps {
   sales: CompletedSale[];
   currentRole: UserRole;
+  storeName?: string;
+  address?: string;
+  phone?: string;
+  generatedBy?: string;
 }
 
-export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole }) => {
+export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole, storeName = '', address, phone, generatedBy = '' }) => {
   const canSeeProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
 
   const totalRevenuePaisa = sales.reduce((sum, s) => sum + s.totalPaisa, 0);
@@ -47,36 +52,60 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
 
       {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
-          <span className="text-xs font-semibold text-emerald-700">Gross Sales Revenue</span>
-          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-1">
+        {/* 1. Gross Sales Revenue */}
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-800">Gross Sales Revenue</span>
+            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-3">
             Rs {(totalRevenuePaisa / 100).toFixed(2)}
           </div>
-          <span className="text-[11px] text-emerald-600">Total processed counter sales</span>
+          <p className="text-[11px] text-emerald-600 mt-1">Total processed counter sales</p>
         </div>
 
-        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
-          <span className="text-xs font-semibold text-emerald-700">Invoices Processed</span>
-          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-1">{sales.length}</div>
-          <span className="text-[11px] text-emerald-600">Sequential receipt numbers</span>
+        {/* 2. Invoices Processed */}
+        <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-800">Invoices Processed</span>
+            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
+              <Receipt className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="report-stat-value text-2xl font-bold font-mono text-emerald-950 mt-3">{sales.length}</div>
+          <p className="text-[11px] text-emerald-600 mt-1">Sequential receipt numbers</p>
         </div>
 
         {canSeeProfit ? (
           <>
-            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
-              <span className="text-xs font-semibold text-emerald-700">Gross Profit (Paisa)</span>
-              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-700 mt-1">
+            {/* 3. Gross Profit */}
+            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-800">Gross Profit (Paisa)</span>
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-700 mt-3">
                 {grossProfitPaisa === null ? 'Unavailable' : `Rs ${(grossProfitPaisa / 100).toFixed(2)}`}
               </div>
-              <span className="text-[11px] text-emerald-600">Revenue minus COGS</span>
+              <p className="text-[11px] text-emerald-600 mt-1">Revenue minus COGS</p>
             </div>
 
-            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs">
-              <span className="text-xs font-semibold text-emerald-700">Gross Margin %</span>
-              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-800 mt-1">
+            {/* 4. Gross Margin % */}
+            <div className="report-stat-card bg-white p-5 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-800">Gross Margin %</span>
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
+                  <Percent className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="report-stat-value text-2xl font-bold font-mono text-emerald-800 mt-3">
                 {grossMarginPercent === null ? 'Unavailable' : `${grossMarginPercent}%`}
               </div>
-              <span className="text-[11px] text-emerald-600">Profit percentage</span>
+              <p className="text-[11px] text-emerald-600 mt-1">Profit percentage</p>
             </div>
           </>
         ) : (
@@ -141,6 +170,15 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({ sales, currentRole
           </table>
         </div>
       </div>
+
+      {/* ── Print Sales Report ─────────────────────────────────────────────── */}
+      <PrintSalesReport
+        sales={sales}
+        storeName={storeName}
+        address={address}
+        phone={phone}
+        generatedBy={generatedBy}
+      />
     </div>
   );
 };

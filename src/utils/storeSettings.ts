@@ -4,23 +4,52 @@ import { DEFAULT_PHARMACY_MEMO_SETTINGS, MemoRounding, PharmacyMemoSettings } fr
 const COMPANY_NAME_KEY = 'pharma-care.companyName';
 const PHARMACY_MEMO_SETTINGS_KEY = 'pharma-care.pharmacyMemoSettings';
 const SHOP_PROFILE_KEY = 'pharma-care.shopProfile';
+export const SHOP_LOGO_KEY = 'pharma-care.shopLogo';
+export const SHOP_LOGO_EVENT = 'pharma-care:shop-logo-changed';
 export const DEFAULT_COMPANY_NAME = APP_NAME;
 
+export function readShopLogo(): string {
+  try {
+    return globalThis.localStorage?.getItem(SHOP_LOGO_KEY)?.trim() || '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveShopLogo(logoUrl: string): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    const cleanUrl = logoUrl.trim();
+    if (cleanUrl) {
+      storage.setItem(SHOP_LOGO_KEY, cleanUrl);
+    } else {
+      storage.removeItem(SHOP_LOGO_KEY);
+    }
+    globalThis.dispatchEvent?.(new CustomEvent(SHOP_LOGO_EVENT, { detail: { logoUrl: cleanUrl } }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): PharmacyMemoSettings {
-  const defaults = { ...DEFAULT_PHARMACY_MEMO_SETTINGS, storeName: companyName || APP_NAME };
+  const fallbackLogo = readShopLogo();
+  const defaults = { ...DEFAULT_PHARMACY_MEMO_SETTINGS, storeName: companyName || APP_NAME, logoUrl: fallbackLogo, printLogo: true };
   try {
     const savedProfile = globalThis.localStorage?.getItem(SHOP_PROFILE_KEY);
     const profile: unknown = savedProfile ? JSON.parse(savedProfile) : null;
     const profileValues = typeof profile === 'object' && profile !== null
-      ? profile as { phone?: unknown; city?: unknown }
+      ? profile as { phone?: unknown; city?: unknown; logoUrl?: unknown }
       : {};
     const fallbackPhone = typeof profileValues.phone === 'string' ? profileValues.phone : '';
     const fallbackAddress = typeof profileValues.city === 'string' ? profileValues.city : '';
+    const profileLogo = typeof profileValues.logoUrl === 'string' ? profileValues.logoUrl : fallbackLogo;
     const stored = globalThis.localStorage?.getItem(PHARMACY_MEMO_SETTINGS_KEY);
-    if (!stored) return { ...defaults, address: fallbackAddress, phone: fallbackPhone };
+    if (!stored) return { ...defaults, address: fallbackAddress, phone: fallbackPhone, logoUrl: profileLogo };
     const parsed: unknown = JSON.parse(stored);
     if (typeof parsed !== 'object' || parsed === null) {
-      return { ...defaults, address: fallbackAddress, phone: fallbackPhone };
+      return { ...defaults, address: fallbackAddress, phone: fallbackPhone, logoUrl: profileLogo };
     }
     const value = parsed as Partial<PharmacyMemoSettings>;
     const roundNet: MemoRounding = ['none', '1', '5', '10'].includes(String(value.roundNet))
@@ -43,6 +72,8 @@ export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): Ph
       numberDigits: typeof value.numberDigits === 'number' && Number.isInteger(value.numberDigits)
         ? Math.max(1, Math.min(20, value.numberDigits))
         : defaults.numberDigits,
+      logoUrl: typeof value.logoUrl === 'string' ? value.logoUrl : profileLogo,
+      printLogo: typeof value.printLogo === 'boolean' ? value.printLogo : true,
     };
   } catch {
     return defaults;
@@ -60,9 +91,33 @@ export function savePharmacyMemoSettings(settings: PharmacyMemoSettings): boolea
     const storage = globalThis.localStorage;
     if (!storage) return false;
     storage.setItem(PHARMACY_MEMO_SETTINGS_KEY, JSON.stringify(settings));
+    if (settings.logoUrl !== undefined) {
+      saveShopLogo(settings.logoUrl);
+    }
     return true;
   } catch {
     return false;
+  }
+}
+
+export interface ShopProfile {
+  phone: string;
+  city: string;
+}
+
+export function readShopProfile(): ShopProfile {
+  try {
+    const saved = globalThis.localStorage?.getItem(SHOP_PROFILE_KEY);
+    if (!saved) return { phone: '', city: '' };
+    const parsed: unknown = JSON.parse(saved);
+    if (typeof parsed !== 'object' || parsed === null) return { phone: '', city: '' };
+    const values = parsed as Partial<Record<string, unknown>>;
+    return {
+      phone: typeof values.phone === 'string' ? values.phone : '',
+      city: typeof values.city === 'string' ? values.city : '',
+    };
+  } catch {
+    return { phone: '', city: '' };
   }
 }
 

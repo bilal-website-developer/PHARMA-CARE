@@ -714,7 +714,8 @@ aside[data-collapsed="true"] .sidebar-nav-item > span {
 }
 
 .report-stat-value {
-  display: inline-block;
+  display: block;
+  width: 100%;
   animation: pos-value-change 220ms ease-out;
 }
 

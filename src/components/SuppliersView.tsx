@@ -54,6 +54,7 @@ export const SuppliersView: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const editingSupplier = suppliers.find((item) => item.id === editingId);
 
   const loadSuppliers = useCallback(async () => {
     if (!supabase) {
@@ -172,6 +173,36 @@ export const SuppliersView: React.FC = () => {
     }
   };
 
+  const activateSupplier = async (supplier: Supplier) => {
+    if (!supabase) {
+      setError('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then restart the app.');
+      return;
+    }
+
+    setError('');
+    setNotice('');
+    try {
+      const { error: activateError } = await supabase.rpc('activate_supplier', {
+        p_supplier_id: supplier.id,
+      });
+      if (activateError) {
+        // Fallback to direct update if RPC is pending migration
+        const { error: directError } = await supabase
+          .from('suppliers')
+          .update({ is_active: true })
+          .eq('id', supplier.id);
+        if (directError) throw activateError;
+      }
+
+      setSuppliers((current) =>
+        current.map((item) => item.id === supplier.id ? { ...item, is_active: true } : item)
+      );
+      setNotice(`Supplier ${supplier.name} activated.`);
+    } catch (activateError) {
+      setError(describeUnknownError(activateError));
+    }
+  };
+
   return (
     <section className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -229,16 +260,29 @@ export const SuppliersView: React.FC = () => {
               <textarea rows={2} value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 font-normal" />
             </label>
           </div>
-          <div className="flex justify-end gap-2">
-            {editingId && (
-              <button type="button" onClick={resetForm} className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-2 text-xs font-semibold text-text">
-                <X aria-hidden="true" className="h-4 w-4" /> Cancel
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              {editingSupplier && !editingSupplier.is_active && (
+                <button
+                  type="button"
+                  onClick={() => void activateSupplier(editingSupplier)}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                >
+                  Activate supplier
+                </button>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              {editingId && (
+                <button type="button" onClick={resetForm} className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-2 text-xs font-semibold text-text">
+                  <X aria-hidden="true" className="h-4 w-4" /> Cancel
+                </button>
+              )}
+              <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
+                {editingId ? <Save aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} /> : <Plus aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} />}
+                {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add supplier'}
               </button>
-            )}
-            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
-              {editingId ? <Save aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} /> : <Plus aria-hidden="true" className={`h-4 w-4 ${saving ? 'supplier-saving-icon' : ''}`} />}
-              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add supplier'}
-            </button>
+            </div>
           </div>
         </form>
       )}
@@ -279,9 +323,13 @@ export const SuppliersView: React.FC = () => {
                     <button type="button" onClick={() => editSupplier(supplier)} className="rounded-control border border-border px-2.5 py-1.5 font-semibold text-text hover:bg-surface">
                       Edit
                     </button>
-                    {supplier.is_active && (
+                    {supplier.is_active ? (
                       <button type="button" onClick={() => void deactivateSupplier(supplier)} className="rounded-control border border-red-200 px-2.5 py-1.5 font-semibold text-red-700 hover:bg-red-50">
                         Deactivate
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => void activateSupplier(supplier)} className="rounded-control border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-700 hover:bg-emerald-100">
+                        Activate
                       </button>
                     )}
                   </div>

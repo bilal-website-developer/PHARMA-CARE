@@ -141,6 +141,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-16 � Moved `PrintSalesReport` from `SettingsView` into `ReportsScreen` (Business Analytics page). Added `readShopProfile()` to `storeSettings.ts`. Removed unused `sales`/`currentUserName` from SettingsView and stale `onAddProduct` from Sidebar. App now passes storeName/address/phone/generatedBy to both ReportsScreen render sites. TypeScript lint: exit 0.
 - 2026-10-14 — Read-only code/database/security/logic/returns audit recorded in `docs/audit/`. Local lint, 18 test scripts (122 tests), build, and production dependency audit pass. No SQL, deployment, demo data, or application-code change was made for the audit. Key current risks: missing active-POS prescription enforcement, forward-folder rollback files, dashboard sample stock KPIs, in-memory Cash Book, and return/report settlement gaps.
 - 2026-10-14 — Clarified the return-audit count reconciliation: the earlier aggregate did not have a recoverable numbered checklist, and the only supported row-level status change is the sale-void interaction moving from PARTIAL to MISSING. Documentation only; no code, SQL, or deployment.
 - 2026-10-14 — Updated audit findings from owner-supplied live ACL/RLS output: direct return-table privileges are false with RLS enabled; anon EXECUTE is true on 16 SECURITY DEFINER functions; authenticated table grants need policy/column review. Return migration ledger status and runtime authorization remain unverified. No SQL, code, or deployment.
@@ -192,15 +193,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-15T06:45:15.678Z
+Generated at (UTC): 2026-10-16T14:27:36.047Z
 Git branch: main
 
 Last 5 commit subjects:
+- bbb
 - docs: record accumulated work on main
 - feat: add sidebar shortcut for product creation
 - security
 - chore: delete unused repository review view
-- chore: move rollback scripts to rollback folder
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

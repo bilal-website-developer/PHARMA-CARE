@@ -135,10 +135,10 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
           { ...memoSettings, storeName: memoSettings.storeName || companyName },
           format
         )
-        : renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName })));
+        : renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl })));
     } catch (error) {
       setPreviewWarning(`Pharmacy Memo preview failed; showing the existing Classic receipt instead. ${error instanceof Error ? error.message : ''}`);
-      setReceiptHtml(withReceiptTheme(renderReceipt('classic', format, { ...SAMPLE_RECEIPT, storeName: companyName })));
+      setReceiptHtml(withReceiptTheme(renderReceipt('classic', format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl })));
     }
   }, [companyName, memoSettings, template, format]);
 

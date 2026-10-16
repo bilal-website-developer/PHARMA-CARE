@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ChevronDown, KeyRound, LogOut, Type } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import { supabase } from '../utils/supabase';
+import { readShopLogo, SHOP_LOGO_EVENT } from '../utils/storeSettings';
 import PharmaLogo from './PharmaLogo';
 import { StockAlertBell } from './StockAlertBell';
 
@@ -39,6 +40,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenProducts,
 }) => {
   const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(username));
+  const [shopLogo, setShopLogo] = useState(() => readShopLogo());
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
@@ -50,6 +52,15 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [animationsEnabled, setAnimationsEnabled] = useState(() =>
     document.documentElement.dataset.animations !== 'off'
   );
+
+  useEffect(() => {
+    const handleLogoChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ logoUrl?: string }>;
+      setShopLogo(customEvent.detail?.logoUrl ?? readShopLogo());
+    };
+    window.addEventListener(SHOP_LOGO_EVENT, handleLogoChange);
+    return () => window.removeEventListener(SHOP_LOGO_EVENT, handleLogoChange);
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('large-ui', largeUi);
@@ -158,7 +169,15 @@ export const TopNav: React.FC<TopNavProps> = ({
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <PharmaLogo size={2.6} layout="inline" className="pharma-brand header-pharma-logo" />
+        {shopLogo ? (
+          <img
+            src={shopLogo}
+            alt="Shop Logo"
+            className="h-8 max-w-[130px] rounded object-contain shrink-0"
+          />
+        ) : (
+          <PharmaLogo size={2.6} layout="inline" className="pharma-brand header-pharma-logo" />
+        )}
         <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
           {activeTitle}
         </div>
