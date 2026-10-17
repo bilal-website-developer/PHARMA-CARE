@@ -65,7 +65,7 @@ const localDate = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
-const PRODUCT_PAGE_SIZE = 50;
+const PRODUCT_PAGE_SIZE = 36;
 
 function parsePaisa(value: string): number | null {
   const clean = value.trim().replace(/,/g, '');
@@ -355,16 +355,44 @@ export function StockPurchaseView({
           </div>
           {loading ? <p className="py-10 text-center text-sm text-muted">Loading products…</p>
             : filteredProducts.length === 0 ? <p className="py-10 text-center text-sm text-muted">No products found.</p>
-              : <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-                {visibleProducts.map((product) => (
-                  <button key={product.id} type="button" onClick={() => addProduct(product)} className="rounded-control border border-border bg-surface p-4 text-left transition hover:border-primary">
-                    <span className="block truncate font-bold text-text">{product.brand_name}</span>
-                    <span className="mt-1 block truncate text-xs text-muted">{product.company} · {product.generic_name}</span>
-                    <span className="mt-3 flex items-center justify-between text-xs"><span className="text-muted">Stock</span><strong className="text-primary">{product.stock.toLocaleString('en-PK')}</strong></span>
-                    <span className="mt-1 flex items-center justify-between text-xs"><span className="text-muted">Last Cost</span><strong className="text-text">{product.last_cost_base_paisa === null ? '—' : money(Math.round(product.last_cost_base_paisa * (product.units.find((unit) => unit.is_default_sale_unit) ?? product.units[0])?.conversion_factor || 0))}</strong></span>
-                    <span className="mt-3 flex items-center gap-1 text-xs font-bold text-primary"><Plus size={14} /> Add to cart</span>
-                  </button>
-                ))}
+              : <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+                {visibleProducts.map((product) => {
+                  const defaultUnit = product.units.find((unit) => unit.is_default_sale_unit) ?? product.units[0];
+                  const lastCost = product.last_cost_base_paisa === null
+                    ? null
+                    : Math.round(product.last_cost_base_paisa * (defaultUnit?.conversion_factor || 1));
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => addProduct(product)}
+                      className="group relative flex flex-col justify-between rounded-xl border border-border bg-surface hover:bg-surface/90 hover:border-primary/60 p-2.5 text-left transition shadow-2xs h-24 text-xs"
+                      title={`${product.brand_name} (${product.company})`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate font-bold text-text group-hover:text-primary transition text-xs">
+                            {product.brand_name}
+                          </span>
+                          <span className="shrink-0 rounded bg-primary/10 text-primary p-0.5 group-hover:bg-primary group-hover:text-white transition">
+                            <Plus size={12} />
+                          </span>
+                        </div>
+                        <span className="block truncate text-[10px] text-muted">
+                          {product.company} · {product.generic_name}
+                        </span>
+                      </div>
+                      <div className="pt-1 border-t border-border/50 flex items-center justify-between text-[11px] font-medium">
+                        <span className="text-muted">
+                          Stk: <strong className={product.stock > 0 ? 'text-primary' : 'text-danger'}>{product.stock.toLocaleString('en-PK')}</strong>
+                        </span>
+                        <span className="font-mono text-text">
+                          {lastCost === null ? '—' : money(lastCost)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>}
           {!loading && filteredProducts.length > PRODUCT_PAGE_SIZE && <footer className="flex items-center justify-between text-xs text-muted">
             <span>{filteredProducts.length} products · Page {productPage} of {productPageCount}</span>

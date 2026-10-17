@@ -5,6 +5,7 @@ import { isAdminRole } from '../permissions';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 import { dispatchStockChanged } from '../utils/stockAlertsEvents';
+import { isDemoDataLoadedLocally, DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 
 interface HistoryItem {
   medicine_id: string;
@@ -130,16 +131,121 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       });
       if (queryError) throw queryError;
       const result = data as PurchaseHistoryResult;
-      setRows(result.rows);
-      setSummary(result);
+      if (result.rows.length === 0 && isDemoDataLoadedLocally()) {
+        const demoPurchase: PurchaseRow = {
+          id: 'demo-pr-1',
+          pr_no: 'PO-2026-0001',
+          supplier_name: 'Premier Distributors Ltd',
+          supplier_contact: '021-35681234',
+          invoice_number: 'INV-PDL-9921',
+          purchase_date: '2026-03-01',
+          subtotal_paisa: 12500000,
+          discount_paisa: 500000,
+          total_paisa: 12000000,
+          paid_paisa: 12000000,
+          due_paisa: 0,
+          payment_type: 'cash',
+          status: 'posted',
+          notes: 'Monthly bulk distributor stock delivery',
+          void_reason: null,
+          created_by: 'Ahmad',
+          created_at: '2026-03-01T10:00:00Z',
+          item_count: 2,
+          items: [
+            {
+              medicine_id: 'DEMO-MED-001',
+              product_name: 'Panadol 500mg',
+              generic_name: 'Paracetamol',
+              unit_name: 'Box (200 Tabs)',
+              batch_number: 'PAN-2601',
+              expiry_date: '2027-12-31',
+              quantity: 120,
+              bonus_qty: 0,
+              conversion_factor: 200,
+              unit_cost_paisa: 2800,
+              mrp_paisa: 3500,
+              line_total_paisa: 336000,
+            },
+            {
+              medicine_id: 'DEMO-MED-002',
+              product_name: 'Augmentin 625mg',
+              generic_name: 'Amoxicillin + Clavulanic Acid',
+              unit_name: 'Pack (14 Tabs)',
+              batch_number: 'AUG-2642',
+              expiry_date: '2027-08-31',
+              quantity: 25,
+              bonus_qty: 0,
+              conversion_factor: 14,
+              unit_cost_paisa: 39000,
+              mrp_paisa: 48000,
+              line_total_paisa: 975000,
+            },
+          ],
+        };
+        setRows([demoPurchase]);
+        setSummary({
+          rows: [demoPurchase],
+          total_count: 1,
+          total_paisa: 12000000,
+          cash_paisa: 12000000,
+          cash_count: 1,
+          credit_paisa: 0,
+          credit_count: 0,
+          page: 1,
+          page_size: PAGE_SIZE,
+        });
+      } else {
+        setRows(result.rows);
+        setSummary(result);
+      }
     } catch (caught) {
-      setError(getSupabaseErrorMessage(caught, 'Could not load purchase history.'));
+      if (isDemoDataLoadedLocally()) {
+        const demoPurchase: PurchaseRow = {
+          id: 'demo-pr-1',
+          pr_no: 'PO-2026-0001',
+          supplier_name: 'Premier Distributors Ltd',
+          supplier_contact: '021-35681234',
+          invoice_number: 'INV-PDL-9921',
+          purchase_date: '2026-03-01',
+          subtotal_paisa: 12500000,
+          discount_paisa: 500000,
+          total_paisa: 12000000,
+          paid_paisa: 12000000,
+          due_paisa: 0,
+          payment_type: 'cash',
+          status: 'posted',
+          notes: 'Monthly bulk distributor stock delivery',
+          void_reason: null,
+          created_by: 'Ahmad',
+          created_at: '2026-03-01T10:00:00Z',
+          item_count: 2,
+        };
+        setRows([demoPurchase]);
+        setSummary({
+          rows: [demoPurchase],
+          total_count: 1,
+          total_paisa: 12000000,
+          cash_paisa: 12000000,
+          cash_count: 1,
+          credit_paisa: 0,
+          credit_count: 0,
+          page: 1,
+          page_size: PAGE_SIZE,
+        });
+      } else {
+        setError(getSupabaseErrorMessage(caught, 'Could not load purchase history.'));
+      }
     } finally {
       setLoading(false);
     }
   }, [dateFrom, dateTo, page, paymentType, search]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    const handleDemoChange = () => void load();
+    window.addEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
+    return () => window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
+  }, [load]);
 
   const openDetail = async (purchase: PurchaseRow) => {
     if (!supabase) return setError('Supabase is not configured.');
@@ -246,69 +352,249 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
   };
 
   return (
-    <section className="mx-auto max-w-[1500px] space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div><h2 className="text-xl font-black text-text">Purchase History</h2><p className="mt-1 text-sm text-muted">View and manage previous stock-in records</p></div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => void exportFiltered()} disabled={exporting} className="rounded-control bg-primary px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Download className="mr-1 inline h-4 w-4" />{exporting ? 'Exporting…' : 'Export Excel'}</button>
-          <button type="button" aria-label="Refresh purchase history" onClick={() => void load()} disabled={loading} className="rounded-control border border-border bg-white p-2 text-muted disabled:opacity-50"><RefreshCw className="h-4 w-4" /></button>
+    <section className="space-y-3">
+      {/* Slim Header */}
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-white px-4 py-2.5 shadow-xs">
+        <div>
+          <h2 className="text-base font-black text-text">Purchase History</h2>
+          <p className="text-xs text-muted">View and manage supplier stock-in orders and invoices</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void exportFiltered()}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-control bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary-hover disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>{exporting ? 'Exporting…' : 'Export Excel'}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Refresh purchase history"
+            onClick={() => void load()}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-control border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-text hover:bg-border/30 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="TOTAL" value={money(summary?.total_paisa ?? 0)} />
-        <SummaryCard label="CASH" value={money(summary?.cash_paisa ?? 0)} detail={`${summary?.cash_count ?? 0} purchases`} />
-        <SummaryCard label="CREDIT" value={money(summary?.credit_paisa ?? 0)} detail={`${summary?.credit_count ?? 0} purchases`} />
+      {/* Slim KPI Tiles (Single Row) */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        <div className="rounded-card border border-border bg-white px-3.5 py-2 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Total Purchases</span>
+          <div className="mt-0.5 flex items-baseline justify-between">
+            <span className="text-sm font-black text-text">{money(summary?.total_paisa ?? 0)}</span>
+            <span className="text-[11px] text-muted">{summary?.total_count ?? 0} orders</span>
+          </div>
+        </div>
+        <div className="rounded-card border border-border bg-white px-3.5 py-2 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Cash Purchases</span>
+          <div className="mt-0.5 flex items-baseline justify-between">
+            <span className="text-sm font-black text-emerald-700">{money(summary?.cash_paisa ?? 0)}</span>
+            <span className="text-[11px] text-muted">{summary?.cash_count ?? 0} orders</span>
+          </div>
+        </div>
+        <div className="rounded-card border border-border bg-white px-3.5 py-2 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Credit Purchases</span>
+          <div className="mt-0.5 flex items-baseline justify-between">
+            <span className="text-sm font-black text-amber-700">{money(summary?.credit_paisa ?? 0)}</span>
+            <span className="text-[11px] text-muted">{summary?.credit_count ?? 0} orders</span>
+          </div>
+        </div>
       </div>
 
-      <section className="space-y-3 rounded-card border border-border bg-white p-4 shadow-sm">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_170px_160px_160px_auto]">
-          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setSearch(searchInput.trim()); }} className="flex gap-2">
-            <input aria-label="Search by purchase ID or supplier" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search PR-ID or supplier" className="min-w-0 flex-1 rounded-control border border-border bg-surface px-3 py-2 text-sm" />
-            <button type="submit" className="rounded-control border border-border px-3 text-sm font-semibold">Search</button>
+      {/* Filter and Table Card */}
+      <section className="space-y-2.5 rounded-card border border-border bg-white p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setPage(1);
+              setSearch(searchInput.trim());
+            }}
+            className="flex min-w-[200px] flex-1 items-center gap-1.5"
+          >
+            <input
+              aria-label="Search by purchase ID or supplier"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search PR-ID or supplier…"
+              className="h-8 min-w-0 flex-1 rounded-control border border-border bg-surface px-2.5 text-xs text-text placeholder:text-muted"
+            />
+            <button
+              type="submit"
+              className="h-8 rounded-control border border-border bg-white px-2.5 text-xs font-semibold text-text hover:bg-surface"
+            >
+              Search
+            </button>
           </form>
-          <select aria-label="Payment filter" value={paymentType} onChange={(event) => { setPaymentType(event.target.value); setPage(1); }} className="rounded-control border border-border bg-surface px-3 py-2 text-sm">
-            <option value="">All Payments</option><option value="cash">Cash</option><option value="credit">Credit</option>
+
+          <select
+            aria-label="Payment filter"
+            value={paymentType}
+            onChange={(event) => {
+              setPaymentType(event.target.value);
+              setPage(1);
+            }}
+            className="h-8 rounded-control border border-border bg-surface px-2.5 text-xs font-medium text-text"
+          >
+            <option value="">All Payments</option>
+            <option value="cash">Cash</option>
+            <option value="credit">Credit</option>
           </select>
-          <label className="text-xs font-semibold text-muted">Date from<input aria-label="Date from" type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} className="mt-1 w-full rounded-control border border-border bg-surface px-2 py-2 text-sm text-text" /></label>
-          <label className="text-xs font-semibold text-muted">Date to<input aria-label="Date to" type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} className="mt-1 w-full rounded-control border border-border bg-surface px-2 py-2 text-sm text-text" /></label>
-          <button type="button" onClick={() => { setSearchInput(''); setSearch(''); setPaymentType(''); setDateFrom(''); setDateTo(''); setPage(1); }} className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-text">Clear filters</button>
+
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-muted">
+            <span>From:</span>
+            <input
+              aria-label="Date from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setDateFrom(event.target.value);
+                setPage(1);
+              }}
+              className="h-8 rounded-control border border-border bg-surface px-2 text-xs text-text"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-muted">
+            <span>To:</span>
+            <input
+              aria-label="Date to"
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setDateTo(event.target.value);
+                setPage(1);
+              }}
+              className="h-8 rounded-control border border-border bg-surface px-2 text-xs text-text"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSearchInput('');
+              setSearch('');
+              setPaymentType('');
+              setDateFrom('');
+              setDateTo('');
+              setPage(1);
+            }}
+            className="h-8 rounded-control border border-border px-2.5 text-xs font-semibold text-muted hover:bg-surface hover:text-text"
+          >
+            Clear
+          </button>
         </div>
 
-        {notice && <p role="status" className="text-sm text-primary">{notice}</p>}
-        {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => void load()} className="font-bold underline">Retry</button></div>}
+        {notice && <p role="status" className="text-xs font-semibold text-primary">{notice}</p>}
+        {error && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <span>{error}</span>
+            <button type="button" onClick={() => void load()} className="font-bold underline">
+              Retry
+            </button>
+          </div>
+        )}
+
         <div className="overflow-x-auto rounded-control border border-border">
-          <table className="w-full min-w-[1200px] text-left text-xs">
-            <thead className="bg-surface text-[10px] font-bold uppercase tracking-wide text-muted"><tr>
-              {['PR-ID', 'Date', 'Supplier', 'Items', 'Total', 'Discount', 'Payment', 'Paid', 'Due', 'Created By', 'Status'].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
-              <th className="px-3 py-3 text-right">Actions</th>
-            </tr></thead>
+          <table className="w-full min-w-[1050px] text-left text-xs">
+            <thead className="border-b border-border bg-surface text-[10px] font-bold uppercase tracking-wider text-muted">
+              <tr>
+                {['PR-ID', 'Date', 'Supplier', 'Items', 'Total', 'Discount', 'Payment', 'Paid', 'Due', 'Created By', 'Status'].map((label) => (
+                  <th key={label} className="px-3 py-2">
+                    {label}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-border">
-              {loading ? Array.from({ length: 5 }, (_, index) => <tr key={index}><td colSpan={12} className="visual-skeleton h-11 px-3" /></tr>)
-                : error ? null
-                  : rows.length === 0 ? <tr><td colSpan={12} className="px-4 py-10 text-center text-sm text-muted">No purchases found.</td></tr>
-                    : rows.map((purchase) => <tr key={purchase.id} className="cursor-pointer hover:bg-surface" onClick={() => void openDetail(purchase)}>
-                      <td className="px-3 py-3 font-bold text-primary">{purchase.pr_no}</td>
-                      <td className="px-3 py-3">{karachiDate(purchase.purchase_date)}</td>
-                      <td className="px-3 py-3">{purchase.supplier_name}</td>
-                      <td className="px-3 py-3">{purchase.item_count}</td>
-                      <td className="px-3 py-3">{money(purchase.total_paisa)}</td>
-                      <td className="px-3 py-3">{money(purchase.discount_paisa)}</td>
-                      <td className="px-3 py-3 capitalize">{purchase.payment_type}</td>
-                      <td className="px-3 py-3">{money(purchase.paid_paisa)}</td>
-                      <td className="px-3 py-3">{money(purchase.due_paisa)}</td>
-                      <td className="px-3 py-3">{purchase.created_by}</td>
-                      <td className="px-3 py-3 capitalize">{purchase.status}</td>
-                      <td className="px-3 py-3 text-right"><button type="button" onClick={(event) => { event.stopPropagation(); void openDetail(purchase); }} className="rounded-control border border-border px-2 py-1 font-semibold">View</button></td>
-                    </tr>)}
+              {loading ? (
+                Array.from({ length: 5 }, (_, index) => (
+                  <tr key={index}>
+                    <td colSpan={12} className="visual-skeleton h-9 px-3" />
+                  </tr>
+                ))
+              ) : error ? null : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="px-4 py-8 text-center text-xs text-muted">
+                    No purchases found.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((purchase) => (
+                  <tr
+                    key={purchase.id}
+                    className="cursor-pointer transition-colors hover:bg-surface/60"
+                    onClick={() => void openDetail(purchase)}
+                  >
+                    <td className="px-3 py-2 font-mono font-bold text-primary">{purchase.pr_no}</td>
+                    <td className="px-3 py-2 text-muted">{karachiDate(purchase.purchase_date)}</td>
+                    <td className="px-3 py-2 font-medium text-text">{purchase.supplier_name}</td>
+                    <td className="px-3 py-2 text-center text-muted">{purchase.item_count}</td>
+                    <td className="px-3 py-2 font-bold text-text">{money(purchase.total_paisa)}</td>
+                    <td className="px-3 py-2 text-muted">{money(purchase.discount_paisa)}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${
+                          purchase.payment_type === 'cash'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {purchase.payment_type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-muted">{money(purchase.paid_paisa)}</td>
+                    <td className="px-3 py-2 font-semibold text-amber-700">{money(purchase.due_paisa)}</td>
+                    <td className="px-3 py-2 text-muted">{purchase.created_by}</td>
+                    <td className="px-3 py-2 capitalize text-muted">{purchase.status}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void openDetail(purchase);
+                        }}
+                        className="rounded-control border border-border px-2 py-0.5 text-[11px] font-semibold text-text hover:bg-surface"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-        <footer className="flex items-center justify-between text-xs text-muted">
-          <span>{summary?.total_count ?? 0} purchases · Page {page} of {Math.max(1, Math.ceil((summary?.total_count ?? 0) / PAGE_SIZE))}</span>
-          <div className="flex gap-2">
-            <button type="button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)} className="rounded-control border border-border p-1.5 disabled:opacity-40"><ChevronLeft size={16} /></button>
-            <button type="button" disabled={page >= Math.ceil((summary?.total_count ?? 0) / PAGE_SIZE) || loading} onClick={() => setPage((current) => current + 1)} className="rounded-control border border-border p-1.5 disabled:opacity-40"><ChevronRight size={16} /></button>
+
+        <footer className="flex items-center justify-between text-[11px] text-muted">
+          <span>
+            {summary?.total_count ?? 0} purchases · Page {page} of{' '}
+            {Math.max(1, Math.ceil((summary?.total_count ?? 0) / PAGE_SIZE))}
+          </span>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((current) => current - 1)}
+              className="rounded-control border border-border p-1 hover:bg-surface disabled:opacity-40"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              type="button"
+              disabled={page >= Math.ceil((summary?.total_count ?? 0) / PAGE_SIZE) || loading}
+              onClick={() => setPage((current) => current + 1)}
+              className="rounded-control border border-border p-1 hover:bg-surface disabled:opacity-40"
+            >
+              <ChevronRight size={14} />
+            </button>
           </div>
         </footer>
       </section>

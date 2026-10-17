@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   Eye,
@@ -8,6 +8,9 @@ import {
   FileText,
   ScrollText,
   ClipboardList,
+  Database,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   BillingTemplate,
@@ -20,6 +23,7 @@ import {
 } from '../utils/receipt';
 import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
 import { readShopLogo, saveShopLogo } from '../utils/storeSettings';
+import { checkDemoDataStatus, loadDemoData, removeDemoData } from '../data/demoDataManager';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
 const DEFAULT_DEBT_TEMPLATE =
@@ -97,6 +101,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
+
+  // Demo Data State
+  const [demoStatus, setDemoStatus] = useState<{ loaded: boolean; count: number }>({ loaded: false, count: 0 });
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoNotice, setDemoNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+
+  useEffect(() => {
+    void checkDemoDataStatus().then(setDemoStatus);
+  }, []);
+
+  const handleLoadDemoData = async () => {
+    setDemoBusy(true);
+    setDemoNotice(null);
+    try {
+      const result = await loadDemoData();
+      if (result.success) {
+        setDemoStatus({ loaded: true, count: result.count });
+        setDemoNotice({
+          text: `Demo data loaded successfully! ${result.count} popular medicines, batches, and 1 distributor supplier are ready for showcase.`,
+          error: false,
+        });
+      } else {
+        setDemoNotice({ text: result.error || 'Failed to load demo data.', error: true });
+      }
+    } catch (e) {
+      setDemoNotice({ text: e instanceof Error ? e.message : 'Could not load demo data.', error: true });
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const handleRemoveDemoData = async () => {
+    setDemoBusy(true);
+    setDemoNotice(null);
+    try {
+      const result = await removeDemoData();
+      if (result.success) {
+        setDemoStatus({ loaded: false, count: 0 });
+        setConfirmRemoveOpen(false);
+        setDemoNotice({
+          text: `Demo data removed successfully (${result.deletedCount} items cleared). Your workspace is clean.`,
+          error: false,
+        });
+      } else {
+        setDemoNotice({ text: result.error || 'Failed to remove demo data.', error: true });
+      }
+    } catch (e) {
+      setDemoNotice({ text: e instanceof Error ? e.message : 'Could not remove demo data.', error: true });
+    } finally {
+      setDemoBusy(false);
+    }
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -567,6 +624,98 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="w-full rounded-control border border-border bg-surface px-3 py-2 text-text"
           />
         </div>
+      </div>
+
+      {/* ── Demo Data & Client Showcase (Load / Remove) ────────────────────── */}
+      <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-black text-text">
+              <Database className="h-4 w-4 text-primary" />
+              Demo Data & Client Showcase
+            </h3>
+            <p className="mt-1 text-xs text-muted">
+              Add 12 popular Pakistani retail medicines (Panadol, Augmentin, Risek, Brufen, Arinac, Flagyl, Disprin, etc.) with real prices, barcodes, stock batches, and 1 distributor supplier for client demonstrations.
+            </p>
+          </div>
+          <div>
+            {demoStatus.loaded ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Demo Data Active ({demoStatus.count} items)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                No Demo Data Loaded
+              </span>
+            )}
+          </div>
+        </div>
+
+        {demoNotice && (
+          <div
+            role={demoNotice.error ? 'alert' : 'status'}
+            className={`rounded-control border px-4 py-2.5 text-xs font-semibold ${
+              demoNotice.error
+                ? 'border-red-200 bg-red-50 text-red-800'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+          >
+            {demoNotice.text}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
+          <button
+            type="button"
+            disabled={demoBusy}
+            onClick={handleLoadDemoData}
+            className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:opacity-90 disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" />
+            {demoBusy ? 'Loading Demo Data…' : 'Load Demo Data (12 Medicines + Supplier)'}
+          </button>
+
+          {demoStatus.loaded && (
+            <button
+              type="button"
+              disabled={demoBusy}
+              onClick={() => setConfirmRemoveOpen(true)}
+              className="inline-flex items-center gap-2 rounded-control border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove Demo Data
+            </button>
+          )}
+        </div>
+
+        {confirmRemoveOpen && (
+          <div className="rounded-control border border-red-200 bg-red-50/70 p-4 space-y-3">
+            <p className="text-xs font-bold text-red-900">
+              Are you sure you want to remove all demo medicines and suppliers?
+            </p>
+            <p className="text-[11px] text-red-700">
+              All demo medicines (Panadol, Augmentin, etc.) and demo batches will be permanently removed. Your real pharmacy products and actual sales will remain completely untouched.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={demoBusy}
+                onClick={handleRemoveDemoData}
+                className="rounded-control bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Yes, Remove Demo Data
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmRemoveOpen(false)}
+                className="rounded-control border border-border bg-white px-3 py-1.5 text-xs font-semibold text-text"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Bottom Save Strip ──────────────────────────────────────────────── */}

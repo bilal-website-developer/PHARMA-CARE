@@ -83,6 +83,7 @@ export interface Product {
   barcode: string;
   brandName: string;
   genericName: string;
+  strength?: string;
   category: string;
   company: string;
   drugClass: DrugClass;

@@ -33,6 +33,15 @@ const PANEL = 'rounded-xl border border-border bg-surface shadow-xs';
 const BUTTON = 'inline-flex items-center justify-center gap-2 rounded-control bg-primary px-3 py-2 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50';
 const SECONDARY = 'inline-flex items-center justify-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface/80 disabled:opacity-50';
 
+function StatPill({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className="text-muted font-medium">{label}</span>
+      <span className={`font-black tabular-nums ${color}`}>{value}</span>
+    </div>
+  );
+}
+
 type ViewMode = 'products' | 'stock';
 type StockInitialTab = 'all' | 'near-expiry' | 'expired' | 'low-stock';
 export type ProductFilter = { field: 'category' | 'company'; value: string } | null;
@@ -1145,39 +1154,29 @@ function ProductsCatalog({
         else { setSortColumn('name'); setSortDirection('asc'); }
       },
       render: (medicine) => (
-        <div className="min-w-44">
-          <button type="button" className="block text-left font-bold text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setViewingMedicine(medicine)}>{medicine.brand_name}</button>
-          <span className="block text-xs text-muted">{medicine.generic_name}{medicine.strength ? ` · ${medicine.strength}` : ''}</span>
-          <span className="text-xs text-muted">{medicine.code}</span>
-          {medicine.barcode && <span className="mt-1 flex items-center gap-1 text-xs text-muted"><Barcode size={13} />{medicine.barcode}</span>}
+        <div className="min-w-44 py-0.5">
+          <button type="button" className="block text-left font-bold text-text hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent" onClick={() => setViewingMedicine(medicine)}>
+            {medicine.brand_name}
+          </button>
+          <span className="block text-xs text-muted truncate max-w-xs">{medicine.generic_name}{medicine.strength ? ` · ${medicine.strength}` : ''}</span>
+          <div className="flex items-center gap-2 text-[11px] text-muted font-mono mt-0.5">
+            <span>{medicine.code}</span>
+            {medicine.barcode && <span className="flex items-center gap-0.5"><Barcode size={11} />{medicine.barcode}</span>}
+          </div>
         </div>
       ),
     },
     {
-      id: 'barcode',
-      header: 'Barcode',
-      render: (medicine) => {
-        if (medicine.barcode) {
-          return <span className="flex items-center gap-1 text-xs text-muted"><Barcode size={13} /> {medicine.barcode}</span>;
-        }
-        return <span className="text-xs text-muted">Not assigned</span>;
+      id: 'stock',
+      header: 'Stock',
+      sortable: true,
+      sortDirection: sortColumn === 'stock' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none',
+      onSort: () => {
+        setPage(1);
+        if (sortColumn === 'stock') setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc');
+        else { setSortColumn('stock'); setSortDirection('asc'); }
       },
-    },
-    {
-      id: 'product-actions',
-      header: 'Product actions',
-      hideable: false,
-      render: renderProductActions,
-    },
-    {
-      id: 'category',
-      header: 'Category',
-      render: (medicine) => medicine.category,
-    },
-    {
-      id: 'class',
-      header: 'Class',
-      render: (medicine) => <StatusChip variant={medicine.drug_class === 'CONTROLLED' || medicine.drug_class === 'NARCOTIC' ? 'warning' : 'neutral'}>{medicine.drug_class}</StatusChip>,
+      render: (medicine) => <StockBar quantity={medicine.stock} reorderLevel={medicine.min_stock_alert} />,
     },
     {
       id: 'mrp',
@@ -1191,20 +1190,8 @@ function ProductsCatalog({
       },
       render: (medicine) => {
         const unit = medicine.units.find((item) => item.is_default_sale_unit);
-        return unit ? money(unit.price_paisa) : <span className="text-warning">No unit configured</span>;
+        return <span className="font-mono font-bold text-xs">{unit ? money(unit.price_paisa) : <span className="text-warning">No unit</span>}</span>;
       },
-    },
-    {
-      id: 'stock',
-      header: 'Stock',
-      sortable: true,
-      sortDirection: sortColumn === 'stock' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none',
-      onSort: () => {
-        setPage(1);
-        if (sortColumn === 'stock') setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc');
-        else { setSortColumn('stock'); setSortDirection('asc'); }
-      },
-      render: (medicine) => <StockBar quantity={medicine.stock} reorderLevel={medicine.min_stock_alert} />,
     },
     {
       id: 'expiry',
@@ -1220,6 +1207,18 @@ function ProductsCatalog({
     },
     ...(canViewCost ? [
       {
+        id: 'margin',
+        header: 'Margin',
+        initiallyHidden: false,
+        render: (medicine: Medicine) => (
+          <span className="font-mono text-xs font-bold text-emerald-700">
+            {medicine.margin_percent === null
+              ? '—'
+              : `${medicine.margin_percent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
+          </span>
+        ),
+      },
+      {
         id: 'cost',
         header: 'Unit cost',
         initiallyHidden: true,
@@ -1227,54 +1226,265 @@ function ProductsCatalog({
           ? '—'
           : money(medicine.latest_cost_paisa * medicine.default_unit_conversion),
       },
-      {
-        id: 'margin',
-        header: 'Margin',
-        initiallyHidden: false,
-        render: (medicine: Medicine) => medicine.margin_percent === null
-          ? '—'
-          : `${medicine.margin_percent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`,
-      },
     ] : []),
+    {
+      id: 'category',
+      header: 'Category',
+      initiallyHidden: true,
+      render: (medicine) => medicine.category,
+    },
+    {
+      id: 'class',
+      header: 'Class',
+      initiallyHidden: true,
+      render: (medicine) => <StatusChip variant={medicine.drug_class === 'CONTROLLED' || medicine.drug_class === 'NARCOTIC' ? 'warning' : 'neutral'}>{medicine.drug_class}</StatusChip>,
+    },
   ];
 
   return (
-    <div className="space-y-3.5">
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-[26px] font-black leading-tight text-text">Products</h2>
-          <p className="mt-0.5 text-[13px] text-muted">Track products, active stock and nearest batch expiry</p>
+    <div className="space-y-2.5">
+      {/* ── 1. Slim Toolbar Row: Title + Search + Actions + View Toggle ── */}
+      <section className="flex flex-wrap items-center gap-2">
+        <h2 className="text-xl font-black text-text shrink-0 mr-1">Products</h2>
+
+        <div className="relative min-w-48 flex-1">
+          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted" />
+          <input
+            className="w-full rounded-control border border-border bg-surface pl-8 pr-3 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            aria-label="Search products"
+            placeholder="Search product, generic, code or barcode..."
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canEditProducts && <>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              aria-label="Choose product CSV"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void prepareImportPreview(file);
-              }}
-            />
-            <button type="button" className={SECONDARY} disabled={importing} onClick={() => importInputRef.current?.click()}><FileUp size={16} /> Import CSV</button>
-          </>}
-          <button type="button" className={SECONDARY} disabled={exporting} onClick={() => void exportProducts('csv')}><Download size={16} /> Export</button>
-          {canEditProducts && <button type="button" className={BUTTON} onClick={openCreate}><Plus size={16} /> Add product</button>}
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {canEditProducts && (
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                aria-label="Choose product CSV"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void prepareImportPreview(file);
+                }}
+              />
+              <button
+                type="button"
+                className={`${SECONDARY} px-2.5 py-1.5 text-xs`}
+                disabled={importing}
+                onClick={() => importInputRef.current?.click()}
+              >
+                <FileUp size={13} /> Import CSV
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className={`${SECONDARY} px-2.5 py-1.5 text-xs`}
+            disabled={exporting}
+            onClick={() => void exportProducts('csv')}
+          >
+            <Download size={13} /> Export
+          </button>
+          {canEditProducts && (
+            <button
+              type="button"
+              className={`${BUTTON} px-3 py-1.5 text-xs`}
+              onClick={openCreate}
+            >
+              <Plus size={13} /> Add product
+            </button>
+          )}
+
           <details className="relative">
-            <summary className={`${SECONDARY} cursor-pointer list-none`}>More</summary>
-            <div className="absolute right-0 z-20 mt-2 grid min-w-48 gap-1 rounded-control border border-border bg-surface p-2 shadow-lg">
-              <button type="button" className={`${SECONDARY} justify-start`} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={16} /> Refresh</button>
-              <button type="button" className={`${SECONDARY} justify-start`} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={16} /> Export XLSX</button>
-              <button type="button" className={`${SECONDARY} justify-start`} onClick={printBarcodes}><Printer size={16} /> Print barcodes</button>
-              <button type="button" className={`${SECONDARY} justify-start`} onClick={() => setScannerTestOpen(true)}><ScanLine size={16} /> Scanner test</button>
-              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => void generateMissingBarcodes()}><Barcode size={16} /> Generate missing barcodes</button>}
-              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start`} onClick={downloadImportTemplate}><Download size={16} /> CSV template</button>}
-              {skippedRows.length > 0 && <button type="button" className={`${SECONDARY} justify-start`} onClick={() => downloadSkippedRows()}><Download size={16} /> Skipped rows ({skippedRows.length})</button>}
+            <summary className={`${SECONDARY} px-2 py-1.5 text-xs cursor-pointer list-none`}>More</summary>
+            <div className="absolute right-0 z-20 mt-1 grid min-w-44 gap-1 rounded-control border border-border bg-surface p-1.5 shadow-lg">
+              <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} aria-label="Refresh products" onClick={() => void refresh()} disabled={loading}><RefreshCw size={13} /> Refresh</button>
+              <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} disabled={exporting} onClick={() => void exportProducts('xlsx')}><Download size={13} /> Export XLSX</button>
+              <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} onClick={printBarcodes}><Printer size={13} /> Print barcodes</button>
+              <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} onClick={() => setScannerTestOpen(true)}><ScanLine size={13} /> Scanner test</button>
+              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} onClick={() => void generateMissingBarcodes()}><Barcode size={13} /> Generate missing barcodes</button>}
+              {canEditProducts && <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} onClick={downloadImportTemplate}><Download size={13} /> CSV template</button>}
+              {skippedRows.length > 0 && <button type="button" className={`${SECONDARY} justify-start text-xs py-1.5`} onClick={() => downloadSkippedRows()}><Download size={13} /> Skipped rows ({skippedRows.length})</button>}
             </div>
           </details>
+
+          <div role="group" aria-label="Product display mode" className="inline-flex shrink-0 rounded-control border border-border p-0.5 ml-0.5">
+            <button
+              type="button"
+              className={`${displayMode === 'table' ? BUTTON : SECONDARY} rounded-control px-2 py-1 text-xs`}
+              aria-label="Table view"
+              aria-pressed={displayMode === 'table'}
+              onClick={() => setDisplayMode('table')}
+            >
+              <List size={13} />
+            </button>
+            <button
+              type="button"
+              className={`${displayMode === 'cards' ? BUTTON : SECONDARY} rounded-control px-2 py-1 text-xs`}
+              aria-label="Card view"
+              aria-pressed={displayMode === 'cards'}
+              onClick={() => setDisplayMode('cards')}
+            >
+              <Grid2X2 size={13} />
+            </button>
+          </div>
         </div>
+      </section>
+
+      {/* ── 2. One Row of Filter Chips ── */}
+      <section aria-label="Product filters" className="flex flex-wrap items-center gap-1.5 text-xs">
+        <select
+          aria-label="Filter category"
+          className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          value={categoryFilter}
+          onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}
+        >
+          <option value="">Category</option>
+          {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+        </select>
+
+        <select
+          aria-label="Filter manufacturer"
+          className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          value={brandFilter}
+          onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}
+        >
+          <option value="">Manufacturer</option>
+          {brands.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+        </select>
+
+        <select
+          aria-label="Filter medicine class"
+          className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          value={classFilter}
+          onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}
+        >
+          <option value="">Class</option>
+          <option value="OTC">OTC</option>
+          <option value="RX">Rx</option>
+          <option value="CONTROLLED">Controlled</option>
+        </select>
+
+        <label className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${lowStockOnly ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`}>
+          <input
+            type="checkbox"
+            checked={lowStockOnly}
+            onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+          Low stock
+        </label>
+
+        <select
+          aria-label="Saved product views"
+          className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          value={selectedSavedView}
+          onChange={(event) => applySavedView(event.target.value)}
+        >
+          <option value="">Saved views</option>
+          {savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
+        </select>
+
+        <details className="relative shrink-0">
+          <summary className="cursor-pointer list-none rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-text hover:bg-surface/80">
+            More filters
+          </summary>
+          <div className="absolute right-0 z-20 mt-1 grid min-w-48 gap-2 rounded-control border border-border bg-surface p-2.5 shadow-lg">
+            <select
+              aria-label="Filter active status"
+              className="rounded-control border border-border bg-surface px-2 py-1 text-xs text-text"
+              value={activeFilter}
+              onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}
+            >
+              <option value="active">Status: Active</option>
+              <option value="inactive">Status: Inactive</option>
+              <option value="all">Status: All</option>
+            </select>
+            <label className="grid gap-1 text-[11px] font-semibold text-muted">Sort products
+              <select
+                aria-label="Sort products"
+                className="rounded-control border border-border bg-surface px-2 py-1 text-xs text-text"
+                value={sortColumn}
+                onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}
+              >
+                <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`${SECONDARY} text-xs py-1`}
+              onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}
+            >
+              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+            </button>
+            <div className="border-t border-border pt-2 flex gap-1">
+              <input
+                aria-label="Saved view name"
+                className="flex-1 rounded-control border border-border bg-surface px-2 py-1 text-xs text-text"
+                placeholder="View name"
+                value={savedViewName}
+                onChange={(event) => setSavedViewName(event.target.value)}
+              />
+              <button
+                type="button"
+                className={`${BUTTON} px-2 py-1 text-xs`}
+                onClick={saveCurrentView}
+              >
+                Save
+              </button>
+            </div>
+            {selectedSavedView && (
+              <button
+                type="button"
+                className="text-xs text-danger text-left hover:underline"
+                onClick={() => {
+                  setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
+                  setSelectedSavedView('');
+                  setNotice('Saved view removed.');
+                }}
+              >
+                Delete selected view
+              </button>
+            )}
+          </div>
+        </details>
+
+        {activeProductFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+            {activeProductFilters.map(({ key, label }) => (
+              <FilterChip key={key} onRemove={() => handleRemoveProductFilter(key)} removeLabel={`Remove ${label} filter`}>{label}</FilterChip>
+            ))}
+            <button
+              type="button"
+              className="text-xs font-semibold text-accent underline ml-1"
+              onClick={handleClearProductFilters}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* ── 3. One Slim Stats Line ── */}
+      <section aria-label="Product summary" className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs shadow-2xs">
+        <StatPill label="Total" value={(overviewStats?.total_active ?? 0).toLocaleString()} color="text-primary" />
+        <div className="h-3.5 w-px bg-border" />
+        <StatPill label="Low stock" value={(overviewStats?.low_stock ?? 0).toLocaleString()} color="text-warning" />
+        <div className="h-3.5 w-px bg-border" />
+        <StatPill label="Out of stock" value={(overviewStats?.out_of_stock ?? 0).toLocaleString()} color="text-danger" />
+        <div className="h-3.5 w-px bg-border" />
+        <StatPill label="Expiring 90d" value={(overviewStats?.expiring_90 ?? 0).toLocaleString()} color="text-warning" />
+        {canViewCost && (
+          <>
+            <div className="h-3.5 w-px bg-border" />
+            <StatPill label="Stock value" value={money(overviewStats?.stock_value_cost_paisa ?? 0)} color="text-primary" />
+          </>
+        )}
       </section>
 
       {labelDialogProducts.length > 0 && (
@@ -1299,91 +1509,9 @@ function ProductsCatalog({
         onClose={() => setScannerTestOpen(false)}
       />
 
-      <section aria-label="Product summary" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <KpiCard compact label="Total products" value={(overviewStats?.total_active ?? 0).toLocaleString()} detail="active" />
-        <KpiCard compact label="Low stock" value={(overviewStats?.low_stock ?? 0).toLocaleString()} detail="below reorder level" valueClassName="text-warning" />
-        <KpiCard compact label="Out of stock" value={(overviewStats?.out_of_stock ?? 0).toLocaleString()} detail="needs purchase" valueClassName="text-danger" />
-        <KpiCard compact label="Expiring in 90 days" value={(overviewStats?.expiring_90 ?? 0).toLocaleString()} detail="batches" valueClassName="text-warning" />
-        {canViewCost && <KpiCard compact label="Stock value" value={money(overviewStats?.stock_value_cost_paisa ?? 0)} detail="at cost" />}
-      </section>
-
-      <section aria-label="Product search and filters" className={`${PANEL} grid gap-3 p-3`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="relative min-w-56 flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
-            <input className={`${FIELD} pl-9`} aria-label="Search products" placeholder="Search product, generic, code or barcode" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
-          </label>
-          <div role="group" aria-label="Product display mode" className="inline-flex shrink-0 rounded-control border border-border p-0.5">
-            <button type="button" className={`${displayMode === 'table' ? BUTTON : SECONDARY} rounded-control px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label="Table view" aria-pressed={displayMode === 'table'} onClick={() => setDisplayMode('table')}><List size={16} /><span>Table</span></button>
-            <button type="button" className={`${displayMode === 'cards' ? BUTTON : SECONDARY} rounded-control px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label="Card view" aria-pressed={displayMode === 'cards'} onClick={() => setDisplayMode('cards')}><Grid2X2 size={16} /><span>Cards</span></button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Filter category" className={`${FILTER_PILL} min-w-32 ${categoryFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={categoryFilter} onChange={(event) => { setPage(1); setCategoryFilter(event.target.value); }}>
-            <option value="">Category</option>{categories.map((item) => <option key={item.id} value={item.name}>Category: {item.name}</option>)}
-          </select>
-          <select aria-label="Filter manufacturer" className={`${FILTER_PILL} min-w-36 ${brandFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={brandFilter} onChange={(event) => { setPage(1); setBrandFilter(event.target.value); }}>
-            <option value="">Manufacturer</option>{brands.map((item) => <option key={item.id} value={item.name}>Manufacturer: {item.name}</option>)}
-          </select>
-          <select aria-label="Filter medicine class" className={`${FILTER_PILL} min-w-28 ${classFilter ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={classFilter} onChange={(event) => { setPage(1); setClassFilter(event.target.value); }}>
-            <option value="">Class</option><option value="OTC">Class: OTC</option><option value="RX">Class: Rx</option><option value="CONTROLLED">Class: Controlled (including narcotics)</option>
-          </select>
-          <select aria-label="Filter active status" className={`${FILTER_PILL} min-w-28 ${activeFilter !== 'active' ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`} value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as typeof activeFilter); }}>
-            <option value="active">Status: Active</option><option value="inactive">Status: Inactive</option><option value="all">Status: All</option>
-          </select>
-          <label className={`inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold focus-within:ring-2 focus-within:ring-accent ${lowStockOnly ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-surface text-text'}`}>
-            <input type="checkbox" checked={lowStockOnly} onChange={(event) => { setPage(1); setLowStockOnly(event.target.checked); }} className="h-4 w-4 accent-accent" />
-            Low stock only
-          </label>
-          <select aria-label="Saved product views" className={`${FILTER_PILL} min-w-32 border-border bg-surface text-text`} value={selectedSavedView} onChange={(event) => applySavedView(event.target.value)}>
-            <option value="">Saved views</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-          </select>
-          <details className="relative shrink-0">
-            <summary className={`${SECONDARY} cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}>Save view</summary>
-            <div className="absolute right-0 z-20 mt-2 grid min-w-56 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
-              <input aria-label="Saved view name" className={FIELD} placeholder="Name current filters" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCurrentView(); } }} />
-              <button type="button" className={`${BUTTON} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} onClick={saveCurrentView}>Save view</button>
-              {selectedSavedView && <button type="button" className={SECONDARY} onClick={() => {
-                setSavedViews((current) => current.filter((view) => view.id !== selectedSavedView));
-                setSelectedSavedView('');
-                setNotice('Saved view removed.');
-              }}>Delete view</button>}
-            </div>
-          </details>
-          <details className="relative shrink-0">
-            <summary className={`${SECONDARY} cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}>More filters</summary>
-            <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-2 rounded-control border border-border bg-surface p-3 shadow-lg">
-              <label className="grid gap-1 text-xs font-semibold text-muted">Sort products
-                <select aria-label="Sort products" className={FIELD} value={sortColumn} onChange={(event) => { setPage(1); setSortColumn(event.target.value as typeof sortColumn); }}>
-                  <option value="name">Name</option><option value="stock">Stock</option><option value="expiry">Expiry</option><option value="mrp">MRP</option>
-                </select>
-              </label>
-              <button type="button" className={`${SECONDARY} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`} aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`} onClick={() => { setPage(1); setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc'); }}>
-                {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-              </button>
-            </div>
-          </details>
-        </div>
-
-        {activeProductFilters.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Active product filters">
-            {activeProductFilters.map(({ key, label }) => (
-              <FilterChip key={key} onRemove={() => handleRemoveProductFilter(key)} removeLabel={`Remove ${label} filter`}>{label}</FilterChip>
-            ))}
-            <span className="ml-auto text-sm font-semibold text-muted" aria-live="polite">
-              {totalCount.toLocaleString()} {totalCount === 1 ? 'product' : 'products'}
-            </span>
-            <button type="button" className="rounded-control px-2 py-1 text-sm font-semibold text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" onClick={handleClearProductFilters}>
-              Clear all
-            </button>
-          </div>
-        )}
-      </section>
-
-      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button type="button" className={SECONDARY} disabled={loading} onClick={() => void loadProducts()}>Retry products</button></div>}
-      {optionsError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{optionsError}</span><button type="button" className={SECONDARY} onClick={() => void loadOptions().catch((caught) => setOptionsError(messageFor(caught, 'Could not load categories and manufacturers.')))}>Retry filters</button></div>}
-      {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-2 text-xs text-danger"><span>{error}</span><button type="button" className={SECONDARY} disabled={loading} onClick={() => void loadProducts()}>Retry products</button></div>}
+      {optionsError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-2 text-xs text-danger"><span>{optionsError}</span><button type="button" className={SECONDARY} onClick={() => void loadOptions().catch((caught) => setOptionsError(messageFor(caught, 'Could not load categories and manufacturers.')))}>Retry filters</button></div>}
+      {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-2 text-xs text-text">{notice}</div>}
 
       <DataTable
         label="Products"
@@ -1410,6 +1538,12 @@ function ProductsCatalog({
         }}
         actions={[
           ...(canEditProducts ? [{ label: 'Edit product', onSelect: openEdit }] : []),
+          { label: 'Print barcode', onSelect: (m: Medicine) => printBarcodeForMedicine(m), disabled: (m: Medicine) => !m.barcode?.trim() },
+          ...(canEditProducts ? [{
+            label: generatingBarcodeId ? 'Making barcode…' : 'Make barcode',
+            onSelect: (m: Medicine) => void generateBarcodeForMedicine(m),
+            disabled: (m: Medicine) => Boolean(m.barcode?.trim()) || generatingBarcodeId === m.id,
+          }] : []),
           ...(canViewStockInventory && onViewBatches ? [{ label: 'View batches', onSelect: (medicine: Medicine) => onViewBatches(medicine.id) }] : []),
           ...(canEditProducts ? [
             { label: 'Deactivate product', onSelect: (medicine: Medicine) => setPendingStatusChange({ medicine, active: false }), disabled: (medicine: Medicine) => !medicine.is_active },

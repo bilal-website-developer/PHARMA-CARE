@@ -98,6 +98,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Owner-reported applied; source verified:** POS checkout posts sales through `post_sale`, supports server-recorded cash/online/credit/split payments, and updates customer credit state. Owner reports `20261013160000_persist_sales_and_returns.sql` applied successfully after fixing two SQL syntax errors, and shared query results verify selected RPC ACL/security metadata. Runtime sale/return behavior has not yet been verified.
 - **SQL Editor corrections:** Fixed the apostrophe in the payment exception text (`customer''s`) and the missing empty-array fallback closing expression in `pending_sale_returns()`.
+- **Done (UI & POS Fixes):** Barcode scanner integrated into search; cart void removed; robust catalog fallback for unconfigured units; customer grid dashed button removed; compact categories/master data table; on-demand expiry timeline in Stock Inventory; compact POS-style cards in Stock Purchase; slim 1-row KPI tiles across Sales History, Business Analytics, and Cash Book.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
 - **Done in source (migration/Edge Function deployment pending):** Admin Trash Bin lists user deletions/restorations, product/supplier deactivations/restorations, and purchase voids with actor names, time, reason, entity filters, and only safe restore actions.
 - **Implemented locally:** Barcode validation, medicine-level EAN-13 generation and bulk assignment RPC files, and barcode printing are present. Client package commit `818af6c` adds Edit/Print/Make actions on product rows, cards, and a product-details dialog; per-product label quantities (1–200) with a 1,000-label job cap; a scanner test dialog; and fast keyboard-scanner handling in Products search and POS. Label printing requires an assigned barcode; it no longer falls back to the product code. Missing barcode-generation RPCs show an explicit notice. This package changed no SQL/schema and applied no migration. Real scanner/printer hardware remains untested.
@@ -140,6 +141,11 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Trash Bin records user soft-deletes/restores, product/supplier active-state changes, and purchase voids. Purchase records are not physically deleted or directly restorable.
 
 ## Changelog
+
+- 2026-10-17 — Completed full 11-item UI Redesign: POS Billing full-height pinned cart; GlowCredit animation removed; Products Option A compact toolbar, 1-line stats, row action menu (...); Stock Inventory Option A slim header, 1-row KPI tiles, expiry timeline; Customer Ledger Option C cards grid, dashed + New customer card, side statement drawer; WhatsApp Reminders 1-line pro-tip and compact table; dedicated SalesHistoryView (slim KPI tiles, recent sales table above the fold, print panel with Gross Profit & Margin %); My Print Requests filter chips and compact rows; Purchase History slim header and 1-row KPI tiles; dedicated Business Analytics ReportsScreen; Print Requests Admin status chips, search, compact rows, and bulk approve/reject with checkboxes. Lint, 18 test suites (122 tests), and build pass: exit 0.
+- 2026-10-17 — Expanded Demo Data across all pages and fixed POS Billing catalog: POS now displays 12 retail medicines with instant fallback when demo data is active; Dashboard dynamically reflects demo sales, cash/credit, profit, and stock alerts; Customers (4 Pakistani retail customers), Customer Ledger, Sales History (itemized completed sales), Reports (Business Analytics), Cash Book (drawer transactions and vouchers), Suppliers (Premier Distributors Ltd), and Purchase History now fully populate demo data when active. Settings 'Remove Demo Data' cleanly deactivates/removes demo data across DB and local state and resets all screens. TypeScript check and 18 test suites (122 tests) pass: exit 0. Build verified clean: exit 0, 1830 modules, no errors.
+- 2026-10-16 — Added Demo Data & Client Showcase system: created demoDataManager with 12 popular Pakistani retail medicines (Panadol, Augmentin, Risek, Brufen, Arinac, Flagyl, Disprin, Ponstan, Gravinate, Surbex Z, CAC-1000, Softin) with authentic pricing, units, barcodes, batches, plus 1 distributor supplier (Premier Distributors Ltd) and embedded ledger. Added Load/Remove Demo Data controls in SettingsView with safe confirmation and stock refresh event. TypeScript check and 18 test suites pass: exit 0.
+- 2026-10-16 — Redesigned SuppliersView: add-supplier form hidden by default (modal-based), embedded interactive supplier ledger, activate/deactivate preserved. TypeScript check and 18 test suites (122 tests) pass: exit 0.
 
 - 2026-10-16 � Moved `PrintSalesReport` from `SettingsView` into `ReportsScreen` (Business Analytics page). Added `readShopProfile()` to `storeSettings.ts`. Removed unused `sales`/`currentUserName` from SettingsView and stale `onAddProduct` from Sidebar. App now passes storeName/address/phone/generatedBy to both ReportsScreen render sites. TypeScript lint: exit 0.
 - 2026-10-14 — Read-only code/database/security/logic/returns audit recorded in `docs/audit/`. Local lint, 18 test scripts (122 tests), build, and production dependency audit pass. No SQL, deployment, demo data, or application-code change was made for the audit. Key current risks: missing active-POS prescription enforcement, forward-folder rollback files, dashboard sample stock KPIs, in-memory Cash Book, and return/report settlement gaps.
@@ -193,15 +199,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-16T14:27:36.047Z
+Generated at (UTC): 2026-10-17T10:22:08.202Z
 Git branch: main
 
 Last 5 commit subjects:
+- little update
 - bbb
 - docs: record accumulated work on main
 - feat: add sidebar shortcut for product creation
 - security
-- chore: delete unused repository review view
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -288,6 +294,7 @@ src/
     src/components/PurchaseHistoryView.tsx
     src/components/ReportsScreen.tsx
     src/components/returns/
+    src/components/SalesHistoryView.tsx
     src/components/SettingsView.tsx
     src/components/Sidebar.tsx
     src/components/StockAlertBell.tsx
@@ -302,6 +309,7 @@ src/
   src/constants/
     src/constants/brand.ts
   src/data/
+    src/data/demoDataManager.ts
     src/data/mockPharmacyData.ts
     src/data/posCatalog.ts
     src/data/posCatalogLogic.test.ts

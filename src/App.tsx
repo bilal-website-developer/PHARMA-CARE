@@ -7,8 +7,14 @@ import {
   LedgerEntry,
 } from './types/pharmacy';
 import {
-  INITIAL_PRODUCTS,
-} from './data/mockPharmacyData';
+  isDemoDataLoadedLocally,
+  getDemoCustomers,
+  getDemoLedgerEntries,
+  getDemoSales,
+  getDemoTransactions,
+  getDemoProducts,
+  DEMO_DATA_CHANGED_EVENT,
+} from './data/demoDataManager';
 import {
   loadCustomerAccountsSummary,
   loadPosCustomers,
@@ -48,6 +54,7 @@ const InventoryScreen = lazy(() => import('./components/InventoryScreen').then((
 const MasterDataView = lazy(() => import('./components/MasterDataView').then(({ MasterDataView: View }) => ({ default: View })));
 const WhatsAppRemindersView = lazy(() => import('./components/WhatsAppRemindersView').then(({ WhatsAppRemindersView: View }) => ({ default: View })));
 const CustomerLedgerScreen = lazy(() => import('./components/CustomerLedgerScreen').then(({ CustomerLedgerScreen: View }) => ({ default: View })));
+const SalesHistoryView = lazy(() => import('./components/SalesHistoryView').then(({ SalesHistoryView: View }) => ({ default: View })));
 const ReportsScreen = lazy(() => import('./components/ReportsScreen').then(({ ReportsScreen: View }) => ({ default: View })));
 const CashBookScreen = lazy(() => import('./components/CashBookScreen').then(({ CashBookScreen: View }) => ({ default: View })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(({ SettingsView: View }) => ({ default: View })));
@@ -444,12 +451,22 @@ function PharmacyWorkspace({
     }
   }, [activeItem]);
 
+  const [isDemoActive, setIsDemoActive] = useState(isDemoDataLoadedLocally);
+
+  useEffect(() => {
+    const handleDemoChange = () => {
+      setIsDemoActive(isDemoDataLoadedLocally());
+    };
+    window.addEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
+    return () => window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
+  }, []);
+
   // Main Datasets
-  const products = INITIAL_PRODUCTS;
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>({});
-  const [transactions, setTransactions] = useState<CashTransaction[]>([]);
-  const [completedSales, setCompletedSales] = useState<CompletedSale[]>([]);
+  const products = isDemoActive ? getDemoProducts() : [];
+  const [customers, setCustomers] = useState<Customer[]>(() => (isDemoDataLoadedLocally() ? getDemoCustomers() : []));
+  const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>(() => (isDemoDataLoadedLocally() ? getDemoLedgerEntries() : {}));
+  const [transactions, setTransactions] = useState<CashTransaction[]>(() => (isDemoDataLoadedLocally() ? getDemoTransactions() : []));
+  const [completedSales, setCompletedSales] = useState<CompletedSale[]>(() => (isDemoDataLoadedLocally() ? getDemoSales() : []));
   const [dataLoadError, setDataLoadError] = useState('');
 
   useEffect(() => {
@@ -457,6 +474,7 @@ function PharmacyWorkspace({
       setCustomers([]);
       setLedgerEntries({});
       setCompletedSales([]);
+      setTransactions([]);
       setDataLoadError('');
       return;
     }
@@ -471,13 +489,41 @@ function PharmacyWorkspace({
     if (session.permissions.includes('customers')) {
       void loadCustomerAccountsSummary().then((accounts) => {
         if (!active) return;
-        setCustomers(accounts.customers);
-        setLedgerEntries(accounts.ledgerEntries);
-      }).catch(reportLoadError);
+        if (accounts.customers.length > 0) {
+          setCustomers(accounts.customers);
+          setLedgerEntries(accounts.ledgerEntries);
+        } else if (isDemoDataLoadedLocally()) {
+          setCustomers(getDemoCustomers());
+          setLedgerEntries(getDemoLedgerEntries());
+        } else {
+          setCustomers([]);
+          setLedgerEntries({});
+        }
+      }).catch((err) => {
+        if (isDemoDataLoadedLocally()) {
+          setCustomers(getDemoCustomers());
+          setLedgerEntries(getDemoLedgerEntries());
+        } else {
+          reportLoadError(err);
+        }
+      });
     } else if (session.permissions.includes('pos')) {
       void loadPosCustomers().then((loadedCustomers) => {
-        if (active) setCustomers(loadedCustomers);
-      }).catch(reportLoadError);
+        if (!active) return;
+        if (loadedCustomers.length > 0) {
+          setCustomers(loadedCustomers);
+        } else if (isDemoDataLoadedLocally()) {
+          setCustomers(getDemoCustomers());
+        } else {
+          setCustomers([]);
+        }
+      }).catch((err) => {
+        if (isDemoDataLoadedLocally()) {
+          setCustomers(getDemoCustomers());
+        } else {
+          reportLoadError(err);
+        }
+      });
     } else {
       setCustomers([]);
       setLedgerEntries({});
@@ -485,16 +531,35 @@ function PharmacyWorkspace({
 
     if (session.permissions.includes('sales_history')) {
       void loadSalesHistory().then((sales) => {
-        if (active) setCompletedSales(sales);
-      }).catch(reportLoadError);
+        if (!active) return;
+        if (sales.length > 0) {
+          setCompletedSales(sales);
+        } else if (isDemoDataLoadedLocally()) {
+          setCompletedSales(getDemoSales());
+        } else {
+          setCompletedSales([]);
+        }
+      }).catch((err) => {
+        if (isDemoDataLoadedLocally()) {
+          setCompletedSales(getDemoSales());
+        } else {
+          reportLoadError(err);
+        }
+      });
     } else {
       setCompletedSales([]);
+    }
+
+    if (isDemoDataLoadedLocally()) {
+      setTransactions((prev) => (prev.length > 0 ? prev : getDemoTransactions()));
+    } else {
+      setTransactions([]);
     }
 
     return () => {
       active = false;
     };
-  }, [session?.userId, session?.permissions]);
+  }, [session?.userId, session?.permissions, isDemoActive]);
 
   // Global Modals
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
@@ -766,7 +831,6 @@ function PharmacyWorkspace({
               memoSettings={memoSettings}
               onPrintReceipt={handlePrintReceipt}
               onSaleComplete={handleSaleComplete}
-              onOpenTemplatePreview={() => openTemplatePreview(billingPreferences.template)}
             />
           )}
 
@@ -832,7 +896,7 @@ function PharmacyWorkspace({
           )}
 
           {activeItem === 'sales-history' && (
-            <ReportsScreen
+            <SalesHistoryView
               sales={completedSales}
               currentRole={currentRole}
               storeName={companyName}

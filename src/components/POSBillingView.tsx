@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Package,
-  Sparkles,
   Barcode,
   X,
   Zap,
@@ -41,6 +40,7 @@ import { findProductByScan, normalizeScannedValue, useBarcodeScanner } from '../
 import { loadPosCatalog } from '../data/posCatalog';
 import { getRequiredSmallestUnits, type PosCatalogProduct } from '../data/posCatalogLogic';
 import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
+import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
 
@@ -56,7 +56,6 @@ interface POSBillingViewProps {
   memoSettings: PharmacyMemoSettings;
   onPrintReceipt: PrintReceiptHandler;
   onSaleComplete: (sale: CompletedSale) => void;
-  onOpenTemplatePreview: () => void;
 }
 
 export const POSBillingView: React.FC<POSBillingViewProps> = ({
@@ -70,25 +69,22 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   memoSettings,
   onPrintReceipt,
   onSaleComplete,
-  onOpenTemplatePreview,
 }) => {
   const [products, setProducts] = useState<PosCatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
   const [catalogRetry, setCatalogRetry] = useState(0);
   // Top Tabs
-  const [activeTopTab, setActiveTopTab] = useState<'sale' | 'quotation' | 'search-quote' | 'barcode'>(
-    'sale'
-  );
+  const [activeTopTab, setActiveTopTab] = useState<'sale' | 'barcode'>('sale');
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartLayout, setCartLayout] = useState<'2-stage' | 'dock' | 'side' | 'quick'>('dock');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [walkInName, setWalkInName] = useState<string>('Walk-in Customer');
 
@@ -129,9 +125,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
     refreshCatalog();
     window.addEventListener(STOCK_CHANGED_EVENT, handleStockChanged);
+    window.addEventListener(DEMO_DATA_CHANGED_EVENT, handleStockChanged);
     return () => {
       active = false;
       window.removeEventListener(STOCK_CHANGED_EVENT, handleStockChanged);
+      window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleStockChanged);
     };
   }, [currentUserId, catalogRetry]);
 
@@ -567,74 +565,62 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-auto lg:h-[calc(100vh-5.25rem)] min-h-[600px] gap-2">
       {saleError && (
-        <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shrink-0">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {saleError}
         </div>
       )}
-      {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{printNotice}</p>}
-      {/* ── Top Tabs (Sale, Quotation, Search Quotation, Barcode Scan) ──────── */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200/90 shadow-xs">
-          <button
-            onClick={() => setActiveTopTab('sale')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTopTab === 'sale'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span>🟦 Sale</span>
-          </button>
-          <button
-            onClick={() => setActiveTopTab('quotation')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTopTab === 'quotation'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span>📄 Quotation</span>
-          </button>
-          <button
-            onClick={() => setActiveTopTab('search-quote')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTopTab === 'search-quote'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span>🔍 Search Quotation</span>
-          </button>
-          <button
-            onClick={() => setActiveTopTab('barcode')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTopTab === 'barcode'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Barcode className="w-3.5 h-3.5" />
-            <span>Barcode Scan</span>
-          </button>
-        </div>
-
-        {/* Template Preview Launcher */}
-        <button
-          onClick={onOpenTemplatePreview}
-          className="px-3.5 py-1.5 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 rounded-xl shadow-xs flex items-center gap-1.5 transition"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-          <span>Quick View Template Preview</span>
-        </button>
-      </div>
+      {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-text shrink-0">{printNotice}</p>}
 
       {/* ── Main Split View ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 items-stretch">
         {/* Left 7 Cols: Product Catalog & Fast Search */}
-        <div className="lg:col-span-7 space-y-3">
+        <div className="lg:col-span-7 flex flex-col gap-2 min-h-0">
+          {/* Top Tabs (Sale, Medicine Returns, Barcode Scan) moved here to eliminate right-side gap */}
+          <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200/90 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTopTab('sale')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  activeTopTab === 'sale'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>🟦 Sale</span>
+              </button>
+
+              <SaleReturnsPanel
+                canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
+                  && permissions.includes('sales_history')}
+                canRestock={permissions.includes('stock_inventory')}
+                triggerClassName="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-600 hover:bg-slate-100 border-0 bg-transparent shadow-none"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = activeTopTab === 'barcode' ? 'sale' : 'barcode';
+                  setActiveTopTab(next);
+                  if (next === 'barcode') {
+                    setTimeout(() => searchInputRef.current?.focus(), 50);
+                  }
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  activeTopTab === 'barcode'
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-300'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Barcode className="w-3.5 h-3.5" />
+                <span>Barcode Scan</span>
+              </button>
+            </div>
+          </div>
+
           {catalogError && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
               <span>{catalogError}</span>
@@ -647,18 +633,54 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               </button>
             </div>
           )}
-          {/* Search Bar & Filters (Matching Screenshot 7) */}
-          <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+
+          {/* Unified Search Bar & Filters with Integrated Barcode Scan */}
+          <div className={`p-2.5 rounded-2xl border transition-all shadow-xs flex flex-col sm:flex-row gap-2 ${
+            activeTopTab === 'barcode'
+              ? 'bg-blue-50/60 border-blue-300 ring-2 ring-blue-500/20'
+              : 'bg-white border-slate-200/90'
+          }`}>
+            <div className="relative flex-1 flex items-center">
+              {activeTopTab === 'barcode' ? (
+                <Barcode className="w-4 h-4 text-blue-600 absolute left-3 pointer-events-none" />
+              ) : (
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              )}
               <input
+                ref={searchInputRef}
                 type="text"
-                placeholder="Search products / brand (F2)..."
+                placeholder={
+                  activeTopTab === 'barcode'
+                    ? 'Scan barcode or enter code (Press Enter to add)...'
+                    : 'Search products / brand / barcode (F2)...'
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 font-medium"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    e.preventDefault();
+                    submitBarcode(searchQuery);
+                  }
+                }}
+                className="w-full pl-9 pr-16 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 font-medium bg-white"
                 autoFocus
               />
+              {activeTopTab === 'barcode' && (
+                <div className="absolute right-2 flex items-center gap-1.5">
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-[10px] text-slate-500 hover:text-slate-800 px-1 font-semibold"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold text-white uppercase tracking-wider">
+                    SCAN
+                  </span>
+                </div>
+              )}
             </div>
 
             <select
@@ -686,53 +708,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             </select>
           </div>
 
-          {activeTopTab === 'barcode' && (
-            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3 shadow-xs">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-blue-700">
-                  <Barcode className="h-4 w-4" />
-                  Barcode scanner mode
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setBarcodeInput('')}
-                  className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700"
-                >
-                  Clear
-                </button>
-              </div>
-
-              <div className="mt-2 flex gap-2">
-                <input
-                  type="text"
-                  value={barcodeInput}
-                  placeholder="Scan barcode or type here"
-                  onChange={(event) => setBarcodeInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                    }
-                  }}
-                  className="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:outline-blue-600"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => submitBarcode(barcodeInput)}
-                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
-                >
-                  Add item
-                </button>
-              </div>
-
-              <p className="mt-2 text-[10px] text-slate-600">
-                Keyboard scanner input is captured automatically and matched against the product barcode or internal code.
-              </p>
-            </div>
-          )}
-
           {/* Product Chips Grid (Matching Screenshot 7) */}
-          <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[580px] overflow-y-auto pr-1">
+          <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2 flex-1 min-h-0 overflow-y-auto pr-1">
             {catalogLoading && products.length === 0 && (
               <div role="status" className="col-span-full rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
                 Loading live product catalog...
@@ -746,7 +723,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <button
                   key={p.id}
                   onClick={() => handleAddToCart(p)}
-                  className="pos-product-card bg-white p-3 rounded-xl border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-sm text-left transition flex flex-col justify-between group h-28"
+                  className="pos-product-card bg-white p-2.5 rounded-xl border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-sm text-left transition flex flex-col justify-between group h-28"
                 >
                   <div>
                     <span className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition block truncate">
@@ -760,7 +737,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between">
                     <div>
                       <span className="text-xs font-mono font-black text-slate-900 block">
                         Rs. {(defaultUnit.pricePerUnitPaisa / 100).toFixed(0)}
@@ -785,10 +762,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
 
         {/* Right 5 Cols: Cart & Checkout Bar (Matching Screenshot 7, 8, 61, 62) */}
-        <div className="lg:col-span-5 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between">
-          <div>
+        <div className="lg:col-span-5 bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full min-h-0 justify-between">
+          <div className="flex flex-col min-h-0 flex-1">
             {/* Top Cart Header & Layout Switches (Matching Screenshot 7) */}
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 mb-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2 shrink-0">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-blue-600" />
                 <span className="pos-cart-count text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
@@ -796,76 +773,30 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </span>
               </div>
 
-              {/* Layout Switcher Pills */}
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold text-slate-600">
-                <button
-                  onClick={() => setCartLayout('2-stage')}
-                  className={`px-2 py-0.5 rounded ${
-                    cartLayout === '2-stage' ? 'bg-blue-600 text-white shadow-xs' : ''
-                  }`}
-                >
-                  2-Stage
-                </button>
-                <button
-                  onClick={() => setCartLayout('dock')}
-                  className={`px-2 py-0.5 rounded ${
-                    cartLayout === 'dock' ? 'bg-blue-600 text-white shadow-xs' : ''
-                  }`}
-                >
-                  Dock
-                </button>
-                <button
-                  onClick={() => setCartLayout('side')}
-                  className={`px-2 py-0.5 rounded ${
-                    cartLayout === 'side' ? 'bg-blue-600 text-white shadow-xs' : ''
-                  }`}
-                >
-                  Side
-                </button>
-                <button
-                  onClick={() => setCartLayout('quick')}
-                  className={`px-2 py-0.5 rounded ${
-                    cartLayout === 'quick' ? 'bg-blue-600 text-white shadow-xs' : ''
-                  }`}
-                >
-                  Quick
-                </button>
-              </div>
-              <SaleReturnsPanel
-                canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
-                  && permissions.includes('sales_history')}
-                canRestock={permissions.includes('stock_inventory')}
-              />
-            </div>
-
-            {/* Customer Select Row (Matching Screenshot 7) */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="relative">
+              {/* Walk-in Customer — positioned in header where layout pills/medicine returns was */}
+              <div className="flex items-center gap-2">
                 <select
                   value={selectedCustomerId}
                   onChange={(e) => setSelectedCustomerId(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium text-slate-800"
+                  className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium text-slate-700 max-w-[150px]"
                 >
                   <option value="">👤 Walk-in Customer</option>
                   {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+                <input
+                  type="text"
+                  placeholder="Customer name"
+                  value={walkInName}
+                  onChange={(e) => setWalkInName(e.target.value)}
+                  className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 w-32"
+                />
               </div>
-
-              <input
-                type="text"
-                placeholder="Walk-in Name"
-                value={walkInName}
-                onChange={(e) => setWalkInName(e.target.value)}
-                className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600"
-              />
             </div>
 
-            {/* Cart Items List (Matching Screenshot 8) */}
-            <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
+            {/* Cart Items List — with flex-1 min-h-0 overflow-y-auto so it stretches full card height */}
+            <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
               {cart.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">
                   <Package className="w-8 h-8 mx-auto mb-1 text-slate-300" />
@@ -938,7 +869,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           </div>
 
           {/* ── Bottom Dock Checkout Panel (Matching Screenshot 8, 61, 62) ─── */}
-          <div className="mt-4 pt-3 border-t border-slate-200 space-y-2.5">
+          <div className="mt-auto pt-2.5 border-t border-slate-200 space-y-2 shrink-0">
             {/* Subtotal & Quick Discount Row */}
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-slate-600 font-medium">

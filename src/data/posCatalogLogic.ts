@@ -1,4 +1,4 @@
-import { BatchStatus, DrugClass } from '../types/pharmacy';
+import { BatchStatus, DrugClass, Product } from '../types/pharmacy';
 import type { FefoBatch } from '../utils/fefo';
 
 export interface PosCatalogUnit {
@@ -174,3 +174,38 @@ export function toPosCatalogProducts(
     })),
   }));
 }
+
+export function initialProductsToPosCatalog(products: Product[]): PosCatalogProduct[] {
+  return products
+    .filter((p) => p.batches.some((b) => b.quantitySmallestUnit > 0 && (b.status === BatchStatus.ACTIVE || b.status === BatchStatus.NEAR_EXPIRY)))
+    .map((p) => ({
+      id: p.id,
+      code: p.code,
+      barcode: p.barcode || null,
+      brandName: p.brandName,
+      genericName: p.genericName,
+      strength: p.strength ?? null,
+      category: p.category,
+      company: p.company,
+      drugClass: p.drugClass,
+      units: p.units.map((u) => ({
+        id: u.id,
+        name: u.name,
+        conversionFactor: u.conversionFactor,
+        isDefaultSaleUnit: u.isDefaultSaleUnit,
+        pricePerUnitPaisa: u.pricePerUnitPaisa,
+      })),
+      batches: p.batches
+        .filter((b) => b.quantitySmallestUnit > 0 && (b.status === BatchStatus.ACTIVE || b.status === BatchStatus.NEAR_EXPIRY))
+        .map((b) => ({
+          id: b.id,
+          productId: p.id,
+          batchNumber: b.batchNumber,
+          expiryDate: b.expiryDate,
+          receivedDate: b.receivedDate,
+          quantitySmallestUnit: b.quantitySmallestUnit,
+          status: b.status as BatchStatus.ACTIVE | BatchStatus.NEAR_EXPIRY,
+        })),
+    }));
+}
+

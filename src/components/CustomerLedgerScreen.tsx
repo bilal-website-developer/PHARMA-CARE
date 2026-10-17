@@ -5,6 +5,7 @@ import {
   Plus,
   Receipt,
   Phone,
+  X,
 } from 'lucide-react';
 import { Customer, LedgerEntry, UserRole } from '../types/pharmacy';
 import {
@@ -128,149 +129,261 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
     }
   };
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-      {paymentPrintNotice && <p role="status" className="lg:col-span-12 rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{paymentPrintNotice}</p>}
-      {/* ── Left 4 Cols: Customer List ──────────────────────────────────────── */}
-      <div className="lg:col-span-4 bg-white p-4 rounded-xl border border-emerald-200 shadow-xs space-y-3">
-        <div className="flex items-center justify-between pb-2 border-b border-emerald-100">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-emerald-700" />
-            <h3 className="text-sm font-bold text-emerald-950">Khata Customers</h3>
-          </div>
-          <button
-            onClick={() => setShowNewCustModal(true)}
-            className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
-            title="Add Customer"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
+  const [drawerCustomerId, setDrawerCustomerId] = useState<string | null>(null);
 
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-emerald-600 absolute left-2.5 top-2.5" />
+  const drawerCustomer = customers.find((c) => c.id === drawerCustomerId);
+  const drawerLedger = drawerCustomerId ? ledgerEntries[drawerCustomerId] || [] : [];
+
+  const sendWhatsAppReminder = (c: Customer, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const rawPhone = c.phone.replace(/[^0-9]/g, '');
+    const formattedPhone = rawPhone.startsWith('0') ? `92${rawPhone.slice(1)}` : rawPhone;
+    const duePKR = (c.currentBalancePaisa / 100).toFixed(0);
+
+    const message = encodeURIComponent(
+      `Assalam-o-Alaikum ${c.name},\n\n` +
+      `This is a gentle reminder from your pharmacy.\n` +
+      `Your outstanding ledger balance is *Rs. ${duePKR}*.\n\n` +
+      `Kindly clear the dues at your earliest convenience.\n` +
+      `JazakAllah Khair!`
+    );
+
+    window.open(`https://wa.me/${formattedPhone}?text=${message}`, '_blank');
+  };
+
+  const openReceivePayment = (customerId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedCustomerId(customerId);
+    setShowPaymentModal(true);
+  };
+
+  return (
+    <div className="space-y-4">
+      {paymentPrintNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{paymentPrintNotice}</p>}
+
+      {/* ── Top Row: Search Field & "+ Add" Customer Button ── */}
+      <section className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="relative flex-1 min-w-56">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search customers..."
+            placeholder="Search customers by name, phone or CNIC..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-emerald-300 rounded-lg focus:outline-emerald-600"
+            className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 font-medium"
           />
         </div>
 
-        <div className="space-y-1.5 max-h-[560px] overflow-y-auto">
-          {filteredCustomers.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedCustomerId(c.id)}
-              className={`customer-list-item w-full text-left p-3 rounded-lg border text-xs transition ${
-                selectedCustomerId === c.id
-                  ? 'bg-emerald-50 border-emerald-400 shadow-xs'
-                  : 'bg-white border-emerald-100 hover:bg-emerald-50/50'
-              }`}
-            >
-              <div className="flex justify-between items-start">
-                <span className="font-bold text-emerald-950">{c.name}</span>
-                <span
-                  className={`font-mono font-bold text-[11px] ${
-                    c.currentBalancePaisa > 0 ? 'text-red-600' : 'text-emerald-700'
-                  }`}
-                >
-                  Rs {(c.currentBalancePaisa / 100).toFixed(0)}
-                </span>
-              </div>
-              <div className="text-[11px] text-emerald-700 flex items-center gap-1 mt-1">
-                <Phone className="w-3 h-3" /> {c.phone}
-              </div>
-              <div className="text-[10px] text-emerald-600/80 mt-0.5">
-                Limit: Rs {(c.creditLimitPaisa / 100).toFixed(0)}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+        <button
+          type="button"
+          onClick={() => setShowNewCustModal(true)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition shrink-0"
+        >
+          <Plus className="w-4 h-4" /> Add customer
+        </button>
+      </section>
 
-      {/* ── Right 8 Cols: Customer Statement / Ledger ───────────────────────── */}
-      <div className="lg:col-span-8 bg-white p-5 rounded-xl border border-emerald-200 shadow-xs space-y-4">
-        {selectedCustomer ? (
-          <>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-emerald-100 gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-emerald-950">{selectedCustomer.name}</h2>
-                <div className="flex items-center gap-3 text-xs text-emerald-800 mt-0.5">
-                  <span>Phone: {selectedCustomer.phone}</span>
-                  {selectedCustomer.cnic && <span>CNIC: {selectedCustomer.cnic}</span>}
-                </div>
-              </div>
+      {/* ── Grid of Customer Cards (2 or 3 columns) ── */}
+      {filteredCustomers.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filteredCustomers.map((c) => {
+            const initials = c.name.slice(0, 2).toUpperCase();
+            const hasDue = c.currentBalancePaisa > 0;
 
-              <div className="flex items-center gap-2">
-                <div className="text-right mr-2">
-                  <div className="text-[10px] uppercase font-bold text-emerald-600">Total Due Balance</div>
-                  <div className="text-base font-mono font-bold text-red-600">
-                    Rs {(selectedCustomer.currentBalancePaisa / 100).toFixed(2)}
+            return (
+              <div
+                key={c.id}
+                onClick={() => { setSelectedCustomerId(c.id); setDrawerCustomerId(c.id); }}
+                className="group cursor-pointer bg-white p-4 rounded-xl border border-slate-200/90 hover:border-emerald-400 shadow-xs hover:shadow-sm transition flex flex-col justify-between gap-3 text-xs"
+              >
+                {/* Card Header: Avatar with initial, Name, Phone */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0 text-xs">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-slate-900 group-hover:text-emerald-700 transition truncate text-sm">
+                        {c.name}
+                      </h4>
+                      <p className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5 font-mono">
+                        <Phone className="w-3 h-3 text-slate-400" /> {c.phone}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Due Amount</span>
+                    <span className={`font-mono font-black text-sm ${hasDue ? 'text-red-600' : 'text-emerald-700'}`}>
+                      Rs. {(c.currentBalancePaisa / 100).toFixed(0)}
+                    </span>
                   </div>
                 </div>
 
+                {/* Card Footer: Limit & Quick Action Buttons (Remind & Receive) */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Limit: Rs. {(c.creditLimitPaisa / 100).toFixed(0)}
+                  </span>
+
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    {hasDue && (
+                      <button
+                        type="button"
+                        onClick={(e) => sendWhatsAppReminder(c, e)}
+                        title="Send WhatsApp reminder"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition"
+                      >
+                        Remind
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => openReceivePayment(c.id, e)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition"
+                    >
+                      Receive
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Friendly Empty State when no customers ── */}
+      {filteredCustomers.length === 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-500 max-w-md mx-auto space-y-2 mt-4">
+          <Users className="w-10 h-10 text-slate-300 mx-auto mb-1" />
+          <h4 className="font-bold text-slate-800 text-sm">No customers found</h4>
+          <p className="text-[11px] text-slate-500">
+            {searchQuery ? `No customer matches "${searchQuery}".` : 'No credit customers have been added yet.'}
+          </p>
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-blue-600 font-semibold hover:underline"
+            >
+              Clear search
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Side Drawer / Modal for Customer Ledger ── */}
+      {drawerCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-end">
+          <div
+            className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Drawer Header */}
+            <div className="p-4 bg-emerald-700 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white text-emerald-800 font-black flex items-center justify-center text-sm">
+                  {drawerCustomer.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-white leading-tight">{drawerCustomer.name}</h3>
+                  <p className="text-emerald-100 text-xs font-mono">
+                    {drawerCustomer.phone} {drawerCustomer.cnic ? `· CNIC: ${drawerCustomer.cnic}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-emerald-200 block">Balance Due</span>
+                  <span className="text-base font-black font-mono text-white">
+                    Rs. {(drawerCustomer.currentBalancePaisa / 100).toFixed(2)}
+                  </span>
+                </div>
                 <button
-                  onClick={() => setShowPaymentModal(true)}
-                  className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg flex items-center gap-1.5 shadow-xs transition"
+                  type="button"
+                  onClick={() => setDrawerCustomerId(null)}
+                  className="p-1 text-emerald-100 hover:text-white hover:bg-emerald-600 rounded-lg transition"
+                  aria-label="Close statement"
                 >
-                  <Receipt className="w-4 h-4" /> Receive Payment
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Ledger Transactions Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-emerald-50 text-emerald-950 font-semibold border-b border-emerald-200">
-                  <tr>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">Ref #</th>
-                    <th className="py-2.5 px-3">Description</th>
-                    <th className="py-2.5 px-3 text-right">Debit (Added)</th>
-                    <th className="py-2.5 px-3 text-right">Credit (Paid)</th>
-                    <th className="py-2.5 px-3 text-right">Balance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-emerald-100">
-                  {currentLedger.map((entry) => (
-                    <tr key={entry.id} className="customer-ledger-row hover:bg-emerald-50/30">
-                      <td className="py-2.5 px-3 text-emerald-800 font-mono">{entry.date}</td>
-                      <td className="py-2.5 px-3 font-mono font-semibold text-emerald-900">
-                        {entry.referenceNo}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-700">{entry.description}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-red-600 font-semibold">
-                        {entry.debitPaisa > 0 ? `Rs ${(entry.debitPaisa / 100).toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-semibold">
-                        {entry.creditPaisa > 0 ? `Rs ${(entry.creditPaisa / 100).toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                        Rs {(entry.runningBalancePaisa / 100).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                  {currentLedger.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
-                        No ledger transactions recorded for this customer yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            {/* Quick Actions in Drawer */}
+            <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-xs text-emerald-900 font-semibold">
+                Customer Statement ({drawerLedger.length} entries)
+              </span>
+              <div className="flex items-center gap-2">
+                {drawerCustomer.currentBalancePaisa > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => sendWhatsAppReminder(drawerCustomer, e)}
+                    className="px-3 py-1 text-xs font-bold bg-white text-emerald-700 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition"
+                  >
+                    WhatsApp Reminder
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openReceivePayment(drawerCustomer.id)}
+                  className="px-3 py-1 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition"
+                >
+                  Receive Payment
+                </button>
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="py-12 text-center text-xs text-slate-400">
-            Select a customer from the left list to view their ledger.
-          </div>
-        )}
-      </div>
 
-      {/* ── Receive Payment Modal ─────────────────────────────────────────── */}
+            {/* Drawer Table */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3">Ref #</th>
+                      <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3 text-right">Debit</th>
+                      <th className="py-2.5 px-3 text-right">Credit</th>
+                      <th className="py-2.5 px-3 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {drawerLedger.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-slate-50/70">
+                        <td className="py-2 px-3 text-slate-600">{entry.date}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-800">{entry.referenceNo}</td>
+                        <td className="py-2 px-3 font-sans text-slate-700 max-w-[160px] truncate">{entry.description}</td>
+                        <td className="py-2 px-3 text-right text-red-600 font-semibold">
+                          {entry.debitPaisa > 0 ? `Rs. ${(entry.debitPaisa / 100).toFixed(0)}` : '-'}
+                        </td>
+                        <td className="py-2 px-3 text-right text-emerald-700 font-semibold">
+                          {entry.creditPaisa > 0 ? `Rs. ${(entry.creditPaisa / 100).toFixed(0)}` : '-'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-bold text-slate-900">
+                          Rs. {(entry.runningBalancePaisa / 100).toFixed(0)}
+                        </td>
+                      </tr>
+                    ))}
+                    {drawerLedger.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-10 text-center text-xs text-slate-400 font-sans">
+                          No transactions recorded for this customer yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment Modal ─────────────────────────────────────────────────── */}
       {showPaymentModal && selectedCustomer && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <form

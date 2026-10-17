@@ -276,6 +276,7 @@ export function StockInventory({
   });
   const [stats, setStats] = useState<StockOverviewStats | null>(null);
   const [expiryBuckets, setExpiryBuckets] = useState<StockExpiryBucket[]>([]);
+  const [showExpiryTimeline, setShowExpiryTimeline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -803,101 +804,143 @@ export function StockInventory({
   };
 
   return (
-    <div className="space-y-4">
-      <header className={`${PANEL} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between`}>
+    <div className="space-y-3">
+      {/* ── Slim Header Row ── */}
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-black text-text">Stock Inventory</h1>
-          <p className="text-sm text-muted">Live batch balances from purchases and stock movements.</p>
+          <h1 className="text-xl font-black text-text">Stock Inventory</h1>
+          <p className="text-xs text-muted">Live batch balances from purchases and stock movements.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <details className="relative">
-            <summary className={`${SECONDARY} list-none cursor-pointer`}>
-              <Download size={16} /> {exporting ? 'Exporting…' : 'Export'}
+            <summary className={`${SECONDARY} text-xs px-2.5 py-1.5 list-none cursor-pointer`}>
+              <Download size={14} /> {exporting ? 'Exporting…' : 'Export'}
             </summary>
-            <div className="absolute right-0 z-20 mt-1 min-w-40 rounded-control border border-border bg-surface p-1 shadow-lg">
-              <button type="button" className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-text hover:bg-surface/80" disabled={exporting} onClick={() => void exportRows('csv')}>Export CSV</button>
-              <button type="button" className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-text hover:bg-surface/80" disabled={exporting} onClick={() => void exportRows('xlsx')}><FileSpreadsheet size={15} />Export XLSX</button>
+            <div className="absolute right-0 z-20 mt-1 min-w-36 rounded-control border border-border bg-surface p-1 shadow-lg text-xs">
+              <button type="button" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-xs text-text hover:bg-surface/80" disabled={exporting} onClick={() => void exportRows('csv')}>Export CSV</button>
+              <button type="button" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-xs text-text hover:bg-surface/80" disabled={exporting} onClick={() => void exportRows('xlsx')}><FileSpreadsheet size={13} />Export XLSX</button>
             </div>
           </details>
-          <button type="button" className={BUTTON} onClick={() => { setPickerOpen(true); setPickerError(''); }}><SlidersHorizontal size={16} />Adjust stock</button>
+          <button type="button" className={`${BUTTON} text-xs px-3 py-1.5`} onClick={() => { setPickerOpen(true); setPickerError(''); }}>
+            <SlidersHorizontal size={14} />Adjust stock
+          </button>
         </div>
       </header>
 
+      {/* ── KPI Strip: 4 Small Tiles on Single Row ── */}
       {stats ? (
-        <section aria-label="Stock overview" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {stats.stock_value_cost_paisa !== null && <KpiCard compact label="Stock value (cost)" value={money(stats.stock_value_cost_paisa)} detail="all active batches" />}
-          <KpiCard compact label="Stock value (MRP)" value={money(stats.stock_value_mrp_paisa)} detail="potential sales" />
-          <KpiCard compact label="Expiring in 30 days" value={stats.expiring_30.toLocaleString()} detail="batches" valueClassName="text-warning" />
-          <KpiCard
-            compact
-            label="Expired"
-            value={stats.expired_batches.toLocaleString()}
-            detail={stats.expired_value_at_risk_paisa === null
-              ? 'batches with remaining stock'
-              : `${money(stats.expired_value_at_risk_paisa)} at risk`}
-            valueClassName="text-danger"
-          />
+        <section aria-label="Stock overview" className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          {stats.stock_value_cost_paisa !== null && (
+            <div className="rounded-lg border border-border bg-surface px-3 py-2 flex items-center justify-between shadow-2xs">
+              <span className="text-muted font-medium">Stock value (cost)</span>
+              <strong className="font-mono font-black text-xs text-text">{money(stats.stock_value_cost_paisa)}</strong>
+            </div>
+          )}
+          <div className="rounded-lg border border-border bg-surface px-3 py-2 flex items-center justify-between shadow-2xs">
+            <span className="text-muted font-medium">Stock value (MRP)</span>
+            <strong className="font-mono font-black text-xs text-text">{money(stats.stock_value_mrp_paisa)}</strong>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowExpiryTimeline((prev) => !prev)}
+            className={`rounded-lg border px-3 py-2 flex items-center justify-between shadow-2xs text-left transition cursor-pointer ${
+              showExpiryTimeline ? 'border-warning/50 bg-warning/5 ring-1 ring-warning/30' : 'border-border bg-surface hover:border-warning/40'
+            }`}
+            title="Click to toggle expiry timeline panel"
+          >
+            <span className="text-muted font-medium flex items-center gap-1.5">
+              Expiring 30d
+              <span className="text-[10px] text-accent underline font-normal">timeline</span>
+            </span>
+            <strong className="font-mono font-black text-xs text-warning">{stats.expiring_30.toLocaleString()}</strong>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowExpiryTimeline((prev) => !prev)}
+            className={`rounded-lg border px-3 py-2 flex items-center justify-between shadow-2xs text-left transition cursor-pointer ${
+              showExpiryTimeline ? 'border-danger/50 bg-danger/5 ring-1 ring-danger/30' : 'border-border bg-surface hover:border-danger/40'
+            }`}
+            title="Click to toggle expiry timeline panel"
+          >
+            <span className="text-muted font-medium flex items-center gap-1.5">
+              Expired
+              <span className="text-[10px] text-accent underline font-normal">timeline</span>
+            </span>
+            <strong className="font-mono font-black text-xs text-danger">{stats.expired_batches.toLocaleString()}</strong>
+          </button>
         </section>
       ) : loading ? (
-        <section aria-label="Stock overview loading" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }, (_, index) => <div key={index} className={PANEL}><Skeleton label="Loading stock overview" lines={3} /></div>)}
+        <section aria-label="Stock overview loading" className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-9 rounded-lg bg-surface animate-pulse border border-border" />)}
         </section>
       ) : null}
 
       {initialMedicineId && (
-        <div className="flex flex-wrap items-center gap-2 rounded-control border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-text">
-          <span>Showing batches for the selected product.</span>
-          {onClearMedicineFilter && <button type="button" className={SECONDARY} onClick={onClearMedicineFilter}>Show all products</button>}
+        <div className="flex flex-wrap items-center gap-2 rounded-control border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-text">
+          <span>Showing batches for selected product.</span>
+          {onClearMedicineFilter && <button type="button" className={`${SECONDARY} text-xs px-2 py-1`} onClick={onClearMedicineFilter}>Show all</button>}
         </div>
       )}
       {error && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           <span>{error}</span>
           <button type="button" className={SECONDARY} disabled={loading} onClick={() => void load()}>Retry</button>
         </div>
       )}
-      {notice && <div role="status" className="rounded-control border border-border bg-surface px-4 py-3 text-sm text-text">{notice}</div>}
+      {notice && <div role="status" className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-text">{notice}</div>}
 
-      <section className={`${PANEL} space-y-3 p-3`}>
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <SegmentedTabs
-            label="Stock inventory views"
-            value={tab}
-            tabs={STOCK_TABS.map((item) => ({
-              ...item,
-              label: item.value === 'near-expiry'
-                ? `${item.label} (${tabCounts['near-expiry'].toLocaleString()})`
-                : item.value === 'expired'
-                  ? `${item.label} (${tabCounts.expired.toLocaleString()})`
-                  : item.value === 'adjustment-log'
-                    ? `${item.label} (${tabCounts['adjustment-log'].toLocaleString()})`
-                    : item.label,
-            }))}
-            onChange={selectTab}
-          />
-          <label className="relative min-w-48 flex-1 xl:max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+      {/* ── Tabs Row & Search ── */}
+      <section className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between text-xs">
+        <SegmentedTabs
+          label="Stock inventory views"
+          value={tab}
+          tabs={STOCK_TABS.map((item) => ({
+            ...item,
+            label: item.value === 'near-expiry'
+              ? `${item.label} (${tabCounts['near-expiry'].toLocaleString()})`
+              : item.value === 'expired'
+                ? `${item.label} (${tabCounts.expired.toLocaleString()})`
+                : item.value === 'adjustment-log'
+                  ? `${item.label} (${tabCounts['adjustment-log'].toLocaleString()})`
+                  : item.label,
+          }))}
+          onChange={selectTab}
+        />
+        <div className="flex items-center gap-1.5 flex-1 max-w-md">
+          <label className="relative flex-1">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted" />
             <input
-              className={`${FIELD} pl-9`}
+              className="w-full rounded-control border border-border bg-surface pl-8 pr-3 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
               aria-label={tab === 'adjustment-log' ? 'Filter adjustment log by exact reason' : 'Search stock batches'}
-              placeholder={tab === 'adjustment-log' ? 'Filter by exact reason' : 'Search medicine or batch'}
+              placeholder={tab === 'adjustment-log' ? 'Filter by exact reason...' : 'Search medicine or batch...'}
               value={search}
               onChange={(event) => { setPage(1); setSearch(event.target.value); }}
             />
           </label>
-          <button type="button" aria-label="Refresh stock inventory" className={SECONDARY} onClick={() => void load()} disabled={loading}><RefreshCw size={16} /></button>
+          <button
+            type="button"
+            aria-label="Toggle expiry timeline"
+            title="Toggle expiry timeline"
+            className={`${SECONDARY} p-1.5 text-xs ${showExpiryTimeline ? 'bg-primary/10 text-primary border-primary/40' : ''}`}
+            onClick={() => setShowExpiryTimeline((prev) => !prev)}
+          >
+            <History size={14} />
+          </button>
+          <button type="button" aria-label="Refresh stock inventory" className={`${SECONDARY} p-1.5 text-xs`} onClick={() => void load()} disabled={loading}><RefreshCw size={14} /></button>
         </div>
-        {expiryBucket && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-muted">Active expiry filter</span>
-            <FilterChip onRemove={() => { setExpiryBucket(null); setPage(1); }} removeLabel="Clear expiry timeline filter">
-              {EXPIRY_LABELS[expiryBucket]}
-            </FilterChip>
-          </div>
-        )}
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      {expiryBucket && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="font-semibold text-muted">Active expiry filter:</span>
+          <FilterChip onRemove={() => { setExpiryBucket(null); setPage(1); }} removeLabel="Clear expiry timeline filter">
+            {EXPIRY_LABELS[expiryBucket]}
+          </FilterChip>
+        </div>
+      )}
+
+      {/* ── Main Area (Batches Table) + Right Column (Slim Expiry Timeline on demand) ── */}
+      <div className={`grid gap-3 ${showExpiryTimeline ? 'xl:grid-cols-[minmax(0,1fr)_260px]' : 'grid-cols-1'}`}>
         <div className="min-w-0">
           {tab === 'adjustment-log' ? (
             <DataTable
@@ -907,8 +950,9 @@ export function StockInventory({
               getRowId={(movement) => movement.id}
               loading={loading}
               emptyTitle="No stock movements found"
-              emptyDescription="Adjustments and write-offs matching this reason will appear here."
+              emptyDescription="Adjustments and write-offs will appear here."
               layout="responsive"
+              compact
               pagination={{
                 page,
                 pageCount,
@@ -927,6 +971,7 @@ export function StockInventory({
               emptyDescription="Try another tab, search, or expiry timeline bucket."
               actions={batchActions}
               layout="responsive"
+              compact
               pagination={{
                 page,
                 pageCount,
@@ -937,34 +982,59 @@ export function StockInventory({
           )}
         </div>
 
-        <aside className={`${PANEL} h-fit p-4`}>
-          <div className="mb-3 flex items-center gap-2">
-            <History size={18} className="text-primary" />
-            <h2 className="font-bold text-text">Expiry timeline</h2>
-          </div>
-          {loading && expiryBuckets.length === 0 ? <Skeleton label="Loading expiry timeline" lines={5} /> : (
-            <div className="space-y-2">
-              {expiryBuckets.map((bucket) => (
+        {/* Right Column: Slim Expiry Timeline (shown on demand) */}
+        {showExpiryTimeline && (
+          <aside className={`${PANEL} h-fit p-3 text-xs animate-fadeIn`}>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <History size={14} className="text-primary" />
+                <h2 className="font-bold text-text text-xs">Expiry timeline</h2>
+              </div>
+              <div className="flex items-center gap-1">
+                {expiryBucket && (
+                  <button
+                    type="button"
+                    onClick={() => { setExpiryBucket(null); setPage(1); }}
+                    className="text-[10px] text-accent font-semibold hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
                 <button
-                  key={bucket.key}
                   type="button"
-                  onClick={() => selectExpiryBucket(bucket.key)}
-                  aria-pressed={expiryBucket === bucket.key}
-                  className={`flex w-full items-center gap-2 rounded-control p-1 text-left text-xs text-text ${expiryBucket === bucket.key ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-surface/80'}`}
+                  onClick={() => setShowExpiryTimeline(false)}
+                  className="p-1 rounded text-muted hover:text-text hover:bg-border/40 transition"
+                  title="Close timeline"
+                  aria-label="Close expiry timeline"
                 >
-                  <span className="w-16 shrink-0">{bucket.label}</span>
-                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-border">
-                    <span
-                      className={`block h-full rounded-full ${bucket.key === 'expired' ? 'bg-danger' : bucket.key === '0-30' ? 'bg-warning' : 'bg-primary'}`}
-                      style={{ width: `${Math.max(bucket.count > 0 ? 3 : 0, (bucket.count / maxBucketCount) * 100)}%` }}
-                    />
-                  </span>
-                  <strong className="w-8 text-right">{bucket.count.toLocaleString()}</strong>
+                  <X size={13} />
                 </button>
-              ))}
+              </div>
             </div>
-          )}
-        </aside>
+            {loading && expiryBuckets.length === 0 ? <Skeleton label="Loading expiry timeline" lines={4} /> : (
+              <div className="space-y-1.5">
+                {expiryBuckets.map((bucket) => (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    onClick={() => selectExpiryBucket(bucket.key)}
+                    aria-pressed={expiryBucket === bucket.key}
+                    className={`flex w-full items-center gap-2 rounded-lg p-1.5 text-left text-xs transition ${expiryBucket === bucket.key ? 'bg-primary/10 ring-1 ring-primary/40 font-bold' : 'hover:bg-surface/80'}`}
+                  >
+                    <span className="w-14 shrink-0 text-[11px] font-medium text-text">{bucket.label}</span>
+                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+                      <span
+                        className={`block h-full rounded-full transition-all ${bucket.key === 'expired' ? 'bg-danger' : bucket.key === '0-30' ? 'bg-warning' : 'bg-primary'}`}
+                        style={{ width: `${Math.max(bucket.count > 0 ? 4 : 0, (bucket.count / maxBucketCount) * 100)}%` }}
+                      />
+                    </span>
+                    <strong className="w-7 text-right font-mono text-[11px]">{bucket.count.toLocaleString()}</strong>
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
 
       {pickerOpen && (

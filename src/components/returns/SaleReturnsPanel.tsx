@@ -19,6 +19,7 @@ import { STOCK_CHANGED_EVENT } from '../../utils/stockAlertsEvents';
 interface SaleReturnsPanelProps {
   canReview: boolean;
   canRestock: boolean;
+  triggerClassName?: string;
 }
 
 interface DecisionDraft {
@@ -39,7 +40,7 @@ function defaultDecision(reason: string): DecisionDraft {
   return { disposition: 'QUARANTINE', sealedIntact: false, restockUnitId: '', reason };
 }
 
-export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, canRestock }) => {
+export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, canRestock, triggerClassName }) => {
   const [open, setOpen] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [sale, setSale] = useState<SaleForReturn | null>(null);
@@ -238,9 +239,9 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className={triggerClassName ?? "rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"}
       >
-        Medicine returns
+        <span>🔄 Medicine returns</span>
       </button>
       {open && (
         <div

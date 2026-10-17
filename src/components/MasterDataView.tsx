@@ -384,35 +384,151 @@ export function MasterDataView({ onViewProducts }: {
               <p className="max-w-md text-sm text-muted">{query ? 'Try a different search term.' : 'Add a real record to populate this view.'}</p>
               {!query && canManage && <button type="button" className={BUTTON} onClick={() => openEditor(kind, null)}><Plus size={16} /> Add {kind}</button>}
             </section>
-            : <section aria-label={kind === 'category' ? 'Category cards' : 'Manufacturer cards'} className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
-              {visibleItems.map((item) => <MasterDataCard
-                key={item.id}
-                item={item}
-                colorClass={colorForId(item.id)}
-                canManage={canManage}
-                canViewProducts={canViewProducts}
-                kind={kind}
-                onViewProducts={() => onViewProducts({ field: kind === 'category' ? 'category' : 'company', value: item.name })}
-                onRename={() => openEditor(kind, item)}
-                onMerge={() => beginMerge(kind, item)}
-                onDelete={() => setPendingDelete({ kind, item })}
-              />)}
-            </section>}
+            : <div className="overflow-x-auto rounded-card border border-border bg-white shadow-xs">
+                <table className="w-full min-w-[700px] text-left text-xs">
+                  <thead className="border-b border-border bg-surface text-[10px] font-bold uppercase tracking-wider text-muted">
+                    <tr>
+                      <th className="px-4 py-2.5">Name</th>
+                      <th className="px-4 py-2.5">Products</th>
+                      <th className="px-4 py-2.5">Stock Value</th>
+                      <th className="px-4 py-2.5">Stock Health</th>
+                      <th className="px-4 py-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {visibleItems.map((item) => {
+                      const colorClass = colorForId(item.id);
+                      return (
+                        <tr key={item.id} className="transition-colors hover:bg-surface/50">
+                          <td className="px-4 py-2.5 font-bold text-text">
+                            <div className="flex items-center gap-2">
+                              <span className={`h-2.5 w-2.5 rounded-full ${colorClass}`} />
+                              <span>{item.name}</span>
+                              {!item.is_active && (
+                                <span className="rounded-full bg-slate-100 text-slate-500 px-1.5 py-0.2 text-[9px] font-semibold">
+                                  Inactive
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 font-semibold text-text">
+                            {item.product_count} {item.product_count === 1 ? 'product' : 'products'}
+                          </td>
+                          <td className="px-4 py-2.5 font-mono font-medium text-text">
+                            {item.stock_value_paisa === null ? '—' : formatMoney(item.stock_value_paisa)}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              {item.out_count > 0 && (
+                                <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                                  Out: {item.out_count}
+                                </span>
+                              )}
+                              {item.low_count > 0 && (
+                                <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                  Low: {item.low_count}
+                                </span>
+                              )}
+                              {item.expiring_count > 0 && (
+                                <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                  Exp 90d: {item.expiring_count}
+                                </span>
+                              )}
+                              {item.out_count === 0 && item.low_count === 0 && item.expiring_count === 0 && (
+                                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  Healthy
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <div className="inline-flex items-center gap-1.5">
+                              {canViewProducts && (
+                                <button
+                                  type="button"
+                                  onClick={() => onViewProducts({ field: kind === 'category' ? 'category' : 'company', value: item.name })}
+                                  className="rounded-control border border-border px-2 py-1 text-[11px] font-semibold text-primary hover:bg-surface"
+                                >
+                                  View
+                                </button>
+                              )}
+                              {canManage && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditor(kind, item)}
+                                    className="rounded-control border border-border px-2 py-1 text-[11px] font-semibold text-text hover:bg-surface"
+                                  >
+                                    Rename
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => beginMerge(kind, item)}
+                                    className="rounded-control border border-border px-2 py-1 text-[11px] font-semibold text-text hover:bg-surface"
+                                  >
+                                    Merge
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={item.product_count > 0}
+                                    onClick={() => setPendingDelete({ kind, item })}
+                                    className="rounded-control border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                                    title={item.product_count > 0 ? 'Cannot delete with assigned products' : 'Delete'}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>}
       </>
     )}
 
     {isUnitsTab && (
-      <section className={`${PANEL} overflow-hidden`}>
+      <section className="overflow-hidden">
         {unitsLoading ? <MasterGridSkeleton />
           : unitsError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-danger"><span>{unitsError}</span><button type="button" className={SECONDARY} onClick={() => void loadUnits()} disabled={unitsLoading}>Retry units</button></div>
-            : units.length === 0 ? <div className="p-8 text-center"><h2 className="font-bold text-text">No medicine units stored</h2><p className="mt-1 text-sm text-muted">Units will appear here when products have real unit records.</p></div>
-              : <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
-                {units.map((unit) => <article key={unit.id} className={`${PANEL} space-y-3 p-4`}>
-                  <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold text-text">{unit.name}</h2><p className="mt-1 text-xs text-muted">{unit.medicine_name}</p></div>{unit.is_default_sale_unit && <StatChip tone="ok">Default sale unit</StatChip>}</div>
-                  <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted">Base units</dt><dd className="font-semibold text-text">{unit.conversion_factor}</dd></div><div><dt className="text-xs text-muted">Sale price</dt><dd className="font-semibold text-text">{formatMoney(unit.price_paisa)}</dd></div></dl>
-                  {unit.barcode && <p className="text-xs text-muted">Barcode: {unit.barcode}</p>}
-                </article>)}
-              </div>}
+            : units.length === 0 ? <div className="p-8 text-center rounded-card border border-border bg-white"><h2 className="font-bold text-text">No medicine units stored</h2><p className="mt-1 text-sm text-muted">Units will appear here when products have real unit records.</p></div>
+              : <div className="overflow-x-auto rounded-card border border-border bg-white shadow-xs">
+                  <table className="w-full min-w-[700px] text-left text-xs">
+                    <thead className="border-b border-border bg-surface text-[10px] font-bold uppercase tracking-wider text-muted">
+                      <tr>
+                        <th className="px-4 py-2.5">Unit Name</th>
+                        <th className="px-4 py-2.5">Medicine</th>
+                        <th className="px-4 py-2.5">Base Factor</th>
+                        <th className="px-4 py-2.5">Sale Price</th>
+                        <th className="px-4 py-2.5">Barcode</th>
+                        <th className="px-4 py-2.5 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {units.map((unit) => (
+                        <tr key={unit.id} className="transition-colors hover:bg-surface/50">
+                          <td className="px-4 py-2.5 font-bold text-text">{unit.name}</td>
+                          <td className="px-4 py-2.5 text-muted">{unit.medicine_name}</td>
+                          <td className="px-4 py-2.5 font-mono text-text">{unit.conversion_factor}</td>
+                          <td className="px-4 py-2.5 font-mono font-bold text-text">{formatMoney(unit.price_paisa)}</td>
+                          <td className="px-4 py-2.5 font-mono text-muted">{unit.barcode || '—'}</td>
+                          <td className="px-4 py-2.5 text-right">
+                            {unit.is_default_sale_unit ? (
+                              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                Default Sale Unit
+                              </span>
+                            ) : (
+                              <span className="text-muted text-[11px]">Secondary</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>}
       </section>
     )}
 
