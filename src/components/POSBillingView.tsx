@@ -82,6 +82,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const chargeButtonRef = useRef<HTMLButtonElement>(null);
+  const productGridRef = useRef<HTMLDivElement>(null);
+  const tenderedInputRef = useRef<HTMLInputElement>(null);
+  const completeSaleButtonRef = useRef<HTMLButtonElement>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -99,6 +104,51 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [printNotice, setPrintNotice] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const { lastScanned, resetScan } = useBarcodeScanner({ enabled: activeTopTab === 'barcode' });
+
+  // Modals — declared here so the effects below can reference showCheckoutModal
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [saleCompleteModal, setSaleCompleteModal] = useState<CompletedSale | null>(null);
+
+
+  useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedCategory, selectedBrand]);
+
+  // Scroll highlighted card into view
+  useEffect(() => {
+    if (highlightedIndex < 0 || !productGridRef.current) return;
+    const cards = productGridRef.current.querySelectorAll<HTMLButtonElement>('.pos-product-card');
+    cards[highlightedIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlightedIndex]);
+
+  // Global F2 / F3 / F4 shortcut handler
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      // F2 — focus search bar (always)
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+      // F3 — focus tendered amount (only when checkout modal is open)
+      if (e.key === 'F3' && showCheckoutModal) {
+        e.preventDefault();
+        tenderedInputRef.current?.focus();
+        tenderedInputRef.current?.select();
+        return;
+      }
+      // F4 — when modal closed: open checkout; when modal open: complete sale
+      if (e.key === 'F4') {
+        e.preventDefault();
+        if (showCheckoutModal) {
+          completeSaleButtonRef.current?.click();
+        } else {
+          chargeButtonRef.current?.click();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [showCheckoutModal]);
 
   useEffect(() => {
     let active = true;
@@ -132,10 +182,6 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleStockChanged);
     };
   }, [currentUserId, catalogRetry]);
-
-  // Modals
-  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [saleCompleteModal, setSaleCompleteModal] = useState<CompletedSale | null>(null);
 
   const categories = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.category)))], [products]);
   const brands = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.company)))], [products]);
@@ -651,20 +697,63 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 type="text"
                 placeholder={
                   activeTopTab === 'barcode'
-                    ? 'Scan barcode or enter code (Press Enter to add)...'
-                    : 'Search products / brand / barcode (F2)...'
+                    ? 'Scan barcode or enter code (Enter to add)...'
+                    : 'Search by name / brand / barcode...'
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && searchQuery.trim()) {
+                  // Barcode scan: Enter submits the scanned value
+                  if (e.key === 'Enter' && activeTopTab === 'barcode' && searchQuery.trim()) {
                     e.preventDefault();
                     submitBarcode(searchQuery);
+                    return;
+                  }
+                  // Sale mode: Enter adds the highlighted product
+                  if (e.key === 'Enter' && activeTopTab === 'sale' && highlightedIndex >= 0) {
+                    e.preventDefault();
+                    const product = filteredProducts[highlightedIndex];
+                    if (product) { handleAddToCart(product); setHighlightedIndex(-1); }
+                    return;
+                  }
+                  // Arrow Down — move highlight forward
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => Math.min(prev + 1, filteredProducts.length - 1));
+                    return;
+                  }
+                  // Arrow Up — move highlight backward
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+                    return;
+                  }
+                  // Escape — clear search and reset highlight
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setSearchQuery('');
+                    setHighlightedIndex(-1);
                   }
                 }}
                 className="w-full pl-9 pr-16 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 font-medium bg-white"
                 autoFocus
               />
+              {/* F2 badge — sale mode */}
+              {activeTopTab === 'sale' && (
+                <div className="absolute right-2 flex items-center gap-1">
+                  {highlightedIndex >= 0 && (
+                    <span className="text-[9px] font-semibold text-slate-400">
+                      {highlightedIndex + 1}/{filteredProducts.length}
+                    </span>
+                  )}
+                  <span
+                    title="Press F2 to focus this search bar"
+                    className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 uppercase tracking-wider select-none"
+                  >
+                    F2
+                  </span>
+                </div>
+              )}
               {activeTopTab === 'barcode' && (
                 <div className="absolute right-2 flex items-center gap-1.5">
                   {searchQuery && (
@@ -709,7 +798,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           </div>
 
           {/* Product Chips Grid (Matching Screenshot 7) */}
-          <div className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2 flex-1 min-h-0 overflow-y-auto pr-1">
+          <div ref={productGridRef} className="pos-product-grid grid grid-cols-2 sm:grid-cols-3 gap-2 flex-1 min-h-0 overflow-y-auto pr-1">
             {catalogLoading && products.length === 0 && (
               <div role="status" className="col-span-full rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
                 Loading live product catalog...
@@ -719,11 +808,16 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               const defaultUnit = p.units.find((u) => u.isDefaultSaleUnit) || p.units[0];
               const totalStock = p.batches.reduce((sum, b) => sum + b.quantitySmallestUnit, 0);
 
+              const cardIndex = filteredProducts.indexOf(p);
               return (
                 <button
                   key={p.id}
                   onClick={() => handleAddToCart(p)}
-                  className="pos-product-card bg-white p-2.5 rounded-xl border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-sm text-left transition flex flex-col justify-between group h-28"
+                  className={`pos-product-card p-2.5 rounded-xl border shadow-xs text-left transition flex flex-col justify-between group h-28 ${
+                    cardIndex === highlightedIndex
+                      ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-400/50'
+                      : 'bg-white border-slate-200/90 hover:border-blue-500 hover:shadow-sm'
+                  }`}
                 >
                   <div>
                     <span className="font-bold text-xs text-slate-900 group-hover:text-blue-600 transition block truncate">
@@ -1045,6 +1139,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
             {/* Charge / Complete Sale Button (Matching Screenshot 8, 62) */}
             <div className="flex items-center gap-2 pt-1">
               <button
+                ref={chargeButtonRef}
                 onClick={() => setShowCheckoutModal(true)}
                 disabled={cart.length === 0}
                 className="pos-charge-button relative flex-1 overflow-hidden py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
@@ -1107,9 +1202,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               {paymentMethod === 'CASH' && <div className="order-2">
                 <div className="flex justify-between font-bold text-slate-700 mb-1">
                   <span>RECEIVED / TENDERED AMOUNT</span>
-                  <span className="font-mono">Bill: Rs. {totalPKR.toFixed(2)}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 uppercase tracking-wider select-none" title="Press F3 to focus this field">F3</span>
+                    <span className="font-mono">Bill: Rs. {totalPKR.toFixed(2)}</span>
+                  </span>
                 </div>
                 <input
+                  ref={tenderedInputRef}
                   type="number"
                   step="0.01"
                   placeholder="0"
@@ -1206,11 +1305,18 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   ← Back to Cart
                 </button>
                 <button
+                  ref={completeSaleButtonRef}
                   onClick={handleCompleteSale}
                   disabled={isPostingSale}
-                  className="flex-1 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition disabled:opacity-60"
+                  className="flex-1 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition disabled:opacity-60 flex items-center justify-center gap-1.5"
                 >
-                  {isPostingSale ? 'Saving sale…' : `✓ Complete Sale (Rs. ${totalPKR.toFixed(2)})`}
+                  {isPostingSale
+                    ? 'Saving sale…'
+                    : <>
+                        <span>✓ Complete Sale (Rs. {totalPKR.toFixed(2)})</span>
+                        <span className="rounded bg-emerald-800/50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider select-none">F4</span>
+                      </>
+                  }
                 </button>
               </div>
             </div>

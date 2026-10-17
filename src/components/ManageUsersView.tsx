@@ -10,6 +10,11 @@ import {
   setPosPrintPermission,
 } from '../permissions';
 import { supabase } from '../utils/supabase';
+import {
+  AdminShopProfile,
+  readAdminShopProfile,
+  saveAdminShopProfile,
+} from '../utils/storeSettings';
 
 const MAX_USERS = 99;
 
@@ -24,6 +29,13 @@ interface ManagedUser {
   can_manage: boolean;
 }
 
+const EMPTY_SHOP_PROFILE: AdminShopProfile = {
+  shopName: '',
+  logoUrl: '',
+  phone: '',
+  city: '',
+};
+
 interface UserForm {
   full_name: string;
   username: string;
@@ -32,6 +44,7 @@ interface UserForm {
   role: UserRole;
   permissions: PermissionKey[];
   is_active: boolean;
+  shopProfile: AdminShopProfile;
 }
 
 const EMPTY_FORM: UserForm = {
@@ -42,6 +55,7 @@ const EMPTY_FORM: UserForm = {
   role: UserRole.CASHIER,
   permissions: [...ROLE_DEFAULT_PERMISSIONS[UserRole.CASHIER]],
   is_active: true,
+  shopProfile: { ...EMPTY_SHOP_PROFILE },
 };
 
 export async function invokeManageUsers<T>(body: Record<string, unknown>): Promise<T> {
@@ -136,6 +150,7 @@ export function ManageUsersView({
         ROLE_DEFAULT_PERMISSIONS[role].includes('pos'),
         true,
       ).filter((permission) => grantablePermissions.includes(permission)),
+      shopProfile: role === UserRole.ADMIN ? readAdminShopProfile() : { ...EMPTY_SHOP_PROFILE },
     });
     setNotice(null);
   };
@@ -145,16 +160,18 @@ export function ManageUsersView({
     const email = String(user.email ?? '');
     setEditingId(user.id);
     setIsFormOpen(true);
+    const userRole = Object.values(UserRole).includes(user.role as UserRole)
+      ? user.role as UserRole
+      : UserRole.CASHIER;
     setForm({
       full_name: String(user.full_name ?? ''),
       username: String(user.username ?? ''),
       email,
       password: '',
-      role: Object.values(UserRole).includes(user.role as UserRole)
-        ? user.role as UserRole
-        : UserRole.CASHIER,
+      role: userRole,
       permissions: Array.isArray(user.permissions) ? [...user.permissions] : [],
       is_active: user.is_active === true,
+      shopProfile: userRole === UserRole.ADMIN ? readAdminShopProfile(user.id) : { ...EMPTY_SHOP_PROFILE },
     });
     setNotice(null);
   };
@@ -162,7 +179,41 @@ export function ManageUsersView({
   const cancelForm = () => {
     setEditingId(null);
     setIsFormOpen(false);
-    setForm({ ...EMPTY_FORM, permissions: [...EMPTY_FORM.permissions] });
+    setForm({
+      ...EMPTY_FORM,
+      permissions: [...EMPTY_FORM.permissions],
+      shopProfile: { ...EMPTY_SHOP_PROFILE },
+    });
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.match(/^image\/(png|jpeg|svg\+xml|webp)$/)) {
+      window.alert('Supported formats are PNG, JPG, SVG, and WebP.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert('Image size exceeds 2MB limit.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setForm((prev) => ({
+          ...prev,
+          shopProfile: { ...prev.shopProfile, logoUrl: reader.result as string },
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setForm((prev) => ({
+      ...prev,
+      shopProfile: { ...prev.shopProfile, logoUrl: '' },
+    }));
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -181,11 +232,16 @@ export function ManageUsersView({
     if (editingId && form.password && form.password.length < 8) {
       return setNotice({ text: 'Password must be at least 8 characters.', error: true });
     }
+    if (isSuperAdmin && form.role === UserRole.ADMIN) {
+      if (!form.shopProfile.shopName.trim()) {
+        return setNotice({ text: 'Store / Shop Name is required when adding an Admin.', error: true });
+      }
+    }
 
     setSaving(true);
     setNotice(null);
     try {
-      const result = await invokeManageUsers<{ message: string }>({
+      const result = await invokeManageUsers<{ message: string; id?: string }>({
         action: editingId ? 'update' : 'create',
         ...(editingId ? { id: editingId } : {}),
         full_name: fullName,
@@ -197,7 +253,14 @@ export function ManageUsersView({
           ? MODULES.map(({ key }) => key)
           : form.permissions,
         is_active: form.is_active,
+        shop_profile: form.role === UserRole.ADMIN ? form.shopProfile : undefined,
       });
+
+      if (isSuperAdmin && form.role === UserRole.ADMIN) {
+        const targetId = editingId || result.id || username;
+        saveAdminShopProfile(targetId, form.shopProfile);
+      }
+
       if (editingId && form.password) {
         try {
           await invokeManageUsers<{ message: string }>({
@@ -370,6 +433,83 @@ export function ManageUsersView({
             <input type="checkbox" checked={form.is_active} disabled={editingId === currentUserId} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} className="h-4 w-4 accent-green-700 disabled:opacity-50" />
             Active (can log in)
           </label>
+
+          {/* ── Shop Profile (Super Admin adding / editing an Admin) ── */}
+          {isSuperAdmin && form.role === UserRole.ADMIN && (
+            <fieldset className="space-y-4 rounded-card border border-purple-200 bg-purple-50 p-4">
+              <legend className="px-2 text-sm font-bold text-purple-700">
+                🏪 Shop Profile <span className="text-xs font-normal text-purple-500">(shown on receipts &amp; reports)</span>
+              </legend>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Store Name */}
+                <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
+                  Store / Shop Name *
+                  <input
+                    required={isSuperAdmin && form.role === UserRole.ADMIN}
+                    value={form.shopProfile.shopName}
+                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, shopName: e.target.value } }))}
+                    placeholder="e.g. Al-Shifa Pharmacy"
+                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
+                  />
+                </label>
+
+                {/* Contact Phone */}
+                <label className="space-y-1.5 text-sm font-semibold text-text">
+                  Contact Phone
+                  <input
+                    type="tel"
+                    value={form.shopProfile.phone}
+                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, phone: e.target.value } }))}
+                    placeholder="+92-XXX-XXXXXXX"
+                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
+                  />
+                </label>
+
+                {/* City / Location */}
+                <label className="space-y-1.5 text-sm font-semibold text-text">
+                  City / Location
+                  <input
+                    value={form.shopProfile.city}
+                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, city: e.target.value } }))}
+                    placeholder="e.g. Lahore"
+                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
+                  />
+                </label>
+
+                {/* Logo Upload */}
+                <div className="space-y-2 sm:col-span-2">
+                  <span className="block text-sm font-semibold text-text">Shop Logo <span className="text-xs font-normal text-muted">(PNG / JPG / SVG / WebP · max 2 MB)</span></span>
+                  {form.shopProfile.logoUrl ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={form.shopProfile.logoUrl}
+                        alt="Shop logo preview"
+                        className="h-16 w-16 rounded-control border border-border object-contain bg-white p-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="rounded-control border border-red-200 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-red-50"
+                      >
+                        Remove Logo
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-control border border-dashed border-purple-300 bg-white px-4 py-3 text-sm text-purple-600 hover:bg-purple-50">
+                      <span>📁 Choose logo image…</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        className="sr-only"
+                        onChange={handleLogoUpload}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </fieldset>
+          )}
+
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="rounded-control bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">{saving ? 'Saving…' : 'Save User'}</button>
             <button type="button" onClick={cancelForm} disabled={saving} className="rounded-control border border-border px-5 py-2.5 text-sm font-bold text-text hover:bg-surface">Cancel</button>

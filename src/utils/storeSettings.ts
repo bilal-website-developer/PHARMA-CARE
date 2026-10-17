@@ -143,3 +143,73 @@ export function saveCompanyName(companyName: string): boolean {
     return false;
   }
 }
+
+export interface AdminShopProfile {
+  shopName: string;
+  logoUrl: string;
+  phone: string;
+  city: string;
+}
+
+export function readAdminShopProfile(adminId?: string | null): AdminShopProfile {
+  if (adminId) {
+    try {
+      const saved = globalThis.localStorage?.getItem(`pharma-care.adminShopProfile.${adminId}`);
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) {
+          const v = parsed as Partial<AdminShopProfile>;
+          return {
+            shopName: typeof v.shopName === 'string' ? v.shopName : '',
+            logoUrl: typeof v.logoUrl === 'string' ? v.logoUrl : '',
+            phone: typeof v.phone === 'string' ? v.phone : '',
+            city: typeof v.city === 'string' ? v.city : '',
+          };
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+  const profile = readShopProfile();
+  return {
+    shopName: readCompanyName() || '',
+    logoUrl: readShopLogo() || '',
+    phone: profile.phone || '',
+    city: profile.city || '',
+  };
+}
+
+export function saveAdminShopProfile(adminId: string, profile: AdminShopProfile): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (storage && adminId) {
+      storage.setItem(`pharma-care.adminShopProfile.${adminId}`, JSON.stringify(profile));
+    }
+    if (profile.shopName.trim()) {
+      saveCompanyName(profile.shopName);
+    }
+    if (profile.logoUrl !== undefined) {
+      saveShopLogo(profile.logoUrl);
+    }
+    if (storage) {
+      storage.setItem(SHOP_PROFILE_KEY, JSON.stringify({
+        phone: profile.phone,
+        city: profile.city,
+        logoUrl: profile.logoUrl,
+      }));
+    }
+    const memo = readPharmacyMemoSettings();
+    savePharmacyMemoSettings({
+      ...memo,
+      storeName: profile.shopName.trim() || memo.storeName,
+      address: profile.city.trim() || memo.address,
+      phone: profile.phone.trim() || memo.phone,
+      logoUrl: profile.logoUrl,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
