@@ -98,6 +98,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Owner-reported applied; source verified:** POS checkout posts sales through `post_sale`, supports server-recorded cash/online/credit/split payments, and updates customer credit state. Owner reports `20261013160000_persist_sales_and_returns.sql` applied successfully after fixing two SQL syntax errors, and shared query results verify selected RPC ACL/security metadata. Runtime sale/return behavior has not yet been verified.
 - **Done in source; migration pending:** Sidebar favorites use a central page registry, role-visible Favorites group, keyboard/touch context menu, oldest-first selection order, an eight-page limit, and per-auth-user Supabase preferences. The Favorites heading appears only when the user has at least one visible favorite. The Dashboard Cash Sales/Credit and Daily Sales Target rows and target modal were removed. The owner confirmed the current database has no shop isolation/helper; `user_favorites` therefore has user-only RLS (no `shop_id`). Apply `20261018230000_sidebar_pins.sql` before enabling persistence.
+- **Deployment secret check (2026-10-20):** Current GitHub `main` matches local HEAD; no `.env` or `.env.local` is present in that tree. Local `.env.local` is ignored and untracked; `.env.example` is tracked and contains placeholders. A scan of 20 Markdown files found no credential patterns. This covers the current tree, not all Git history. Do not expose `SUPABASE_SERVICE_ROLE_KEY` in client-side Vite variables.
 - **SQL Editor corrections:** Fixed the apostrophe in the payment exception text (`customer''s`) and the missing empty-array fallback closing expression in `pending_sale_returns()`.
 - **Done (UI & POS Fixes):** Barcode scanner integrated into search; cart void removed; robust catalog fallback for unconfigured units; customer grid dashed button removed; compact categories/master data table; on-demand expiry timeline in Stock Inventory; compact POS-style cards in Stock Purchase; Sales History redesigned into "Grouped by day" layout with 6-item KPI strip and toolbar print modal; Business Analytics redesigned into "Polished classic grid" with full-width trend chart and 3-card bottom row.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
@@ -145,6 +146,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-20 — Audited Vercel environment variable names and current GitHub/Markdown secret exposure. Current remote tree has no `.env` or `.env.local`; local `.env.local` is ignored and untracked; tracked `.env.example` contains placeholders. No credential patterns found in 20 Markdown files or common credential patterns in current GitHub tree. Historical Git commits were not fully audited.
 - 2026-10-19 — Changed sidebar pin actions to Favorites, with oldest-first ordering and a heading shown only when at least one visible page is favorited. Removed the Dashboard Cash Sales/Credit row and Daily Sales Target row/modal. Updated sidebar favorite ordering tests; lint, targeted tests, and production build pass. Migration `20261018230000_sidebar_pins.sql` remains unapplied.
 - 2026-10-18 — Added sidebar pin-to-top context menu, long-press and keyboard access, eight-page limit, role-visible pins, persistent per-user preferences/tip dismissal, and central sidebar page registry. Added `20261018230000_sidebar_pins.sql`; it is not applied. User confirmed no shop helper or shop isolation exists, so RLS is per-user only. TypeScript lint, full tests, and production build pass.
 - 2026-10-18 — Diagnosed POS sale error: catalog fallback may supply demo IDs such as `DEMO-MED-001`, but `post_sale()` casts medicine/unit IDs to UUID. No source or database changes; live catalog state was not available to verify.
@@ -207,15 +209,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-20T15:36:52.941Z
+Generated at (UTC): 2026-10-20T16:14:51.834Z
 Git branch: main
 
 Last 5 commit subjects:
+- idk
 - shortskeys
 - huge update
 - little update
 - bbb
-- docs: record accumulated work on main
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
