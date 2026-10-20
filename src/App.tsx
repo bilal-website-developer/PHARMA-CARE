@@ -23,6 +23,8 @@ import {
   saveCustomer,
 } from './data/sales';
 import { Sidebar, NavItemKey } from './components/Sidebar';
+import { getSidebarPage, sidebarPageForRoute } from './components/sidebarPages';
+import { toggleSidebarFavorite } from './components/sidebarPinLogic';
 import { TopNav } from './components/TopNav';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
@@ -48,6 +50,11 @@ import {
 import PharmaLogo from './components/PharmaLogo';
 import type { PrintReceiptHandler } from './utils/printWorkflow';
 import { STOCK_CHANGED_EVENT } from './utils/stockAlertsEvents';
+import {
+  loadSidebarPreferences,
+  saveSidebarPreferences,
+  visibleSidebarPageKeys,
+} from './data/sidebarPreferences';
 
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
 const InventoryScreen = lazy(() => import('./components/InventoryScreen').then(({ InventoryScreen: View }) => ({ default: View })));
@@ -70,36 +77,23 @@ const PrintRequestsAdminView = lazy(() => import('./components/PrintRequestsAdmi
 const TemplatePreviewModal = lazy(() => import('./components/TemplatePreviewModal').then(({ TemplatePreviewModal: View }) => ({ default: View })));
 const EndOfDayModal = lazy(() => import('./components/EndOfDayModal').then(({ EndOfDayModal: View }) => ({ default: View })));
 
-const NAV_PATHS: Record<NavItemKey, string> = {
-  dashboard: '/',
-  pos: '/pos',
-  products: '/products',
-  'master-data': '/categories',
-  'stock-inventory': '/stock-inventory',
-  customers: '/customers',
-  'customer-ledger': '/customer-ledger',
-  'whatsapp-reminders': '/whatsapp-reminders',
-  'sales-history': '/sales-history',
-  suppliers: '/suppliers',
-  purchases: '/purchases',
-  'purchase-history': '/purchase-history',
-  expenses: '/expenses',
-  reports: '/reports',
-  'manage-users': '/users',
-  'my-print-requests': '/my-print-requests',
-  'print-requests': '/print-requests',
-  settings: '/settings',
-  'trash-bin': '/trash-bin',
-  'help-support': '/help',
-};
-
 function routeToNavItem(pathname: string): NavItemKey | null {
-  const match = Object.entries(NAV_PATHS).find(([, path]) => path === pathname);
-  return match ? (match[0] as NavItemKey) : null;
+  return sidebarPageForRoute(pathname)?.key ?? null;
+}
+
+interface WorkspaceSession extends AuthSession {
+  sidebarPreferences: Awaited<ReturnType<typeof loadSidebarPreferences>>;
+}
+
+async function loadWorkspaceSession(userId: string, email?: string): Promise<WorkspaceSession> {
+  const profile = await loadAuthSession(userId, email);
+  const visiblePageKeys = visibleSidebarPageKeys(profile.role, profile.permissions);
+  const sidebarPreferences = await loadSidebarPreferences(visiblePageKeys);
+  return { ...profile, sidebarPreferences };
 }
 
 export default function App() {
-  const [session, setSession] = useState<AuthSession | null>(null);
+  const [session, setSession] = useState<WorkspaceSession | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
@@ -121,7 +115,7 @@ export default function App() {
         const { data: userData, error: userError } = await client.auth.getUser();
         if (userError) throw userError;
         if (!userData.user) throw new Error('Your session is no longer valid. Sign in again.');
-        const profile = await loadAuthSession(userData.user.id, userData.user.email);
+        const profile = await loadWorkspaceSession(userData.user.id, userData.user.email);
         if (!disposed) setSession(profile);
       } catch (error) {
         if (!disposed) {
@@ -154,7 +148,9 @@ export default function App() {
         if (error) throw error;
         if (!data.user) throw new Error('Your session is no longer valid. Sign in again.');
         const updated = await loadAuthSession(data.user.id, data.user.email);
-        setSession(updated);
+        setSession((current) => current
+          ? { ...updated, sidebarPreferences: current.sidebarPreferences }
+          : null);
         setAuthMessage('');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Could not verify your account.';
@@ -207,7 +203,7 @@ export default function App() {
   const handleLogin = async (userId: string, email: string) => {
     setAuthMessage('');
     try {
-      const authenticatedSession = await loadAuthSession(userId, email);
+      const authenticatedSession = await loadWorkspaceSession(userId, email);
       setSession(authenticatedSession);
       window.history.replaceState({}, '', '/');
     } catch (error) {
@@ -258,7 +254,7 @@ function PharmacyApp({
   onLogout,
   authMessage,
 }: {
-  session: AuthSession;
+  session: WorkspaceSession;
   onLogout: () => void;
   authMessage: string;
 }) {
@@ -274,11 +270,104 @@ function PharmacyWorkspace({
   onLogout,
   authMessage,
 }: {
-  session: AuthSession;
+  session: WorkspaceSession;
   onLogout: () => void;
   authMessage: string;
 }) {
   const { canPage } = usePermissions();
+  const visibleSidebarKeys = React.useMemo(
+    () => visibleSidebarPageKeys(session.role, session.permissions),
+    [session.role, session.permissions],
+  );
+  const visibleSidebarKeySet = React.useMemo(() => new Set(visibleSidebarKeys), [visibleSidebarKeys]);
+  const [favoritePageKeys, setFavoritePageKeys] = useState<NavItemKey[]>(session.sidebarPreferences.favoritePageKeys);
+  const [tipDismissed, setTipDismissed] = useState(session.sidebarPreferences.tipDismissed);
+  const [sidebarPreferencesLoadFailed, setSidebarPreferencesLoadFailed] = useState(session.sidebarPreferences.loadFailed);
+  const [sidebarPreferenceNotice, setSidebarPreferenceNotice] = useState('');
+  const favoritePageKeysRef = React.useRef(favoritePageKeys);
+  const tipDismissedRef = React.useRef(tipDismissed);
+  const confirmedSidebarPreferences = React.useRef({ favoritePageKeys, tipDismissed });
+  const sidebarSaveQueue = React.useRef<Promise<void>>(Promise.resolve());
+  const sidebarSaveVersion = React.useRef(0);
+
+  const saveSidebarState = React.useCallback((nextKeys: NavItemKey[], nextTipDismissed: boolean) => {
+    const snapshot = { favoritePageKeys: [...nextKeys], tipDismissed: nextTipDismissed };
+    favoritePageKeysRef.current = snapshot.favoritePageKeys;
+    tipDismissedRef.current = snapshot.tipDismissed;
+    setFavoritePageKeys(snapshot.favoritePageKeys);
+    setTipDismissed(snapshot.tipDismissed);
+    const version = ++sidebarSaveVersion.current;
+
+    sidebarSaveQueue.current = sidebarSaveQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        await saveSidebarPreferences(snapshot.favoritePageKeys, snapshot.tipDismissed);
+        confirmedSidebarPreferences.current = snapshot;
+        setSidebarPreferencesLoadFailed(false);
+      })
+      .catch((error: unknown) => {
+        console.warn('Could not save sidebar preferences:', error);
+        if (version !== sidebarSaveVersion.current) return;
+        const confirmed = confirmedSidebarPreferences.current;
+        favoritePageKeysRef.current = confirmed.favoritePageKeys;
+        tipDismissedRef.current = confirmed.tipDismissed;
+        setFavoritePageKeys(confirmed.favoritePageKeys);
+        setTipDismissed(confirmed.tipDismissed);
+        setSidebarPreferenceNotice('Could not save sidebar changes. Your previous settings were restored.');
+      });
+  }, []);
+
+  const toggleFavoritePage = React.useCallback((key: NavItemKey) => {
+    if (!visibleSidebarKeySet.has(key)) return;
+    const update = toggleSidebarFavorite(favoritePageKeysRef.current, key);
+    if (update.limitReached) return;
+    saveSidebarState(update.pageKeys, tipDismissedRef.current || update.pageKeys.length > 0);
+  }, [saveSidebarState, visibleSidebarKeySet]);
+
+  const dismissSidebarTip = React.useCallback(() => {
+    if (!tipDismissedRef.current) {
+      saveSidebarState(favoritePageKeysRef.current, true);
+    }
+  }, [saveSidebarState]);
+
+  React.useEffect(() => {
+    const visible = favoritePageKeysRef.current.filter((key) => visibleSidebarKeySet.has(key));
+    if (visible.length !== favoritePageKeysRef.current.length) {
+      saveSidebarState(visible, tipDismissedRef.current);
+    }
+  }, [saveSidebarState, visibleSidebarKeySet]);
+
+  React.useEffect(() => {
+    if (!sidebarPreferencesLoadFailed) return;
+    let active = true;
+    const retry = async () => {
+      const version = sidebarSaveVersion.current;
+      const preferences = await loadSidebarPreferences(visibleSidebarKeys);
+      if (!active || preferences.loadFailed || version !== sidebarSaveVersion.current) return;
+      favoritePageKeysRef.current = preferences.favoritePageKeys;
+      tipDismissedRef.current = preferences.tipDismissed;
+      confirmedSidebarPreferences.current = {
+        favoritePageKeys: preferences.favoritePageKeys,
+        tipDismissed: preferences.tipDismissed,
+      };
+      setFavoritePageKeys(preferences.favoritePageKeys);
+      setTipDismissed(preferences.tipDismissed);
+      setSidebarPreferencesLoadFailed(false);
+    };
+    void retry();
+    const interval = window.setInterval(() => { void retry(); }, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [sidebarPreferencesLoadFailed, visibleSidebarKeys]);
+
+  React.useEffect(() => {
+    if (!sidebarPreferenceNotice) return;
+    const timeout = window.setTimeout(() => setSidebarPreferenceNotice(''), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [sidebarPreferenceNotice]);
+
   const initialPath = window.location.pathname;
   const [activeItem, setActiveItem] = useState<NavItemKey>(
     routeToNavItem(initialPath) ?? 'dashboard'
@@ -412,7 +501,12 @@ function PharmacyWorkspace({
     setAccessMessage('');
     setIsPageNotFound(false);
     setActiveItem(item);
-    window.history.pushState({}, '', NAV_PATHS[item]);
+    const page = getSidebarPage(item);
+    if (!page) {
+      setIsPageNotFound(true);
+      return;
+    }
+    window.history.pushState({}, '', page.route);
   }, [canPage]);
 
   const [productFilter, setProductFilter] = React.useState<ProductFilter>(null);
@@ -766,6 +860,11 @@ function PharmacyWorkspace({
         isCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
         pendingPrintCount={pendingPrintCount}
+        favoritePageKeys={favoritePageKeys}
+        tipDismissed={tipDismissed}
+        preferenceNotice={sidebarPreferenceNotice}
+        onToggleFavorite={toggleFavoritePage}
+        onDismissTip={dismissSidebarTip}
       />
 
       {/* ── Main Workspace Content Pane ──────────────────────────────────────── */}

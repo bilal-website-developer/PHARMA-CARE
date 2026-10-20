@@ -435,6 +435,20 @@ header.bg-white\/90 {
   transform: translateX(2px);
 }
 
+aside[data-collapsed="true"] .sidebar-nav-item {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.sidebar-favorites-menu {
+  animation: sidebar-favorites-fade-in 150ms ease-out both;
+}
+
+@keyframes sidebar-favorites-fade-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 aside[data-collapsed="true"] .space-y-1 > div:first-child {
   display: block;
   overflow: hidden;

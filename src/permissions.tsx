@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { UserRole } from './types/pharmacy';
+import { getSidebarPage } from './components/sidebarPages';
 
 export const MODULES = [
   { key: 'pos', label: 'POS Billing' },
@@ -79,22 +80,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly ModuleKey[]> = 
   [UserRole.SUPER_ADMIN]: MODULES.map(({ key }) => key),
 };
 
-const PAGE_MODULE: Partial<Record<string, ModuleKey>> = {
-  pos: 'pos',
-  products: 'products',
-  'master-data': 'categories',
-  'stock-inventory': 'stock_inventory',
-  customers: 'customers',
-  'customer-ledger': 'customers',
-  'whatsapp-reminders': 'customers',
-  'sales-history': 'sales_history',
-  suppliers: 'suppliers',
-  purchases: 'purchases',
-  'purchase-history': 'purchase_history',
-  expenses: 'expenses',
-  reports: 'reports',
-};
-
 export function isModuleKey(value: unknown): value is ModuleKey {
   return typeof value === 'string' && MODULES.some(({ key }) => key === value);
 }
@@ -116,13 +101,10 @@ export function canAccessModule(role: UserRole, permissions: readonly string[], 
 }
 
 export function canAccessPage(role: UserRole, permissions: readonly string[], pageKey: string) {
-  if (pageKey === 'dashboard' || pageKey === 'help-support') return true;
-  if (pageKey === 'my-print-requests') return true;
-  if (pageKey === 'print-requests') return isAdminRole(role);
-  if (pageKey === 'settings' || pageKey === 'trash-bin') return isAdminRole(role);
-  if (pageKey === 'manage-users') return canAccessModule(role, permissions, 'manage_users');
-  const moduleKey = PAGE_MODULE[pageKey];
-  return moduleKey ? canAccessModule(role, permissions, moduleKey) : false;
+  const page = getSidebarPage(pageKey);
+  if (!page || !page.allowedRoles.includes(role)) return false;
+  if (page.adminOnly) return isAdminRole(role);
+  return page.module ? canAccessModule(role, permissions, page.module) : true;
 }
 
 interface PermissionContextValue {

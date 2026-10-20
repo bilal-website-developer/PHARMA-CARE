@@ -28,8 +28,9 @@
     "test:barcode-scanner": "tsx --test src/utils/useBarcodeScanner.test.ts",
     "test:labels": "tsx --test src/utils/labelUtils.test.ts",
     "test:permissions": "tsx --test src/permissions.test.ts",
+    "test:sidebar": "tsx --test src/components/sidebarPinLogic.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy"
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

@@ -97,6 +97,7 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
 - **Owner-reported applied; source verified:** POS checkout posts sales through `post_sale`, supports server-recorded cash/online/credit/split payments, and updates customer credit state. Owner reports `20261013160000_persist_sales_and_returns.sql` applied successfully after fixing two SQL syntax errors, and shared query results verify selected RPC ACL/security metadata. Runtime sale/return behavior has not yet been verified.
+- **Done in source; migration pending:** Sidebar favorites use a central page registry, role-visible Favorites group, keyboard/touch context menu, oldest-first selection order, an eight-page limit, and per-auth-user Supabase preferences. The Favorites heading appears only when the user has at least one visible favorite. The Dashboard Cash Sales/Credit and Daily Sales Target rows and target modal were removed. The owner confirmed the current database has no shop isolation/helper; `user_favorites` therefore has user-only RLS (no `shop_id`). Apply `20261018230000_sidebar_pins.sql` before enabling persistence.
 - **SQL Editor corrections:** Fixed the apostrophe in the payment exception text (`customer''s`) and the missing empty-array fallback closing expression in `pending_sale_returns()`.
 - **Done (UI & POS Fixes):** Barcode scanner integrated into search; cart void removed; robust catalog fallback for unconfigured units; customer grid dashed button removed; compact categories/master data table; on-demand expiry timeline in Stock Inventory; compact POS-style cards in Stock Purchase; Sales History redesigned into "Grouped by day" layout with 6-item KPI strip and toolbar print modal; Business Analytics redesigned into "Polished classic grid" with full-width trend chart and 3-card bottom row.
 - **Done in source (migration pending deployment):** Cashier print requests submit without a confirmation prompt; admin review displays requester names and can modify pending sale receipt snapshots with audited server-side validation. Changes are receipt-only and do not change completed sale records.
@@ -113,6 +114,8 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 - Current code still grants Admin roles every module and keeps Settings Admin-only; the approved staff Settings checkbox, per-shop profile, and Super Admin-only identity editing are plan-only and unimplemented. Apply only after the staging and ACL gates.
 - DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
+- Sidebar favorites and their one-time tip dismissal are persisted per `auth.uid()` with user-only RLS because the current database has no shop-isolation helper; multi-shop favorite isolation is not provided until the database adds a supported tenant model.
+- POS catalog fallback can display demo medicines (`DEMO-MED-*`) when demo data is locally active or the live catalog is empty; checkout still submits those IDs to `post_sale()`, whose medicine/unit IDs must be UUIDs. A sale containing a demo item therefore fails with PostgreSQL `invalid input syntax for type uuid`; use actual database-backed catalog entries and investigate why the live catalog is empty before retrying.
 - Readiness: owner-supplied live catalog/ACL results (2026-10-14) show expected return tables/functions exist; no migration-history result was supplied, so applied status for the sales/returns migration remains unverified. Return tables have RLS enabled (not forced) and anon/authenticated direct CRUD privileges false. Earlier results showed anon EXECUTE true for 16 SECURITY DEFINER functions; owner now reports running the anon-EXECUTE migration, but the post-migration query output is missing, so the fix remains unverified. Authenticated privileges on several RLS-protected tables remain pending policy/column review. Cashier cost-column access, prescription enforcement, Cash Book persistence, Dashboard sample stock data, return payout recording and return reporting remain open.
 - A previous sign-in error was reported, but current authentication/runtime status was not tested in this audit. POS source requires active medicine, configured units, and positive eligible stock; the stock alert function requires `min_stock_alert > 0` for both low and out alerts.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
@@ -142,6 +145,9 @@ Cost visibility decision: Admin and Super Admin may view cost; Manager may view 
 
 ## Changelog
 
+- 2026-10-19 — Changed sidebar pin actions to Favorites, with oldest-first ordering and a heading shown only when at least one visible page is favorited. Removed the Dashboard Cash Sales/Credit row and Daily Sales Target row/modal. Updated sidebar favorite ordering tests; lint, targeted tests, and production build pass. Migration `20261018230000_sidebar_pins.sql` remains unapplied.
+- 2026-10-18 — Added sidebar pin-to-top context menu, long-press and keyboard access, eight-page limit, role-visible pins, persistent per-user preferences/tip dismissal, and central sidebar page registry. Added `20261018230000_sidebar_pins.sql`; it is not applied. User confirmed no shop helper or shop isolation exists, so RLS is per-user only. TypeScript lint, full tests, and production build pass.
+- 2026-10-18 — Diagnosed POS sale error: catalog fallback may supply demo IDs such as `DEMO-MED-001`, but `post_sale()` casts medicine/unit IDs to UUID. No source or database changes; live catalog state was not available to verify.
 - 2026-10-17 — Added POS keyboard shortcuts: F2 focuses + selects the product search bar from anywhere on the page; ↑/↓ arrow keys navigate the filtered product grid with a blue ring highlight and auto-scroll; Enter adds the highlighted product to cart; Escape clears search; F4 clicks the Charge button (guarded when checkout modal is open). showCheckoutModal state moved before effects to fix declaration order. TypeScript lint: exit 0.
 - 2026-10-17 — Added conditional Shop Profile card in ManageUsersView: when Super Admin selects Admin role, a purple-accented fieldset appears with Store/Shop Name (required), Contact Phone, City/Location, and logo upload (PNG/JPG/SVG/WebP ≤2 MB with preview + remove). Profile persisted via saveAdminShopProfile and loaded on edit. Validation blocks save if Shop Name is empty. TypeScript lint: exit 0.
 - 2026-10-17 — Completed full 11-item UI Redesign: POS Billing full-height pinned cart; GlowCredit animation removed; Products Option A compact toolbar, 1-line stats, row action menu (...); Stock Inventory Option A slim header, 1-row KPI tiles, expiry timeline; Customer Ledger Option C cards grid, dashed + New customer card, side statement drawer; WhatsApp Reminders 1-line pro-tip and compact table; dedicated SalesHistoryView (slim KPI tiles, recent sales table above the fold, print panel with Gross Profit & Margin %); My Print Requests filter chips and compact rows; Purchase History slim header and 1-row KPI tiles; dedicated Business Analytics ReportsScreen; Print Requests Admin status chips, search, compact rows, and bulk approve/reject with checkboxes. Lint, 18 test suites (122 tests), and build pass: exit 0.
@@ -201,15 +207,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-10-17T19:16:15.118Z
+Generated at (UTC): 2026-10-20T15:36:52.941Z
 Git branch: main
 
 Last 5 commit subjects:
+- shortskeys
 - huge update
 - little update
 - bbb
 - docs: record accumulated work on main
-- feat: add sidebar shortcut for product creation
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -236,8 +242,9 @@ npm scripts:
 - - `test:barcode-scanner`: `tsx --test src/utils/useBarcodeScanner.test.ts`
 - - `test:labels`: `tsx --test src/utils/labelUtils.test.ts`
 - - `test:permissions`: `tsx --test src/permissions.test.ts`
+- - `test:sidebar`: `tsx --test src/components/sidebarPinLogic.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:manage-users-policy`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -299,6 +306,10 @@ src/
     src/components/SalesHistoryView.tsx
     src/components/SettingsView.tsx
     src/components/Sidebar.tsx
+    src/components/sidebarMenuPosition.ts
+    src/components/sidebarPages.ts
+    src/components/sidebarPinLogic.test.ts
+    src/components/sidebarPinLogic.ts
     src/components/StockAlertBell.tsx
     src/components/StockPurchaseView.tsx
     src/components/SuppliersView.tsx
@@ -320,6 +331,7 @@ src/
     src/data/returnLogic.ts
     src/data/saleReturns.ts
     src/data/sales.ts
+    src/data/sidebarPreferences.ts
     src/data/stockAlertLogic.test.ts
     src/data/stockAlertLogic.ts
     src/data/stockAlerts.ts
@@ -366,6 +378,7 @@ Test files:
 - src/components/inventory/productImportLogic.test.ts
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
+- src/components/sidebarPinLogic.test.ts
 - src/data/posCatalogLogic.test.ts
 - src/data/returnLogic.test.ts
 - src/data/stockAlertLogic.test.ts

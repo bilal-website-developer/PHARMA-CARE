@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Activity,
   ShoppingBag,
@@ -10,7 +10,6 @@ import {
   ShoppingCart,
   History,
   Boxes,
-  Plus,
   ArrowRight,
   PackagePlus,
 } from 'lucide-react';
@@ -36,36 +35,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
   onOpenCloseDay,
 }) => {
-  const currentDate = new Date();
-  const targetDateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-  const targetStorageKey = `pharma-care.salesTarget.${currentUserName}.${targetDateKey}`;
-  const [salesTarget, setSalesTarget] = useState<number | null>(() => {
-    try {
-      const target = Number(localStorage.getItem(targetStorageKey));
-      return Number.isFinite(target) && target > 0 ? target : null;
-    } catch {
-      return null;
-    }
-  });
-  const [showTargetModal, setShowTargetModal] = useState(false);
-  const [targetInput, setTargetInput] = useState('');
-  const [targetError, setTargetError] = useState('');
-
   const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.MANAGER;
   const canViewProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
   const todaySales = salesForPeriod(sales, 'today');
   const monthlySales = salesForPeriod(sales, 'month');
 
   const todaySalesPKR = todaySales.reduce((sum, s) => sum + s.totalPaisa, 0) / 100;
-  const cashSalesPKR =
-    todaySales
-      .filter((s) => s.paymentMethod === 'CASH')
-      .reduce((sum, s) => sum + s.totalPaisa, 0) / 100;
-  const creditSalesPKR =
-    todaySales
-      .filter((s) => s.paymentMethod === 'CREDIT')
-      .reduce((sum, s) => sum + s.totalPaisa, 0) / 100;
-
   const todayProfitPKR = canViewProfit && todaySales.every((sale) =>
     sale.items.every((item) => item.costPaisaPerUnit !== null)
   )
@@ -278,67 +253,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* ── Cash Sales vs Credit Split Bar (Matching Screenshot 1) ─────────── */}
-      <div className="flex flex-col gap-3 rounded-card border border-border bg-white p-4 text-xs shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-xs bg-primary" />
-          <span className="font-semibold text-muted">Cash Sales</span>
-          <span className="font-mono font-bold text-text">Rs. {cashSalesPKR.toFixed(0)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-xs bg-warning" />
-          <span className="font-semibold text-muted">Credit</span>
-          <span className="font-mono font-bold text-text">
-            Rs. {creditSalesPKR.toFixed(0)}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Daily Sales Target Widget (Matching Screenshot 1) ───────────────── */}
-      <div className="flex flex-col gap-3 rounded-card border border-border bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <Activity className="h-4 w-4 shrink-0 text-primary" />
-            <span className="font-bold text-text">Daily Sales Target</span>
-            <span className="text-[11px] text-muted">
-              {salesTarget
-                ? `Target: Rs ${salesTarget.toLocaleString('en-PK')} · Achieved: Rs ${todaySalesPKR.toLocaleString('en-PK')} (${Math.min(
-                    100,
-                    Math.round((todaySalesPKR / salesTarget) * 100)
-                  )}%)`
-                : 'No target set. Set a daily goal to track progress.'}
-            </span>
-          </div>
-          {salesTarget && (
-            <div
-              className="h-2 w-full overflow-hidden rounded-full bg-surface"
-              role="progressbar"
-              aria-label="Daily sales target progress"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.min(100, Math.round((todaySalesPKR / salesTarget) * 100))}
-            >
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, (todaySalesPKR / salesTarget) * 100)}%` }}
-              />
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setTargetInput(salesTarget ? String(salesTarget) : '');
-            setTargetError('');
-            setShowTargetModal(true);
-          }}
-          className="flex shrink-0 items-center gap-1 self-start text-xs font-bold text-primary hover:opacity-80 sm:self-auto"
-        >
-          <Plus className="w-3.5 h-3.5" /> Set Target
-        </button>
-      </div>
-
       {/* ── Quick Actions Grid (Matching Screenshot 2) ─────────────────────── */}
       <div className="space-y-3">
         <h3 className="text-xs font-black text-slate-500 tracking-wider uppercase">
@@ -387,55 +301,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Target Modal */}
-      {showTargetModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="visual-modal-panel w-full max-w-xs space-y-3 rounded-card border border-border bg-white p-5">
-            <h4 className="text-sm font-bold text-text">Set Daily Sales Target</h4>
-            <input
-              type="number"
-              placeholder="e.g. 50000"
-              value={targetInput}
-              onChange={(e) => setTargetInput(e.target.value)}
-              className="w-full rounded-control border border-border bg-surface px-3 py-2 font-mono text-sm text-text"
-              autoFocus
-              aria-invalid={Boolean(targetError)}
-            />
-            {targetError && <p role="alert" className="text-xs text-danger">{targetError}</p>}
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowTargetModal(false)}
-                className="rounded-control px-3 py-1.5 text-xs text-muted hover:bg-surface"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const target = Number(targetInput);
-                  if (!Number.isFinite(target) || target <= 0) {
-                    setTargetError('Enter a sales target greater than zero.');
-                    return;
-                  }
-                  try {
-                    localStorage.setItem(targetStorageKey, String(target));
-                    setSalesTarget(target);
-                    setTargetError('');
-                  } catch {
-                    setTargetError('Could not save the target in this browser.');
-                    return;
-                  }
-                  setShowTargetModal(false);
-                }}
-                className="rounded-control bg-primary px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
