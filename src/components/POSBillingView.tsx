@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Package,
   Barcode,
+  Monitor,
   X,
   Zap,
 } from 'lucide-react';
@@ -43,6 +44,12 @@ import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
 import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
+import {
+  buildCustomerDisplaySnapshot,
+  canAccessCustomerDisplay,
+  createCustomerDisplayChannelId,
+  parseCustomerDisplayMessage,
+} from '../utils/customerDisplay';
 
 interface POSBillingViewProps {
   customers: Customer[];
@@ -92,6 +99,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [walkInName, setWalkInName] = useState<string>('Walk-in Customer');
+  const [displayChannelId, setDisplayChannelId] = useState<string | null>(null);
+  const [displayNotice, setDisplayNotice] = useState('');
+  const displayChannelRef = useRef<BroadcastChannel | null>(null);
 
   // Checkout & Cash Tendered
   const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
@@ -208,6 +218,57 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const totalPaisa = roundingUnitPaisa
     ? Math.floor(unroundedTotalPaisa / roundingUnitPaisa + 0.5) * roundingUnitPaisa
     : unroundedTotalPaisa;
+  const customerDisplaySnapshot = useMemo(() => buildCustomerDisplaySnapshot(
+    cart.map((item) => ({
+      productName: item.productName,
+      unitName: item.unitName,
+      quantity: item.quantityInUnit,
+      unitPricePaisa: item.mrpPaisaPerUnit,
+      lineTotalPaisa: item.lineTotalPaisa,
+    })),
+    subtotalPaisa,
+    discountPaisa,
+    totalPaisa,
+  ), [cart, subtotalPaisa, discountPaisa, totalPaisa]);
+  const customerDisplaySnapshotRef = useRef(customerDisplaySnapshot);
+  useEffect(() => {
+    customerDisplaySnapshotRef.current = customerDisplaySnapshot;
+  }, [customerDisplaySnapshot]);
+
+  useEffect(() => {
+    if (!displayChannelId || !canAccessCustomerDisplay(currentRole, permissions)) return;
+    if (typeof BroadcastChannel === 'undefined') {
+      setDisplayNotice('This browser does not support a live customer display.');
+      return;
+    }
+
+    let channel: BroadcastChannel;
+    try {
+      channel = new BroadcastChannel(`pharma-care.customer-display.${displayChannelId}`);
+    } catch (error) {
+      setDisplayChannelId(null);
+      setDisplayNotice(error instanceof Error ? error.message : 'Could not start the customer display.');
+      return;
+    }
+    displayChannelRef.current = channel;
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      const message = parseCustomerDisplayMessage(event.data);
+      if (message?.type === 'ready') {
+        channel.postMessage(customerDisplaySnapshotRef.current);
+      }
+    };
+    channel.postMessage(customerDisplaySnapshotRef.current);
+
+    return () => {
+      channel.postMessage({ type: 'closed' });
+      channel.close();
+      if (displayChannelRef.current === channel) displayChannelRef.current = null;
+    };
+  }, [displayChannelId, currentRole, permissions]);
+
+  useEffect(() => {
+    displayChannelRef.current?.postMessage(customerDisplaySnapshot);
+  }, [customerDisplaySnapshot]);
   const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
 
@@ -610,6 +671,34 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     }).finally(() => setIsPostingSale(false));
   };
 
+  const openCustomerDisplay = () => {
+    if (!canAccessCustomerDisplay(currentRole, permissions)) {
+      setDisplayNotice('POS access is required to open the customer display.');
+      return;
+    }
+    let channelId = displayChannelId;
+    if (!channelId) {
+      try {
+        channelId = createCustomerDisplayChannelId();
+      } catch (error) {
+        setDisplayNotice(error instanceof Error ? error.message : 'Could not create a customer display session.');
+        return;
+      }
+      setDisplayChannelId(channelId);
+    }
+
+    const displayWindow = window.open('about:blank', '_blank');
+    if (!displayWindow) {
+      setDisplayNotice('The customer display window was blocked. Allow pop-ups and try again.');
+      return;
+    }
+    displayWindow.opener = null;
+    const displayUrl = new URL('/customer-display', window.location.origin);
+    displayUrl.searchParams.set('channel', channelId);
+    displayWindow.location.replace(displayUrl.toString());
+    setDisplayNotice('Customer display opened.');
+  };
+
   return (
     <div className="flex flex-col h-auto lg:h-[calc(100vh-5.25rem)] min-h-[600px] gap-2">
       {saleError && (
@@ -619,6 +708,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
       )}
       {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-text shrink-0">{printNotice}</p>}
+      {displayNotice && <p role="status" className="rounded-control border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-text shrink-0">{displayNotice}</p>}
 
       {/* ── Main Split View ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 items-stretch">
@@ -865,6 +955,16 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <span className="pos-cart-count text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
                   Cart ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)})
                 </span>
+                <button
+                  type="button"
+                  onClick={openCustomerDisplay}
+                  aria-label="Open customer display"
+                  title="Open customer display"
+                  className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Monitor className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Display</span>
+                </button>
               </div>
 
               {/* Walk-in Customer — positioned in header where layout pills/medicine returns was */}

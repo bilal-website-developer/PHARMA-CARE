@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import {
@@ -18,6 +18,18 @@ import {
 
 const MAX_USERS = 99;
 
+interface TeamMember {
+  username: string;
+  role: string;
+  status: 'active' | 'deactivated' | 'removed';
+  created_at: string;
+  last_sign_in_at: string | null;
+}
+
+interface AdminTeamMember extends TeamMember {
+  member_id: string;
+}
+
 interface ManagedUser {
   id: string;
   full_name: string | null;
@@ -27,6 +39,7 @@ interface ManagedUser {
   is_active: boolean | null;
   permissions: PermissionKey[] | null;
   can_manage: boolean;
+  created_by_username?: string;
 }
 
 const EMPTY_SHOP_PROFILE: AdminShopProfile = {
@@ -84,6 +97,12 @@ function roleClass(role: UserRole) {
   }
 }
 
+function formatTeamTimestamp(value: string | null) {
+  if (!value) return 'Never';
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? 'Unknown' : timestamp.toLocaleString();
+}
+
 export function ManageUsersView({
   currentUserId,
   currentRole,
@@ -95,6 +114,11 @@ export function ManageUsersView({
 }) {
   const isSuperAdmin = currentRole === UserRole.SUPER_ADMIN;
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [adminTeamMembers, setAdminTeamMembers] = useState<AdminTeamMember[]>([]);
+  const [adminTeamCount, setAdminTeamCount] = useState(0);
+  const [adminTeamLoading, setAdminTeamLoading] = useState(false);
+  const [teamCount, setTeamCount] = useState(0);
   const [currentCount, setCurrentCount] = useState(0);
   const [assignableRoles, setAssignableRoles] = useState<UserRole[]>([]);
   const [grantablePermissions, setGrantablePermissions] = useState<PermissionKey[]>([]);
@@ -103,32 +127,65 @@ export function ManageUsersView({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [serviceReady, setServiceReady] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const teamRequestVersion = useRef(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setServiceReady(false);
     try {
       const result = await invokeManageUsers<{
+        api_version?: number;
         users?: ManagedUser[];
         currentCount?: number;
+        team_count?: number;
+        team_members?: TeamMember[];
         assignable_roles?: UserRole[];
         grantable_permissions?: PermissionKey[];
       } | null>(
         { action: 'list' }
       );
-      const hasRoleData = Array.isArray(result?.assignable_roles)
-        && Array.isArray(result?.grantable_permissions);
-      setUsers(Array.isArray(result?.users) ? result.users : []);
-      setCurrentCount(typeof result?.currentCount === 'number' ? result.currentCount : 0);
-      setAssignableRoles(Array.isArray(result?.assignable_roles) ? result.assignable_roles : []);
-      setGrantablePermissions(Array.isArray(result?.grantable_permissions) ? result.grantable_permissions : []);
+      const hasRoleData = result?.api_version === 2
+        && Array.isArray(result?.users)
+        && Array.isArray(result?.assignable_roles)
+        && Array.isArray(result?.grantable_permissions)
+        && typeof result?.currentCount === 'number'
+        && typeof result?.team_count === 'number'
+        && Array.isArray(result?.team_members);
       if (!hasRoleData) {
+        setUsers([]);
+        setTeamMembers([]);
+        setTeamCount(0);
+        setCurrentCount(0);
+        setAssignableRoles([]);
+        setGrantablePermissions([]);
+        setIsFormOpen(false);
+        setEditingId(null);
         setNotice({
-          text: 'The user service is out of date. Ask the admin to deploy manage-users.',
+          text: 'The user service is out of date. Ask the admin to deploy the compatible manage-users function.',
           error: true,
         });
+        return;
       }
+      setServiceReady(true);
+      setNotice(null);
+      setUsers(Array.isArray(result?.users) ? result.users : []);
+      setCurrentCount(typeof result?.currentCount === 'number' ? result.currentCount : 0);
+      setTeamCount(typeof result?.team_count === 'number' ? result.team_count : 0);
+      setTeamMembers(Array.isArray(result?.team_members) ? result.team_members : []);
+      setAssignableRoles(Array.isArray(result?.assignable_roles) ? result.assignable_roles : []);
+      setGrantablePermissions(Array.isArray(result?.grantable_permissions) ? result.grantable_permissions : []);
     } catch (error) {
+      setServiceReady(false);
+      setUsers([]);
+      setTeamMembers([]);
+      setTeamCount(0);
+      setCurrentCount(0);
+      setAssignableRoles([]);
+      setGrantablePermissions([]);
+      setIsFormOpen(false);
+      setEditingId(null);
       setNotice({ text: error instanceof Error ? error.message : 'Could not load users.', error: true });
     } finally {
       setLoading(false);
@@ -137,7 +194,32 @@ export function ManageUsersView({
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const loadAdminTeam = useCallback(async (adminId: string) => {
+    const requestVersion = ++teamRequestVersion.current;
+    setAdminTeamLoading(true);
+    setAdminTeamMembers([]);
+    setAdminTeamCount(0);
+    try {
+      const result = await invokeManageUsers<{
+        team_count: number;
+        team_members: AdminTeamMember[];
+      }>({ action: 'get_team', admin_id: adminId });
+      if (requestVersion !== teamRequestVersion.current) return;
+      setAdminTeamCount(result.team_count);
+      setAdminTeamMembers(result.team_members);
+    } catch (error) {
+      if (requestVersion === teamRequestVersion.current) {
+        setAdminTeamMembers([]);
+        setAdminTeamCount(0);
+        setNotice({ text: error instanceof Error ? error.message : 'Could not load this Admin team.', error: true });
+      }
+    } finally {
+      if (requestVersion === teamRequestVersion.current) setAdminTeamLoading(false);
+    }
+  }, []);
+
   const startAdd = () => {
+    if (!serviceReady) return;
     setEditingId(null);
     setIsFormOpen(true);
     const role = assignableRoles[0] ?? UserRole.CASHIER;
@@ -156,7 +238,11 @@ export function ManageUsersView({
   };
 
   const startEdit = (user: ManagedUser) => {
-    if (!user.can_manage) return;
+    if (!serviceReady || !user.can_manage) return;
+    teamRequestVersion.current += 1;
+    setAdminTeamLoading(false);
+    setAdminTeamMembers([]);
+    setAdminTeamCount(0);
     const email = String(user.email ?? '');
     setEditingId(user.id);
     setIsFormOpen(true);
@@ -174,9 +260,14 @@ export function ManageUsersView({
       shopProfile: userRole === UserRole.ADMIN ? readAdminShopProfile(user.id) : { ...EMPTY_SHOP_PROFILE },
     });
     setNotice(null);
+    if (isSuperAdmin && userRole === UserRole.ADMIN) void loadAdminTeam(user.id);
   };
 
   const cancelForm = () => {
+    teamRequestVersion.current += 1;
+    setAdminTeamLoading(false);
+    setAdminTeamMembers([]);
+    setAdminTeamCount(0);
     setEditingId(null);
     setIsFormOpen(false);
     setForm({
@@ -218,6 +309,7 @@ export function ManageUsersView({
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!serviceReady) return;
     const fullName = form.full_name.trim();
     const username = form.username.trim();
     const email = form.email.trim();
@@ -289,15 +381,68 @@ export function ManageUsersView({
   };
 
   const handleDelete = async (user: ManagedUser) => {
-    if (!user.can_manage || user.id === currentUserId) return;
-    if (!window.confirm(`Remove ${user.username}? They will no longer be able to log in.`)) return;
+    if (!serviceReady || !isSuperAdmin || !user.can_manage || user.id === currentUserId) return;
+    if (!window.confirm(`Remove access for ${user.username}? They will be blocked from signing in and moved to the Trash Bin.`)) return;
     setNotice(null);
     try {
-      const result = await invokeManageUsers<{ message: string }>({ action: 'delete', id: user.id });
+      const result = await invokeManageUsers<{ message: string }>({
+        action: 'set_status',
+        status: 'remove_access',
+        id: user.id,
+      });
       setNotice({ text: result.message || 'User removed.', error: false });
       await refresh();
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : 'Could not remove user.', error: true });
+    }
+  };
+
+  const handleStatusChange = async (user: ManagedUser, status: 'deactivate' | 'reactivate') => {
+    if (!serviceReady || !isSuperAdmin || !user.can_manage || user.id === currentUserId) return;
+    const description = status === 'deactivate' ? 'Deactivate' : 'Reactivate';
+    if (!window.confirm(`${description} ${user.username}?`)) return;
+    setNotice(null);
+    try {
+      const result = await invokeManageUsers<{ message: string }>({
+        action: 'set_status',
+        status,
+        id: user.id,
+      });
+      setNotice({ text: result.message, error: false });
+      await refresh();
+      if (editingId && form.role === UserRole.ADMIN) await loadAdminTeam(editingId);
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : `Could not ${description.toLowerCase()} user.`, error: true });
+    }
+  };
+
+  const handleAdminTeamStatusChange = async (
+    member: AdminTeamMember,
+    status: 'deactivate' | 'reactivate' | 'remove_access',
+  ) => {
+    if (!serviceReady || !isSuperAdmin) return;
+    const actionLabel = status === 'remove_access'
+      ? 'Remove access for'
+      : status === 'deactivate' ? 'Deactivate' : 'Reactivate';
+    const detail = status === 'remove_access'
+      ? `Remove access for ${member.username}? They will be blocked from signing in and moved to the Trash Bin.`
+      : `${actionLabel} ${member.username}?`;
+    if (!window.confirm(detail)) return;
+    setNotice(null);
+    try {
+      const result = await invokeManageUsers<{ message: string }>({
+        action: 'set_status',
+        status,
+        id: member.member_id,
+      });
+      setNotice({ text: result.message, error: false });
+      await refresh();
+      if (editingId) await loadAdminTeam(editingId);
+    } catch (error) {
+      setNotice({
+        text: error instanceof Error ? error.message : `Could not ${actionLabel.toLowerCase()} ${member.username}.`,
+        error: true,
+      });
     }
   };
 
@@ -306,14 +451,16 @@ export function ManageUsersView({
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-white p-5 shadow-sm">
         <div>
           <h2 className="text-xl font-black text-text">Users</h2>
-          <p className="mt-1 text-sm text-muted">Shop Limit (Unlimited): {currentCount} / {MAX_USERS} users</p>
+          {currentRole === UserRole.ADMIN
+            ? <p className="mt-1 text-sm text-muted">Your team: {teamCount} accounts, including removed accounts. There is no per-Admin cap; the global limit is {currentCount} / {MAX_USERS} accounts, including removed accounts.</p>
+            : <p className="mt-1 text-sm text-muted">Global user limit: {currentCount} / {MAX_USERS} accounts, including removed accounts.</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {currentRole !== UserRole.ADMIN && <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
             <KeyRound size={16} /> Change My Password
           </button>}
           {!isFormOpen && (
-            <button type="button" disabled={currentCount >= MAX_USERS} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={!serviceReady || currentCount >= MAX_USERS} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
               <Plus size={17} /> Add User
             </button>
           )}
@@ -430,7 +577,7 @@ export function ManageUsersView({
           </fieldset>
 
           <label className="flex items-center gap-2 text-sm font-semibold text-text">
-            <input type="checkbox" checked={form.is_active} disabled={editingId === currentUserId} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} className="h-4 w-4 accent-green-700 disabled:opacity-50" />
+            <input type="checkbox" checked={form.is_active} disabled={editingId !== null || !isSuperAdmin} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} className="h-4 w-4 accent-green-700 disabled:opacity-50" />
             Active (can log in)
           </label>
 
@@ -510,6 +657,71 @@ export function ManageUsersView({
             </fieldset>
           )}
 
+          {isSuperAdmin && editingId && form.role === UserRole.ADMIN && (
+            <section className="space-y-3 rounded-card border border-border p-4">
+              <div>
+                <h4 className="text-sm font-bold text-text">Team</h4>
+                <p className="mt-1 text-sm text-muted">
+                  {adminTeamCount} accounts created by this Admin, including removed accounts. No per-Admin limit.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="border-b border-border bg-surface text-[11px] font-bold uppercase tracking-wide text-muted">
+                    <tr>
+                      <th className="px-3 py-2">Username</th>
+                      <th className="px-3 py-2">Role</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Account created</th>
+                      <th className="px-3 py-2">Last sign-in</th>
+                      <th className="px-3 py-2 text-right">Access actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {adminTeamLoading
+                      ? <tr><td colSpan={6} className="px-3 py-5 text-center text-muted">Loading team…</td></tr>
+                      : adminTeamMembers.length === 0
+                        ? <tr><td colSpan={6} className="px-3 py-5 text-center text-muted">No team accounts have been attributed to this Admin.</td></tr>
+                        : adminTeamMembers.map((member) => (
+                          <tr key={member.member_id}>
+                            <td className="px-3 py-2 font-semibold text-text">{member.username}</td>
+                            <td className="px-3 py-2 capitalize">{ROLE_LABELS[member.role as UserRole] ?? member.role}</td>
+                            <td className="px-3 py-2 capitalize">{member.status}</td>
+                            <td className="px-3 py-2">{formatTeamTimestamp(member.created_at)}</td>
+                            <td className="px-3 py-2">{formatTeamTimestamp(member.last_sign_in_at)}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex justify-end gap-2">
+                                {member.status !== 'removed' && <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleAdminTeamStatusChange(
+                                      member,
+                                      member.status === 'active' ? 'deactivate' : 'reactivate',
+                                    )}
+                                    className="rounded-control border border-border px-2 py-1 text-xs font-semibold text-text hover:bg-surface"
+                                  >
+                                    {member.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleAdminTeamStatusChange(member, 'remove_access')}
+                                    aria-label={`Remove access for ${member.username}`}
+                                    className="rounded-control border border-red-200 p-1.5 text-danger hover:bg-red-50"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>}
+                                {member.status === 'removed' && <span className="text-xs text-muted">Restore via Trash Bin</span>}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="rounded-control bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60">{saving ? 'Saving…' : 'Save User'}</button>
             <button type="button" onClick={cancelForm} disabled={saving} className="rounded-control border border-border px-5 py-2.5 text-sm font-bold text-text hover:bg-surface">Cancel</button>
@@ -517,14 +729,53 @@ export function ManageUsersView({
         </form>
       )}
 
+      {currentRole === UserRole.ADMIN && (
+        <section className="space-y-3 rounded-card border border-border bg-white p-5 shadow-sm">
+          <div>
+            <h3 className="text-base font-bold text-text">My Team</h3>
+            <p className="mt-1 text-sm text-muted">Read-only account history. Legacy accounts without creator attribution are not assigned to a team.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="border-b border-border bg-surface text-[11px] font-bold uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="px-4 py-3">Username</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Account created</th>
+                  <th className="px-4 py-3">Last sign-in</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {loading
+                  ? <tr><td colSpan={5} className="px-4 py-6 text-center text-muted">Loading team…</td></tr>
+                  : teamMembers.length === 0
+                    ? <tr><td colSpan={5} className="px-4 py-6 text-center text-muted">No team accounts have been attributed to you.</td></tr>
+                    : teamMembers.map((member) => (
+                      <tr key={`${member.username}-${member.created_at}`}>
+                        <td className="px-4 py-3 font-semibold text-text">{member.username}</td>
+                        <td className="px-4 py-3 capitalize">{member.role === 'unknown'
+                          ? 'Unknown'
+                          : ROLE_LABELS[member.role as UserRole] ?? member.role}</td>
+                        <td className="px-4 py-3 capitalize">{member.status}</td>
+                        <td className="px-4 py-3">{formatTeamTimestamp(member.created_at)}</td>
+                        <td className="px-4 py-3">{formatTeamTimestamp(member.last_sign_in_at)}</td>
+                      </tr>
+                    ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <div className="overflow-x-auto rounded-card border border-border bg-white shadow-sm">
-        <table className="w-full min-w-[680px] text-left text-sm">
+        <table className={`w-full ${isSuperAdmin ? 'min-w-[820px]' : 'min-w-[680px]'} text-left text-sm`}>
           <thead className="border-b border-border bg-surface text-[11px] font-bold uppercase tracking-wide text-muted">
-            <tr><th className="px-5 py-3">User Info</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></tr>
+            <tr><th className="px-5 py-3">User Info</th><th className="px-5 py-3">Role</th>{isSuperAdmin && <th className="px-5 py-3">Created by</th>}<th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {loading ? <tr><td colSpan={4} className="visual-skeleton px-5 py-8 text-center text-muted">Loading users…</td></tr>
-              : users.length === 0 ? <tr><td colSpan={4} className="px-5 py-8 text-center text-muted">No active profiles found.</td></tr>
+            {loading ? <tr><td colSpan={isSuperAdmin ? 5 : 4} className="visual-skeleton px-5 py-8 text-center text-muted">Loading users…</td></tr>
+              : users.length === 0 ? <tr><td colSpan={isSuperAdmin ? 5 : 4} className="px-5 py-8 text-center text-muted">No active profiles found.</td></tr>
                 : users.map((user) => (
                   <tr key={user.id} className="users-table-row">
                     <td className="px-5 py-4">
@@ -532,12 +783,14 @@ export function ManageUsersView({
                       <div className="mt-0.5 text-xs text-muted">{user.username} · {user.email}</div>
                     </td>
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${roleClass(Object.values(UserRole).includes(user.role as UserRole) ? user.role as UserRole : UserRole.CASHIER)}`}>{user.role ? ROLE_LABELS[user.role] : ROLE_LABELS[UserRole.CASHIER]}</span></td>
+                    {isSuperAdmin && <td className="px-5 py-4 text-muted">{user.created_by_username ?? 'Unassigned'}</td>}
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${user.is_active === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{user.is_active === true ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
-                        {user.can_manage && <>
-                          <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>
-                          {user.id !== currentUserId && <button type="button" onClick={() => void handleDelete(user)} title={`Delete ${user.username}`} aria-label={`Delete ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>}
+                        {user.can_manage && <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>}
+                        {isSuperAdmin && user.can_manage && user.id !== currentUserId && <>
+                          <button type="button" onClick={() => void handleStatusChange(user, user.is_active === true ? 'deactivate' : 'reactivate')} className="rounded-control border border-border px-2 py-1 text-xs font-semibold text-text hover:bg-surface">{user.is_active === true ? 'Deactivate' : 'Reactivate'}</button>
+                          <button type="button" onClick={() => void handleDelete(user)} title={`Remove access for ${user.username}`} aria-label={`Remove access for ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>
                         </>}
                       </div>
                     </td>

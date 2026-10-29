@@ -28,6 +28,7 @@ import { toggleSidebarFavorite } from './components/sidebarPinLogic';
 import { TopNav } from './components/TopNav';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
+import { canAccessCustomerDisplay } from './utils/customerDisplay';
 import type { ProductFilter } from './components/InventoryScreen';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
@@ -57,6 +58,7 @@ import {
 } from './data/sidebarPreferences';
 
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
+const CustomerDisplayView = lazy(() => import('./components/CustomerDisplayView').then(({ CustomerDisplayView: View }) => ({ default: View })));
 const InventoryScreen = lazy(() => import('./components/InventoryScreen').then(({ InventoryScreen: View }) => ({ default: View })));
 const MasterDataView = lazy(() => import('./components/MasterDataView').then(({ MasterDataView: View }) => ({ default: View })));
 const WhatsAppRemindersView = lazy(() => import('./components/WhatsAppRemindersView').then(({ WhatsAppRemindersView: View }) => ({ default: View })));
@@ -225,6 +227,26 @@ export default function App() {
 
   if (!sessionChecked) {
     return <div className="app-loading flex min-h-screen items-center justify-center bg-surface"><PharmaLogo size={12} /></div>;
+  }
+
+  if (window.location.pathname === '/customer-display') {
+    if (!session || !canAccessCustomerDisplay(session.role, session.permissions)) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-surface p-6 text-text">
+          <section role="status" className="rounded-card border border-border bg-white p-7 text-center shadow-lg">
+            <h1 className="text-lg font-bold">Customer display unavailable</h1>
+            <p className="mt-2 text-sm text-muted">Open the display from a signed-in account with POS access.</p>
+          </section>
+        </main>
+      );
+    }
+    return (
+      <AppErrorBoundary>
+        <Suspense fallback={<ScreenLoading />}>
+          <CustomerDisplayView />
+        </Suspense>
+      </AppErrorBoundary>
+    );
   }
 
   if (!session) {

@@ -3,7 +3,7 @@ import { Check, Copy, MessageCircle, Phone } from 'lucide-react';
 import { APP_NAME } from '../constants/brand';
 import { DEVELOPER } from '../config/developer';
 import GlowCredit from './GlowCredit';
-import packageJson from '../../package.json';
+import { version } from '../../package.json';
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'night' ? 'dark' : 'light';
@@ -88,7 +88,7 @@ export function HelpSupportView({ username, role }: { username: string; role: st
         </details>
       </section>
 
-      <footer className="pb-2 text-center text-xs text-muted">{APP_NAME} · Version {packageJson.version}</footer>
+      <footer className="pb-2 text-center text-xs text-muted">{APP_NAME} · Version {version}</footer>
     </section>
   );
 }

@@ -164,11 +164,8 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
             ) : visibleEvents.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">No matching Trash Bin activity.</td></tr>
             ) : visibleEvents.map((event) => {
-              const protectedUser = event.entity_type === 'profile'
-                && (currentRole === UserRole.SUPER_ADMIN
-                  ? event.entity_role === UserRole.SUPER_ADMIN
-                  : event.entity_role === UserRole.ADMIN || event.entity_role === UserRole.SUPER_ADMIN);
-              const canRestore = event.can_restore && !protectedUser;
+              const canRestore = event.can_restore
+                && (event.entity_type !== 'profile' || currentRole === UserRole.SUPER_ADMIN);
               return (
                 <tr key={event.id}>
                   <td className="px-4 py-4">{ENTITY_LABELS[event.entity_type]}</td>

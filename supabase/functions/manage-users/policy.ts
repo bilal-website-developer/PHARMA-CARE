@@ -40,6 +40,20 @@ export function canAssignRole(
   return assignableRolesFor(callerRole, callerPermissions).includes(role);
 }
 
+export function canViewManagedUser(
+  callerRole: Role,
+  callerId: string,
+  targetId: string,
+  targetCreatedBy: string | null,
+): boolean {
+  if (callerRole === 'super_admin' || callerId === targetId) return true;
+  return callerRole !== 'admin' || targetCreatedBy === callerId;
+}
+
+export function canViewAdminTeam(callerRole: Role, targetRole: Role): boolean {
+  return callerRole === 'super_admin' && targetRole === 'admin';
+}
+
 export function grantablePermissionsFor(
   callerRole: Role,
   callerPermissions: readonly string[],
@@ -75,14 +89,48 @@ export function canManageTarget(
   targetId: string,
   targetRole: Role,
   targetPermissions: readonly string[] = [],
-  callerPermissions: readonly string[] = []
+  callerPermissions: readonly string[] = [],
+  targetCreatedBy: string | null = null,
 ): boolean {
   if (callerId === targetId) return true;
   if (callerRole === 'super_admin') return true;
-  if (callerRole === 'admin') return ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin;
+  if (callerRole === 'admin') {
+    return targetCreatedBy === callerId && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin;
+  }
   return callerPermissions.includes('manage_users')
     && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin
     && !targetPermissions.includes('manage_users');
+}
+
+export interface TeamProfile {
+  username: string | null;
+  role: string | null;
+  is_active: boolean | null;
+  deleted_at: string | null;
+  created_at: string;
+}
+
+export interface TeamAuthMetadata {
+  created_at?: string;
+  last_sign_in_at?: string | null;
+}
+
+export function publicTeamMember(
+  profile: TeamProfile,
+  authUser?: TeamAuthMetadata,
+) {
+  const role = String(profile.role ?? '').toLowerCase();
+  return {
+    username: profile.username || 'Unknown',
+    role: ROLES.includes(role as Role) ? role : 'unknown',
+    status: profile.deleted_at !== null
+      ? 'removed'
+      : profile.is_active === true
+        ? 'active'
+        : 'deactivated',
+    created_at: authUser?.created_at ?? profile.created_at,
+    last_sign_in_at: authUser?.last_sign_in_at ?? null,
+  };
 }
 
 interface ProfileChangePolicy {
@@ -91,6 +139,7 @@ interface ProfileChangePolicy {
   callerId: string;
   targetId: string;
   targetRole: Role;
+  targetCreatedBy?: string | null;
   nextRole?: Role;
   targetPermissions: readonly string[];
   nextPermissions?: readonly string[];
@@ -111,6 +160,9 @@ function samePermissions(left: readonly string[], right: readonly string[]): boo
 export function profileChangeDenial(change: ProfileChangePolicy): string | null {
   const isSelf = change.callerId === change.targetId;
   if (change.action === 'delete' && isSelf) return 'Cannot delete your own account.';
+  if (change.action === 'delete' && change.callerRole !== 'super_admin') {
+    return 'Only super_admin may remove user access.';
+  }
 
   if (change.action === 'update') {
     const nextRole = change.nextRole;
@@ -123,6 +175,9 @@ export function profileChangeDenial(change: ProfileChangePolicy): string | null 
       || nextActive !== change.targetActive
     )) {
       return 'Cannot change your own role, permissions, or active status.';
+    }
+    if (nextActive !== change.targetActive && change.callerRole !== 'super_admin') {
+      return 'Only super_admin may change account status.';
     }
     if (nextRole !== change.targetRole && !canAssignRole(change.callerRole, nextRole, change.callerPermissions)) {
       return 'You are not allowed to assign this role.';
@@ -142,7 +197,8 @@ export function profileChangeDenial(change: ProfileChangePolicy): string | null 
     change.targetId,
     change.targetRole,
     change.targetPermissions,
-    change.callerPermissions
+    change.callerPermissions,
+    change.targetCreatedBy ?? null,
   )) {
     return 'You are not allowed to manage this user.';
   }

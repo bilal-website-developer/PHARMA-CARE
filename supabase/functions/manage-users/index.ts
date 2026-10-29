@@ -3,10 +3,13 @@ import {
   assignableRolesFor,
   canAssignRole,
   canManageTarget,
+  canViewAdminTeam,
+  canViewManagedUser,
   canUseManageUsers,
   grantablePermissionsFor,
   normalizePermissions,
   permissionGrantDenial,
+  publicTeamMember,
   profileChangeDenial,
   ROLES,
 } from './policy.ts';
@@ -96,15 +99,18 @@ function safeProfile(
     role: string | null;
     is_active: boolean | null;
     permissions: string[] | null;
+    created_by?: string | null;
     deleted_at?: string | null;
   },
   authEmail?: string,
 ) {
+  const publicFields = { ...profile };
+  delete publicFields.created_by;
   const email = String(profile.email ?? authEmail ?? '');
   const username = String(profile.username ?? email.split('@')[0] ?? '');
   const roleValue = String(profile.role ?? '').toLowerCase();
   return {
-    ...profile,
+    ...publicFields,
     full_name: String(profile.full_name ?? username ?? email.split('@')[0] ?? ''),
     username,
     email,
@@ -178,12 +184,55 @@ Deno.serve(async (request) => {
     }
 
     const action = payload.action;
+    if (action === 'get_team') {
+      if (typeof payload.admin_id !== 'string') {
+        return response(400, { message: 'Admin id is required.' });
+      }
+      const { data: targetAdmin, error: targetAdminError } = await adminClient
+        .from('profiles')
+        .select('id,role')
+        .eq('id', payload.admin_id)
+        .maybeSingle();
+      if (targetAdminError) throw targetAdminError;
+      if (!targetAdmin || !validRole(targetAdmin.role)
+        || !canViewAdminTeam(callerRole, targetAdmin.role)) {
+        return response(404, { message: 'Admin team not found.' });
+      }
+      const { data: teamProfiles, error: teamError } = await adminClient
+        .from('profiles')
+        .select('id,username,role,is_active,deleted_at,created_at')
+        .eq('created_by', targetAdmin.id)
+        .order('created_at', { ascending: true });
+      if (teamError) throw teamError;
+      const { data: authUsers, error: authUsersError } = await adminClient.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+      if (authUsersError) throw authUsersError;
+      const authMetadataById = new Map(authUsers.users.map((user) => [user.id, {
+        created_at: user.created_at,
+        last_sign_in_at: user.last_sign_in_at,
+      }]));
+      return response(200, {
+        team_count: teamProfiles?.length ?? 0,
+        team_limit: null,
+        team_members: (teamProfiles ?? []).map((profile) => ({
+          member_id: profile.id,
+          ...publicTeamMember(profile, authMetadataById.get(profile.id)),
+        })),
+      });
+    }
+
     if (action === 'list') {
       const { data: users, error } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions')
+        .select('id,full_name,username,email,role,is_active,permissions,created_by')
         .is('deleted_at', null);
       if (error) throw error;
+      const { count: globalCount, error: countError } = await adminClient
+        .from('profiles')
+        .select('id', { count: 'exact', head: true });
+      if (countError) throw countError;
       const { data: authUsers, error: authUsersError } = await adminClient.auth.admin.listUsers({
         page: 1,
         perPage: 1000,
@@ -191,22 +240,76 @@ Deno.serve(async (request) => {
       if (authUsersError) throw authUsersError;
       const creationOrder = new Map(authUsers.users.map((user) => [user.id, user.created_at]));
       const authEmailById = new Map(authUsers.users.map((user) => [user.id, user.email]));
-      const orderedUsers = (users ?? [])
-        .filter((user) => isSuperAdmin || user.role !== 'super_admin')
-        .map((user) => safeProfile(user, authEmailById.get(user.id)))
+      const authMetadataById = new Map(authUsers.users.map((user) => [user.id, {
+        created_at: user.created_at,
+        last_sign_in_at: user.last_sign_in_at,
+      }]));
+      let usernameById = new Map((users ?? []).map((user) => [
+        user.id,
+        String(user.username ?? user.email?.split('@')[0] ?? 'Unknown'),
+      ]));
+      if (isSuperAdmin) {
+        const { data: allProfiles, error: allProfilesError } = await adminClient
+          .from('profiles')
+          .select('id,username,email');
+        if (allProfilesError) throw allProfilesError;
+        usernameById = new Map((allProfiles ?? []).map((profile) => [
+          profile.id,
+          String(profile.username ?? profile.email?.split('@')[0] ?? 'Unknown'),
+        ]));
+      }
+      const visibleUsers = (users ?? []).filter((user) =>
+        (isSuperAdmin || user.role !== 'super_admin')
+        && canViewManagedUser(callerRole, authData.user.id, user.id, user.created_by)
+      );
+      const orderedUsers = visibleUsers
+        .map((user) => {
+          const { created_by: createdBy, ...profile } = user;
+          const safeUser = safeProfile(profile, authEmailById.get(user.id));
+          return isSuperAdmin
+            ? {
+              ...safeUser,
+              created_by_username: createdBy ? usernameById.get(createdBy) ?? 'Unassigned' : 'Unassigned',
+            }
+            : safeUser;
+        })
         .sort((left, right) =>
           (creationOrder.get(left.id) ?? '').localeCompare(creationOrder.get(right.id) ?? '')
         )
         .map((user) => ({
           ...user,
           can_manage: canManageTarget(
-            callerRole, authData.user.id, user.id, user.role, user.permissions, callerPermissions
+            callerRole,
+            authData.user.id,
+            user.id,
+            user.role,
+            user.permissions,
+            callerPermissions,
+            (users ?? []).find((profile) => profile.id === user.id)?.created_by ?? null,
           ),
         }));
+      let teamCount = 0;
+      let teamMembers: ReturnType<typeof publicTeamMember>[] = [];
+      if (callerRole === 'admin') {
+        const { data: teamProfiles, error: teamError } = await adminClient
+          .from('profiles')
+          .select('id,username,role,is_active,deleted_at,created_at')
+          .eq('created_by', authData.user.id)
+          .order('created_at', { ascending: true });
+        if (teamError) throw teamError;
+        teamCount = (teamProfiles ?? []).length;
+        teamMembers = (teamProfiles ?? []).map((profile) => publicTeamMember(
+          profile,
+          authMetadataById.get(profile.id),
+        ));
+      }
       return response(200, {
+        api_version: 2,
         users: orderedUsers,
         userLimit: MAX_USERS,
-        currentCount: orderedUsers.length,
+        currentCount: globalCount ?? 0,
+        team_count: teamCount,
+        team_members: teamMembers,
         assignable_roles: assignableRolesFor(callerRole, callerPermissions),
         grantable_permissions: grantablePermissionsFor(callerRole, callerPermissions, PERMISSION_KEYS),
       });
@@ -218,7 +321,7 @@ Deno.serve(async (request) => {
       }
       const { data: users, error } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions,deleted_at')
+        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by')
         .not('deleted_at', 'is', null)
         .order('deleted_at', { ascending: false });
       if (error) throw error;
@@ -230,7 +333,10 @@ Deno.serve(async (request) => {
       const authEmailById = new Map(authUsers.users.map((user) => [user.id, user.email]));
       return response(200, {
         users: (users ?? [])
-          .filter((user) => isSuperAdmin || user.role !== 'super_admin')
+          .filter((user) =>
+            (isSuperAdmin || user.role !== 'super_admin')
+            && canViewManagedUser(callerRole, authData.user.id, user.id, user.created_by)
+          )
           .map((user) => safeProfile(user, authEmailById.get(user.id))),
       });
     }
@@ -242,12 +348,18 @@ Deno.serve(async (request) => {
       if (password.length < 8) return response(400, { message: 'Password must be at least 8 characters.' });
       const { data: target, error: targetError } = await adminClient
         .from('profiles')
-        .select('id,role,permissions,deleted_at')
+        .select('id,role,permissions,deleted_at,created_by')
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
       if (!target || !validRole(target.role) || !canManageTarget(
-        callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions
+        callerRole,
+        authData.user.id,
+        id,
+        target.role,
+        target.permissions ?? [],
+        callerPermissions,
+        target.created_by,
       )) {
         return response(404, { message: 'User not found.' });
       }
@@ -288,6 +400,9 @@ Deno.serve(async (request) => {
       if (permissionDenial) return response(403, { message: permissionDenial });
       if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
         return response(400, { message: 'Active status must be true or false.' });
+      }
+      if (payload.is_active === false && callerRole !== 'super_admin') {
+        return response(403, { message: 'Only super_admin may create an inactive account.' });
       }
 
       const { data: currentUsers, error: usersError } = await adminClient
@@ -339,6 +454,7 @@ Deno.serve(async (request) => {
         permissions,
         is_active: payload.is_active !== false,
         deleted_at: null,
+        created_by: authData.user.id,
       });
       if (profileError) {
         const { error: rollbackError } = await adminClient.auth.admin.deleteUser(createdAuth.user.id);
@@ -364,12 +480,18 @@ Deno.serve(async (request) => {
       return response(201, { message: 'User created successfully.', id: createdAuth.user.id });
     }
 
-    if (action === 'update' || action === 'delete' || action === 'restore') {
+    if (action === 'update' || action === 'delete' || action === 'restore' || action === 'set_status') {
       const id = typeof payload.id === 'string' ? payload.id : '';
       if (!id) return response(400, { message: 'User id is required.' });
+      if (action === 'set_status' && callerRole !== 'super_admin') {
+        return response(403, { message: 'Only super_admin may change account status or remove user access.' });
+      }
+      if (action === 'set_status' && !['deactivate', 'reactivate', 'remove_access'].includes(String(payload.status))) {
+        return response(400, { message: 'A valid account status action is required.' });
+      }
       const { data: target, error: targetError } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions,deleted_at')
+        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by')
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
@@ -397,7 +519,64 @@ Deno.serve(async (request) => {
         .is('deleted_at', null);
       if (allSuperAdminCountError) throw allSuperAdminCountError;
 
-      if (action === 'delete') {
+      if (action === 'set_status' && payload.status !== 'remove_access') {
+        const statusAction = payload.status as 'deactivate' | 'reactivate';
+        if (target.deleted_at !== null) {
+          return response(400, { message: 'Restore this user before changing account status.' });
+        }
+        const nextActive = statusAction === 'reactivate';
+        if (target.is_active === nextActive) {
+          return response(409, { message: nextActive ? 'User is already active.' : 'User is already deactivated.' });
+        }
+        const denial = profileChangeDenial({
+          action: 'update',
+          callerRole,
+          callerId: authData.user.id,
+          targetId: id,
+          targetRole: target.role,
+          targetCreatedBy: target.created_by,
+          nextRole: target.role,
+          targetPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
+          nextPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
+          targetActive: target.is_active === true,
+          nextActive,
+          activeAdminCount: activeAdminCount ?? 0,
+          superAdminCount: superAdminCount ?? 0,
+          activeSuperAdminCount: activeSuperAdminCount ?? 0,
+          callerPermissions,
+        });
+        if (denial) return response(403, { message: denial });
+
+        const { error: authStatusError } = await adminClient.auth.admin.updateUserById(id, {
+          ban_duration: nextActive ? 'none' : '876000h',
+        });
+        if (authStatusError) {
+          return response(500, { message: `Could not ${nextActive ? 'reactivate' : 'deactivate'} the account: ${authStatusError.message}` });
+        }
+        const { error: statusError } = await adminClient.rpc('manage_users_team_member_access', {
+          p_actor_id: authData.user.id,
+          p_target_id: id,
+          p_action: statusAction,
+        });
+        if (statusError) {
+          const { error: authRollbackError } = await adminClient.auth.admin.updateUserById(id, {
+            ban_duration: target.is_active === true ? 'none' : '876000h',
+          });
+          if (authRollbackError) {
+            return response(500, {
+              message: `Could not update profile status: ${statusError.message}. Auth rollback also failed: ${authRollbackError.message}`,
+            });
+          }
+          return response(statusError.code === 'P0001' ? 409 : 500, {
+            message: `Could not update profile status: ${statusError.message}`,
+          });
+        }
+        return response(200, {
+          message: nextActive ? 'User reactivated successfully.' : 'User deactivated successfully.',
+        });
+      }
+
+      if (action === 'delete' || (action === 'set_status' && payload.status === 'remove_access')) {
         if (target.deleted_at !== null) return response(404, { message: 'User is already deleted.' });
         const denial = profileChangeDenial({
           action: 'delete',
@@ -405,6 +584,7 @@ Deno.serve(async (request) => {
           callerId: authData.user.id,
           targetId: id,
           targetRole: target.role,
+          targetCreatedBy: target.created_by,
           targetPermissions: target.permissions ?? [],
           targetActive: target.is_active === true,
           activeAdminCount: activeAdminCount ?? 0,
@@ -412,54 +592,44 @@ Deno.serve(async (request) => {
           activeSuperAdminCount: activeSuperAdminCount ?? 0,
         });
         if (denial) return response(403, { message: denial });
-        const before = {
-          role: target.role,
-          permissions: target.permissions,
-          is_active: target.is_active,
-          deleted_at: target.deleted_at,
-        };
-        const deletedAt = new Date().toISOString();
-        const { error: updateError } = await adminClient
-          .from('profiles')
-          .update({ deleted_at: deletedAt, is_active: false })
-          .eq('id', id);
-        if (updateError) throw updateError;
         const { error: banError } = await adminClient.auth.admin.updateUserById(id, { ban_duration: '876000h' });
         if (banError) {
-          await adminClient.from('profiles').update({ deleted_at: target.deleted_at, is_active: target.is_active }).eq('id', id);
           return response(500, { message: `Could not disable the account: ${banError.message}` });
         }
-        const displayName = target.full_name || target.username || target.email || 'Unknown user';
-        try {
-          await writeTrashEvent(adminClient, authData.user.id, id, 'deleted', displayName, {
-            role: target.role,
-          });
-        } catch (historyError) {
-          const { error: profileRestoreError } = await adminClient.from('profiles')
-            .update({ deleted_at: target.deleted_at, is_active: target.is_active })
-            .eq('id', id);
-          const { error: unbanError } = await adminClient.auth.admin.updateUserById(id, { ban_duration: 'none' });
-          if (profileRestoreError || unbanError) {
-            throw new Error(
-              `Trash Bin history failed and rollback was incomplete. ${profileRestoreError?.message ?? ''} ${unbanError?.message ?? ''}`.trim(),
-            );
-          }
-          throw historyError;
-        }
-        await writeAuditLog(adminClient, authData.user.id, 'delete', id, before, {
-          role: target.role,
-          permissions: target.permissions,
-          is_active: false,
-          deleted_at: deletedAt,
+        const { error: removalError } = await adminClient.rpc('manage_users_team_member_access', {
+          p_actor_id: authData.user.id,
+          p_target_id: id,
+          p_action: 'remove_access',
         });
-        return response(200, { message: 'User moved to Trash Bin.' });
+        if (removalError) {
+          const { error: authRollbackError } = await adminClient.auth.admin.updateUserById(id, {
+            ban_duration: target.is_active === true ? 'none' : '876000h',
+          });
+          if (authRollbackError) {
+            return response(500, {
+              message: `Could not remove user access: ${removalError.message}. Auth rollback also failed: ${authRollbackError.message}`,
+            });
+          }
+          return response(removalError.code === 'P0001' ? 409 : 500, {
+            message: `Could not remove user access: ${removalError.message}`,
+          });
+        }
+        return response(200, { message: 'User access removed and profile moved to Trash Bin.' });
       }
 
       if (action === 'restore') {
-        if (callerRole !== 'admin' && callerRole !== 'super_admin') {
-          return response(403, { message: 'Only admin or super_admin may restore users.' });
+        if (callerRole !== 'super_admin') {
+          return response(403, { message: 'Only super_admin may restore users.' });
         }
-        if (!canManageTarget(callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions)) {
+        if (!canManageTarget(
+          callerRole,
+          authData.user.id,
+          id,
+          target.role,
+          target.permissions ?? [],
+          callerPermissions,
+          target.created_by,
+        )) {
           return response(403, { message: 'You are not allowed to manage this user.' });
         }
         if (target.deleted_at === null) return response(400, { message: 'User is not deleted.' });
@@ -519,7 +689,15 @@ Deno.serve(async (request) => {
       if (!validEmail(email)) return response(400, { message: 'A valid email is required.' });
       if (!role) return response(400, { message: 'Role is required.' });
       if (!validRole(role)) return response(400, { message: 'Role is invalid.' });
-      if (!canManageTarget(callerRole, authData.user.id, id, target.role, target.permissions ?? [], callerPermissions)) {
+      if (!canManageTarget(
+        callerRole,
+        authData.user.id,
+        id,
+        target.role,
+        target.permissions ?? [],
+        callerPermissions,
+        target.created_by,
+      )) {
         return response(403, { message: 'You are not allowed to manage this user.' });
       }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
@@ -549,12 +727,16 @@ Deno.serve(async (request) => {
 
       const nextRole = role as Role;
       const nextActive = payload.is_active as boolean;
+      if (nextActive !== (target.is_active === true)) {
+        return response(400, { message: 'Use the dedicated account status action to deactivate or reactivate users.' });
+      }
       const denial = profileChangeDenial({
         action: 'update',
         callerRole,
         callerId: authData.user.id,
         targetId: id,
         targetRole: target.role,
+        targetCreatedBy: target.created_by,
         nextRole,
         targetPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
         nextPermissions: nextRole === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions,
