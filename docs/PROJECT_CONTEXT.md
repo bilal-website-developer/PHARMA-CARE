@@ -193,15 +193,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T13:40:30.672Z
+Generated at (UTC): 2026-11-07T13:41:41.906Z
 Git branch: main
 
 Last 5 commit subjects:
+- coustmer displayy
 - Document customer display frontend
 - versal fix bug
 - Fix Vercel single-page app deep links
 - Document Vercel customer display 404 investigation
-- Record main branch publication
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
