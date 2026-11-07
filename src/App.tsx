@@ -26,6 +26,7 @@ import { Sidebar, NavItemKey } from './components/Sidebar';
 import { getSidebarPage, sidebarPageForRoute } from './components/sidebarPages';
 import { toggleSidebarFavorite } from './components/sidebarPinLogic';
 import { TopNav } from './components/TopNav';
+import { InstallAppPrompt } from './components/InstallAppPrompt';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { canAccessCustomerDisplay } from './utils/customerDisplay';
@@ -1127,6 +1128,7 @@ function PharmacyWorkspace({
           <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />
         </Suspense>
       )}
+      <InstallAppPrompt />
     </div>
   );
 }

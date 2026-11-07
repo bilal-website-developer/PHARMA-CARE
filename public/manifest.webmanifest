@@ -1,7 +1,7 @@
 {
   "name": "Pharma Care",
   "short_name": "Pharma Care",
-  "description": "Pharma Care pharmacy management system.",
+  "description": "Pharmacy POS, inventory, purchasing, and management tools for your pharmacy.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f0fdf4",

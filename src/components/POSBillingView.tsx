@@ -1174,9 +1174,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                       <div className="flex min-w-0 items-center gap-1">
                         <div className="min-w-0 flex-1 truncate font-bold text-slate-900">{item.productName}</div>
                         {(products.find((product) => product.id === item.productId)?.units.length ?? 0) > 0 && (
-                          <label className="relative inline-flex h-6 w-7 shrink-0 cursor-pointer items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus-within:ring-2 focus-within:ring-accent" title="Change sale unit">
+                          <label className="relative inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus-within:ring-2 focus-within:ring-accent" title="Change sale unit (single, pack, or box)">
                             <span className="sr-only">Sale unit for {item.productName}</span>
-                            <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+                            <ChevronDown aria-hidden="true" className="h-3 w-3" />
                             <select
                               value={item.unitId ?? ''}
                               onChange={(event) => changeCartUnit(idx, event.target.value)}
