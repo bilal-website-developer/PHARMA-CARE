@@ -96,7 +96,7 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 - **2026-11-07 — Reviewed owner attachment:** The submitted SQL output is labeled `type_and_aggregate_inventory` (Q11), not the Q1 role check; awaiting the actual Q1 booleans. No database access was performed.
 - **2026-11-07 — Git guidance:** Clarified Git install versus GitHub account/authentication, the local commit author identity, and the HTTPS push sign-in flow. The LF/CRLF warning on Windows is harmless.
 - **2026-11-07 — Vercel routing fix:** Added a root SPA rewrite in `vercel.json` after the Ready deployment returned 404 for direct `/customer-display?channel=...`. Pushed the rewrite to `main`; unauthenticated `curl` checks returned HTTP 200 for both homepage and route. No custom domain is needed to use the provided `vercel.app` URL.
-- **2026-11-07 — POS app install:** Added a compact, bottom-right Pharma Care install notification shown once on app startup only when not installed; native browser install and browser-menu guidance are supported. Updated the PWA manifest description and reduced the cart unit selector. TypeScript, tests, build, manifest, and icon checks pass. Install support is browser-dependent; offline use is not promised.
+- **2026-11-07 — POS app install:** Added a compact bottom-right install notification on each app startup unless installed; captures Chrome's install event before auth finishes, adds a network-only service worker, and detects the related installed PWA where supported. Updated manifest metadata and reduced the cart unit selector. Local checks pass; Vercel deployment protection may block manifest/service-worker access and must be disabled for the public app URL. No offline caching is provided.
 - **2026-11-07 — Multi-tenant plan reviewed:** Read the local-only `.private/multi-tenant-plan.md` against the user's confirmed rules. The target model is documented under Roles and permissions below; no tenant schema, RLS, RPC, or UI implementation was made.
 - **2026-11-03 — Prepared Track A hardening package:** Added `supabase/fresh/trackA/001_revoke_anon_public_execute.sql`, the companion rollback/test files, the optional `002_default_privileges.sql` pair, `SMOKE_TEST.md`, and `README_trackA.md`. No SQL was run or deployed; the branch remains `feature/team-view-manage-users`.
 - **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing. The feature is committed as `da7ed5d` on `feature/low-stock-alerts`.
@@ -161,7 +161,7 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 ## Changelog
 
 - 2026-11-07 — Prepared owner-run S1 current-only inventory, `backup_20261107` data/selected-definition/ACL/sequence snapshot, guarded data restore, snapshot cleanup, and row-count smoke test. Added the owner's no-staging rollout and Developer Shop/account-boundary decisions to the multi-shop plans. Static review only; no database or deployment actions.
-- 2026-11-07 — Redesigned the POS customer display with Clean Classic screens and an animated Pill Rain thank-you screen; updated its guide, added a dismissible display notice and compact bottom-right install notification shown at startup only if not installed, and compacted the cart unit selector while retaining base-unit details. Typecheck, tests, build, manifest, and icon checks pass. Install availability depends on the browser; offline use is not promised. Data flow, logo, permissions, and channel behavior are unchanged.
+- 2026-11-07 — Redesigned the POS customer display with Clean Classic screens and an animated Pill Rain thank-you screen; updated its guide, added a dismissible display notice and bottom-right install notification on each reload, and compacted the cart unit selector. Added early install-event capture and a network-only service worker for Chrome's in-app prompt. Vercel deployment protection may block PWA files; the public app URL must expose its manifest and worker. No offline caching. Data flow, logo, permissions, and channel behavior are unchanged.
 - 2026-11-07 — Fast-forwarded `feature/team-view-manage-users` into `main` and pushed customer-display/manage-users changes, S1/Track A preparation, and docs to GitHub. Test suite and production build passed.
 - 2026-11-07 — Added root `vercel.json` rewrite for direct Vite SPA routes; Vite build and JSON validation passed, then live homepage and `/customer-display` both returned HTTP 200.
 - 2026-11-07 — Reviewed `.private/multi-tenant-plan.md` against the user's confirmed tenant rules and recorded the target model and implementation status in Roles and permissions. No application, database, or plan-file changes.
@@ -192,15 +192,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T14:13:39.466Z
+Generated at (UTC): 2026-11-07T14:28:08.695Z
 Git branch: main
 
 Last 5 commit subjects:
+- fixxx
 - coustmer display page
 - coustmer displayy
 - Document customer display frontend
 - versal fix bug
-- Fix Vercel single-page app deep links
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -348,6 +348,7 @@ src/
     src/utils/printSnapshot.test.ts
     src/utils/printSnapshot.ts
     src/utils/printWorkflow.ts
+    src/utils/pwaInstall.ts
     src/utils/receipt.test.ts
     src/utils/receipt.ts
     src/utils/salesReport.test.ts

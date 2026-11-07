@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, X } from 'lucide-react';
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-}
+import {
+  clearDeferredInstallPrompt,
+  getDeferredInstallPrompt,
+  subscribeToInstallPrompt,
+  type BeforeInstallPromptEvent,
+} from '../utils/pwaInstall';
 
 function isInstalledApp(): boolean {
   const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
   return window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
 }
 
+async function hasInstalledPwa(): Promise<boolean> {
+  const navigatorWithInstalledApps = window.navigator as Navigator & {
+    getInstalledRelatedApps?: () => Promise<Array<{ platform: string; id?: string }>>;
+  };
+  if (!navigatorWithInstalledApps.getInstalledRelatedApps) return false;
+  const apps = await navigatorWithInstalledApps.getInstalledRelatedApps();
+  return apps.some((app) => app.platform === 'webapp' && app.id === `${window.location.origin}/`);
+}
+
 export function InstallAppPrompt() {
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(getDeferredInstallPrompt);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -21,14 +31,11 @@ export function InstallAppPrompt() {
 
   useEffect(() => {
     const displayMode = window.matchMedia('(display-mode: standalone)');
+    let active = true;
     const updateInstalledState = () => {
       const installed = isInstalledApp();
       setIsInstalled(installed);
-      if (installed) setIsVisible(false);
-    };
-    const handleBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as BeforeInstallPromptEvent);
+      setIsVisible(!installed);
     };
     const handleAppInstalled = () => {
       setInstallPrompt(null);
@@ -37,16 +44,21 @@ export function InstallAppPrompt() {
     };
 
     updateInstalledState();
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    void hasInstalledPwa().then((installed) => {
+      if (active && installed) {
+        setIsInstalled(true);
+        setIsVisible(false);
+      }
+    }).catch((error: unknown) => {
+      console.warn('Could not check whether Pharma Care is installed.', error);
+    });
+    const unsubscribeInstallPrompt = subscribeToInstallPrompt(setInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
     displayMode.addEventListener('change', updateInstalledState);
-    const timer = window.setTimeout(() => {
-      if (!isInstalledApp()) setIsVisible(true);
-    }, 1200);
 
     return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      active = false;
+      unsubscribeInstallPrompt();
       window.removeEventListener('appinstalled', handleAppInstalled);
       displayMode.removeEventListener('change', updateInstalledState);
     };
@@ -61,7 +73,7 @@ export function InstallAppPrompt() {
     try {
       await installPrompt.prompt();
       const choice = await installPrompt.userChoice;
-      setInstallPrompt(null);
+      clearDeferredInstallPrompt(installPrompt);
       if (choice.outcome === 'accepted') {
         setIsVisible(false);
       } else {
@@ -105,7 +117,7 @@ export function InstallAppPrompt() {
       {showInstructions && (
         <p className="mt-2 rounded-lg bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-muted">
           {installError ? `${installError} ` : ''}
-          Choose <strong>Install app</strong> in your browser menu. On iPhone or iPad, use Share, then <strong>Add to Home Screen</strong>.
+          Choose <strong>Install Pharma Care</strong> from your browser menu or address-bar install icon. On iPhone/iPad, use Share, then <strong>Add to Home Screen</strong>. If the link requires Vercel sign-in, use a public deployment URL.
         </p>
       )}
       <button
