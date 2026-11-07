@@ -95,8 +95,8 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 - **2026-11-07 — S1 owner guidance provided:** Supplied the exact read-only Q1 query and step-by-step SQL Editor instructions; waiting for its two access booleans before advising further. No database or deployment actions were taken.
 - **2026-11-07 — Reviewed owner attachment:** The submitted SQL output is labeled `type_and_aggregate_inventory` (Q11), not the Q1 role check; awaiting the actual Q1 booleans. No database access was performed.
 - **2026-11-07 — Git guidance:** Clarified Git install versus GitHub account/authentication, the local commit author identity, and the HTTPS push sign-in flow. The LF/CRLF warning on Windows is harmless.
-- **2026-11-07 — Publish status:** `main` was pushed to `origin/main`; see the 2026-11-07 publication changelog below.
-- **2026-11-07 — Vercel routing fix:** Added a root SPA rewrite in `vercel.json` after the Ready Vercel deployment returned 404 for direct `/customer-display?channel=...` navigation. Requires a new Vercel deployment and direct-route verification; no custom domain is needed to use the provided `vercel.app` URL.
+- **2026-11-07 — Vercel routing fix:** Added a root SPA rewrite in `vercel.json` after the Ready deployment returned 404 for direct `/customer-display?channel=...`. Pushed the rewrite to `main`; unauthenticated `curl` checks returned HTTP 200 for both homepage and route. No custom domain is needed to use the provided `vercel.app` URL.
+- **2026-11-07 — Customer display guide:** Added `docs/CUSTOMER_DISPLAY_GUIDE.md` describing page states, UI, message flow, privacy boundaries, alternative selection, frontend edit points, and the same-browser BroadcastChannel limitation.
 - **2026-11-07 — Multi-tenant plan reviewed:** Read the local-only `.private/multi-tenant-plan.md` against the user's confirmed rules. The target model is documented under Roles and permissions below; no tenant schema, RLS, RPC, or UI implementation was made.
 - **2026-11-03 — Prepared Track A hardening package:** Added `supabase/fresh/trackA/001_revoke_anon_public_execute.sql`, the companion rollback/test files, the optional `002_default_privileges.sql` pair, `SMOKE_TEST.md`, and `README_trackA.md`. No SQL was run or deployed; the branch remains `feature/team-view-manage-users`.
 - **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing.
@@ -162,9 +162,8 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 ## Changelog
 
 - 2026-11-07 — Prepared owner-run S1 current-only inventory, `backup_20261107` data/selected-definition/ACL/sequence snapshot, guarded data restore, snapshot cleanup, and row-count smoke test. Added the owner's no-staging rollout and Developer Shop/account-boundary decisions to the multi-shop plans. Static review only; no database or deployment actions.
-- 2026-11-07 — Fast-forwarded `feature/team-view-manage-users` into `main` and pushed to GitHub (`origin/main` at `10c5441`). This includes the branch's customer-display/manage-users changes, S1/Track A preparation, and docs; test suite and production build had passed before publishing.
-- 2026-11-07 — Investigated screenshot of Vercel 404 for `/customer-display`; confirmed the client route exists in source and local `main` is pushed, but Vercel build/alias status remains unverified. Likely deployment freshness or SPA rewrite; owner should check Vercel deployment status.
-- 2026-11-07 — Added root `vercel.json` rewrite to `/index.html` to let Vercel serve the Vite SPA for direct client-route requests, including `/customer-display`. Vite production build and JSON config validation pass; deployment and live route remain to verify.
+- 2026-11-07 — Fast-forwarded `feature/team-view-manage-users` into `main` and pushed customer-display/manage-users changes, S1/Track A preparation, and docs to GitHub. Test suite and production build passed.
+- 2026-11-07 — Added root `vercel.json` rewrite for direct Vite SPA routes; Vite build and JSON validation passed, then live homepage and `/customer-display` both returned HTTP 200.
 - 2026-11-07 — Reviewed `.private/multi-tenant-plan.md` against the user's confirmed tenant rules and recorded the target model and implementation status in Roles and permissions. No application, database, or plan-file changes.
 - 2026-11-06 — Created and retained `docs/DESIGN_REFERENCE.md`, a plain-English visual reference covering the shared themes, workspace shell, responsive patterns, and screen-specific visual layouts. Exclusion scan found no URLs, credential terms, environment names/values, or personal paths/names. No commit or push.
 - 2026-11-06 — Removed the cashier manual Show/Hide options panel; alternatives now appear only through the customer Settings preference. Moved theme/text-size/motion and similar-medicine controls to the all-role Settings route as compact segmented controls/toggle rows; shop/business settings remain admin-only. Removed those controls and the auth-status badge from global headers. Added customer display Qty/Batch/Expiry/Amount columns, using only sale FEFO allocations and allowlisted fields. Updated all-role Settings tests. Full tests, TypeScript and build pass. No SQL, deployment, merge or push.
@@ -193,15 +192,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T12:54:15.685Z
+Generated at (UTC): 2026-11-07T13:01:52.964Z
 Git branch: main
 
 Last 5 commit subjects:
+- versal fix bug
 - Fix Vercel single-page app deep links
 - Document Vercel customer display 404 investigation
 - Record main branch publication
 - Update published branch status
-- Document GitHub push authentication status
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
