@@ -41,6 +41,7 @@ test('page registry contains unique valid keys and preserves sidebar role visibi
   assert.equal(canAccessPage(UserRole.CASHIER, ['customers'], 'customer-ledger'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, ['customers'], 'whatsapp-reminders'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'dashboard'), true);
-  assert.equal(canAccessPage(UserRole.CASHIER, [], 'settings'), false);
+  assert.equal(canAccessPage(UserRole.CASHIER, [], 'settings'), true);
+  assert.equal(canAccessPage(UserRole.MANAGER, [], 'settings'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'settings'), true);
 });

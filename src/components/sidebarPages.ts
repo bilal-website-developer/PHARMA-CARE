@@ -60,7 +60,7 @@ export const SIDEBAR_PAGES: readonly SidebarPage[] = [
   { key: 'reports', label: 'Business Analytics', icon: BarChart3, route: '/reports', category: 'Accounts & Admin', allowedRoles: ALL_ROLES, module: 'reports' },
   { key: 'manage-users', label: 'Manage Users', icon: UserCheck, route: '/users', category: 'Accounts & Admin', allowedRoles: ALL_ROLES, module: 'manage_users' },
   { key: 'print-requests', label: 'Print Requests', icon: Printer, route: '/print-requests', category: 'Accounts & Admin', allowedRoles: ADMIN_ROLES, adminOnly: true },
-  { key: 'settings', label: 'Settings', icon: Settings, route: '/settings', category: 'Settings & System', allowedRoles: ADMIN_ROLES, adminOnly: true },
+  { key: 'settings', label: 'Settings', icon: Settings, route: '/settings', category: 'Settings & System', allowedRoles: ALL_ROLES },
   { key: 'trash-bin', label: 'Trash Bin', icon: Trash2, route: '/trash-bin', category: 'Settings & System', allowedRoles: ADMIN_ROLES, adminOnly: true },
   { key: 'help-support', label: 'Help & Support', icon: HelpCircle, route: '/help', category: 'Settings & System', allowedRoles: ALL_ROLES },
   { key: 'customers', label: 'Customers', icon: FileText, route: '/customers', category: 'Sales & Customers', allowedRoles: ALL_ROLES, module: 'customers', sidebar: false },

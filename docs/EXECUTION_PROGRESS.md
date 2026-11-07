@@ -4,19 +4,19 @@
 
 ## Branch and baseline
 
-- [x] Created `master-plan/implementation` from clean commit `adf3606` on `barcode/labels`; no merge or push.
-- [ ] Confirm full migration/bootstrap assumptions against the owner's CURRENT and STAGING catalog results.
+- [x] Owner-directed execution branch is `feature/team-view-manage-users`; current checkout verified on that branch. No merge or push.
+- [x] Owner waived the staging comparison on 2026-11-07; current-only S1 inventory and snapshot package is awaiting owner execution/results.
 
 ## Work packages
 
 | Package | Status | Commit hash | Migrations written | Migrations applied by owner | Tests / checks |
 |---|---|---|---|---|---|
 | 0. Branch and read-only baseline | Complete; repository/branch audit only | — | None | None | `git branch -a`, `git branch --merged main`, branch divergence and diff inspected; no application tests |
-| 1. Staging bootstrap and catalog comparison | Waiting for owner to build staging and return results | `b05cfa4`, `e9319a7` | None | None; SQL has not been run by assistant | Bootstrap/query documentation committed; no database query executed by assistant |
-| 2. W1 ACL prerequisite reconciliation | Blocked on package 1 results | — | None | None | Not run |
+| 1. Current-only S1 inventory and SQL snapshot | Files authored; waiting for owner to run and return Q1-Q10 plus smoke output | — | `supabase/fresh/000_backup_to_schema.sql` + restore/rollback/smoke files | None; SQL has not been run by assistant | Static review only; owner smoke test pending |
+| 2. W1 ACL prerequisite reconciliation | Blocked on S1 results and owner approval | — | Existing Track A files only | None | Not run |
 | 3. W5 barcode UI/scanner improvements (early client-only package) | Complete; client-only, no schema/database work | `818af6c` | None | None | `npm test`, `npm run lint`, `npm run build` passed; targeted scanner (4) and label (5) tests passed |
-| 4. W2 schema foundation and Shop 1 backfill | Blocked on package 1 and prerequisite approvals | — | None | None | Not run |
-| 5. W2 tenant RLS, RPC, and Edge Function isolation | Blocked on package 4, two-shop test design, and staging | — | None | None | Not run |
+| 4. W2 schema foundation and Shop 1 backfill | Blocked on S1 results and S2 smoke test | — | None | None | Not run |
+| 5. W2 tenant RLS, RPC, and Edge Function isolation | Blocked on package 4 and its smoke test | — | None | None | Not run |
 | 6. W4 persistence and transactional `complete_sale` | Blocked on package 5 | — | None | None | Not run |
 | 7. W3 stock alerts | Header alerts implemented for current single-shop schema; shop-scoped follow-up remains blocked on package 5 | — | `20261013140000_stock_alerts_summary.sql` plus rollback | Not applied; owner applies manually | `npm run lint`, `npm test`, `npm run build` passed; database/grant checks not run |
 | 8. W5 per-shop cross-table barcode registry and RPCs | Blocked on package 4 and duplicate inventory | — | None | None | Not run |
@@ -145,8 +145,9 @@ Proposed npm script: `"lint:eslint": "eslint ."`; no packages were installed and
 
 ## Approved rules and stop point
 
-- Shared Supabase project with `shop_id` on every shop-owned table, conditional on two-shop isolation tests and staging acceptance.
-- `super_admin` is platform-only; Shop 1 is owned by the existing admin account. Never expose business data to platform-only accounts.
+- Shared Supabase project with `shop_id` on every shop-owned table, conditional on two-shop isolation tests and owner acceptance.
+- `super_admin` is platform-only (`shop_id = NULL`); it manages shops, Admin accounts, and grants but cannot access shop-business pages. Use a separate Admin login for the empty Developer Shop; map existing non-Super-Admin accounts/data to Shop 1.
+- Shop Admin manages only own-shop Manager/Cashier accounts, may grant only permissions it holds, and cannot create/change Admin/Super Admin accounts or shop assignments. Staff cannot manage accounts. Super Admin alone changes account status.
 - A stock batch is sellable through its expiry date: `expiry_date >= current_date`, status `ACTIVE` or `NEAR_EXPIRY`, remaining quantity greater than zero, and active medicine. Align every conflicting helper, test, document, and SQL condition.
 - Main TypeScript package enables unused-symbol checks and ESLint first. Measure `noUnusedLocals`, `noUnusedParameters`, and `strict` separately. Strict is a separate final package and is optional if the measured issue count is not manageable.
 - Barcode UI is an early client-only package after the staging checkpoint. Product rows/cards must expose Edit, Print barcode with per-product quantity, and Make barcode; scanner test and POS/Products scan handling are required. Caps: 200 labels per product and 1,000 per print job.
@@ -154,4 +155,4 @@ Proposed npm script: `"lint:eslint": "eslint ."`; no packages were installed and
 - QR is out of scope. Remove `express` and `@types/express` only after confirming they are unused.
 - No SQL execution or deployment by the assistant. Migrations and rollback files only; cashier never receives cost data.
 - Show the old and proposed definitions and obtain approval before changing RLS or `is_staff`, `is_admin`, or `has_any_permission`.
-- **Current stop:** staging project bootstrap and SELECT-only catalog comparison. No multi-shop migration may be written until the owner returns and the results are reviewed. Package 3 is complete independently of that gate; it wrote no migrations and applied no SQL.
+- **Current stop:** S1 owner-run current-only inventory and snapshot. Do not begin S2 until its smoke test passes and the owner returns the requested results. No SQL has been run by the assistant.

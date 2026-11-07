@@ -45,10 +45,17 @@ import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
 import {
+  buildCustomerDisplayOptionsMessage,
+  buildCustomerDisplayPayment,
   buildCustomerDisplaySnapshot,
+  buildSameMedicineOptions,
   canAccessCustomerDisplay,
   createCustomerDisplayChannelId,
   parseCustomerDisplayMessage,
+  readCustomerDisplayAlternatives,
+  subscribeCustomerDisplayAlternatives,
+  type CustomerDisplayMessage,
+  type CustomerDisplayOptionCandidate,
 } from '../utils/customerDisplay';
 
 interface POSBillingViewProps {
@@ -101,7 +108,28 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [walkInName, setWalkInName] = useState<string>('Walk-in Customer');
   const [displayChannelId, setDisplayChannelId] = useState<string | null>(null);
   const [displayNotice, setDisplayNotice] = useState('');
+  const [displayThankYou, setDisplayThankYou] = useState(false);
+  const [showDisplayAlternatives, setShowDisplayAlternatives] = useState(() =>
+    readCustomerDisplayAlternatives(currentUserId)
+  );
+  const [activeOptions, setActiveOptions] = useState<{
+    lineIndex: number;
+    productName: string;
+    strength: string | null;
+    candidates: CustomerDisplayOptionCandidate[];
+  } | null>(null);
   const displayChannelRef = useRef<BroadcastChannel | null>(null);
+  const activeOptionsRef = useRef(activeOptions);
+  const swapOptionRef = useRef<(option: CustomerDisplayOptionCandidate) => void>(() => undefined);
+
+  useEffect(() => {
+    setShowDisplayAlternatives(readCustomerDisplayAlternatives(currentUserId));
+    return subscribeCustomerDisplayAlternatives(currentUserId, setShowDisplayAlternatives);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    activeOptionsRef.current = activeOptions;
+  }, [activeOptions]);
 
   // Checkout & Cash Tendered
   const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
@@ -119,6 +147,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [saleCompleteModal, setSaleCompleteModal] = useState<CompletedSale | null>(null);
 
+  useEffect(() => {
+    if (showCheckoutModal) setActiveOptions(null);
+  }, [showCheckoutModal]);
 
   useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedCategory, selectedBrand]);
 
@@ -218,22 +249,58 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const totalPaisa = roundingUnitPaisa
     ? Math.floor(unroundedTotalPaisa / roundingUnitPaisa + 0.5) * roundingUnitPaisa
     : unroundedTotalPaisa;
+  const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
+    ? Math.max(0, Math.round(tenderedAmountPKR * 100))
+    : 0;
   const customerDisplaySnapshot = useMemo(() => buildCustomerDisplaySnapshot(
-    cart.map((item) => ({
-      productName: item.productName,
-      unitName: item.unitName,
-      quantity: item.quantityInUnit,
-      unitPricePaisa: item.mrpPaisaPerUnit,
-      lineTotalPaisa: item.lineTotalPaisa,
-    })),
+    cart.map((item) => {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      let batchNumber = item.batchNumber;
+      let expiryDate = item.expiryDate;
+      if (product && item.unitId) {
+        try {
+          const allocations = allocateFefo(
+            product.batches,
+            getRequiredSmallestUnits(item.quantityInUnit, item.conversionFactor),
+            localIsoDate(),
+          );
+          const batches = allocations.map((allocation) => allocation.batchNumber);
+          const expiries = [...new Set(allocations.map((allocation) => allocation.expiryDate))];
+          batchNumber = [...new Set(batches)].join(', ');
+          expiryDate = expiries.join(', ');
+        } catch {
+          // Keep the cart's known first batch details if live reallocation is unavailable.
+        }
+      }
+      return {
+        productName: item.productName,
+        unitName: item.unitName,
+        quantity: item.quantityInUnit,
+        batchNumber,
+        expiryDate,
+        unitPricePaisa: item.mrpPaisaPerUnit,
+        lineTotalPaisa: item.lineTotalPaisa,
+      };
+    }),
     subtotalPaisa,
     discountPaisa,
     totalPaisa,
-  ), [cart, subtotalPaisa, discountPaisa, totalPaisa]);
-  const customerDisplaySnapshotRef = useRef(customerDisplaySnapshot);
+    showCheckoutModal ? 'payment' : cart.length > 0 ? 'order' : 'welcome',
+    buildCustomerDisplayPayment(paymentMethod, totalPaisa, tenderedAmountPaisa),
+  ), [cart, products, subtotalPaisa, discountPaisa, totalPaisa, showCheckoutModal, paymentMethod, tenderedAmountPaisa]);
+  const customerDisplayMessage: CustomerDisplayMessage = displayThankYou
+    ? { type: 'thank_you' }
+    : activeOptions
+      ? buildCustomerDisplayOptionsMessage(
+          activeOptions.productName,
+          activeOptions.strength,
+          activeOptions.candidates,
+        )
+      : customerDisplaySnapshot;
+  const customerDisplayMessageRef = useRef<CustomerDisplayMessage>(customerDisplayMessage);
   useEffect(() => {
-    customerDisplaySnapshotRef.current = customerDisplaySnapshot;
-  }, [customerDisplaySnapshot]);
+    customerDisplayMessageRef.current = customerDisplayMessage;
+  }, [customerDisplayMessage]);
 
   useEffect(() => {
     if (!displayChannelId || !canAccessCustomerDisplay(currentRole, permissions)) return;
@@ -254,10 +321,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     channel.onmessage = (event: MessageEvent<unknown>) => {
       const message = parseCustomerDisplayMessage(event.data);
       if (message?.type === 'ready') {
-        channel.postMessage(customerDisplaySnapshotRef.current);
+        channel.postMessage(customerDisplayMessageRef.current);
+      } else if (message?.type === 'option_selected') {
+        const selectedOption = activeOptionsRef.current?.candidates[message.optionIndex];
+        if (selectedOption) swapOptionRef.current(selectedOption);
       }
     };
-    channel.postMessage(customerDisplaySnapshotRef.current);
+    channel.postMessage(customerDisplayMessageRef.current);
 
     return () => {
       channel.postMessage({ type: 'closed' });
@@ -267,8 +337,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [displayChannelId, currentRole, permissions]);
 
   useEffect(() => {
-    displayChannelRef.current?.postMessage(customerDisplaySnapshot);
-  }, [customerDisplaySnapshot]);
+    displayChannelRef.current?.postMessage(customerDisplayMessage);
+  }, [customerDisplayMessage]);
   const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
 
@@ -297,9 +367,6 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setDiscountNotice('');
   };
 
-  const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
-    ? Math.max(0, Math.round(tenderedAmountPKR * 100))
-    : 0;
   const changeDuePaisa = paymentMethod === 'CASH'
     ? Math.max(0, tenderedAmountPaisa - totalPaisa)
     : 0;
@@ -388,6 +455,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       return;
     }
     setSaleError('');
+    setDisplayThankYou(false);
+    setActiveOptions(null);
 
     setCart((prev) => {
       const idx = prev.findIndex((i) => i.productId === product.id);
@@ -422,6 +491,24 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       };
       return [...prev, newItem];
     });
+    setDisplayThankYou(false);
+    if (showDisplayAlternatives) {
+      const lineIndex = existingItem ? cart.findIndex((item) => item.productId === product.id) : cart.length;
+      openCustomerAlternatives(lineIndex, product.id, quantity);
+    } else {
+      setActiveOptions(null);
+    }
+  };
+
+  const openCustomerAlternatives = (lineIndex: number, productId: string, quantityInUnit: number) => {
+    const product = products.find((candidate) => candidate.id === productId);
+    if (!product) return;
+    setActiveOptions({
+      lineIndex,
+      productName: product.brandName,
+      strength: product.strength ?? null,
+      candidates: buildSameMedicineOptions(products, product.id, quantityInUnit),
+    });
   };
 
   const updateQuantity = (idx: number, delta: number) => {
@@ -455,6 +542,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       };
       return copy;
     });
+    setDisplayThankYou(false);
+    setActiveOptions(null);
     setSaleError('');
   };
 
@@ -487,8 +576,70 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           lineTotalPaisa: current.quantityInUnit * unit.pricePerUnitPaisa,
         }
       : current));
+    setDisplayThankYou(false);
+    setActiveOptions(null);
     setSaleError('');
   };
+
+  const handleSwapOption = (option: CustomerDisplayOptionCandidate) => {
+    const lineIndex = activeOptions?.lineIndex;
+    const item = lineIndex === undefined ? undefined : cart[lineIndex];
+    const product = products.find((candidate) => candidate.id === option.productId);
+    const unit = product?.units.find((candidate) => candidate.id === option.unitId);
+    if (lineIndex === undefined || !item || !product || !unit) {
+      setSaleError('That option is no longer available. Refresh the POS catalog and try again.');
+      setActiveOptions(null);
+      return;
+    }
+
+    try {
+      const batchAllocations = allocateFefo(
+        product.batches,
+        getRequiredSmallestUnits(item.quantityInUnit, unit.conversionFactor),
+        localIsoDate(),
+      );
+      const firstBatch = product.batches.find((batch) => batch.id === batchAllocations[0]?.batchId);
+      if (!firstBatch) throw new RangeError('No eligible batch is available for this option.');
+      setCart((previous) => previous.map((current, currentIndex) => currentIndex === lineIndex
+        ? {
+            ...current,
+            productId: product.id,
+            productName: product.brandName,
+            genericName: product.genericName,
+            batchId: firstBatch.id,
+            batchNumber: firstBatch.batchNumber,
+            expiryDate: firstBatch.expiryDate,
+            drugClass: product.drugClass,
+            unitId: unit.id,
+            unitName: unit.name,
+            conversionFactor: unit.conversionFactor,
+            mrpPaisaPerUnit: unit.pricePerUnitPaisa,
+            costPaisaPerUnit: null,
+            lineTotalPaisa: current.quantityInUnit * unit.pricePerUnitPaisa,
+            batchAllocations,
+          }
+        : current));
+      setActiveOptions(null);
+      setDisplayThankYou(false);
+      setSaleError('');
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : 'Unable to swap to this option.');
+    }
+  };
+
+  swapOptionRef.current = handleSwapOption;
+
+  useEffect(() => {
+    if (!showDisplayAlternatives) {
+      setActiveOptions(null);
+      return;
+    }
+    if (cart.length > 0) {
+      const lineIndex = cart.length - 1;
+      const item = cart[lineIndex];
+      openCustomerAlternatives(lineIndex, item.productId, item.quantityInUnit);
+    }
+  }, [showDisplayAlternatives]);
 
   const filteredProducts = products.filter((p) => {
     const matchSearch =
@@ -656,6 +807,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       onSaleComplete(sale);
       setShowCheckoutModal(false);
       setSaleCompleteModal(sale);
+      setDisplayThankYou(true);
+      setActiveOptions(null);
       if (memoSettings.autoPrint) {
         if (canPrintReceipt(currentRole, permissions, 'sale')) {
           window.setTimeout(() => { void printSaleReceipt(sale, true); }, 0);

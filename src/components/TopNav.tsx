@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ChevronDown, KeyRound, LogOut, Type } from 'lucide-react';
+import { ChevronDown, KeyRound, LogOut } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
-import { supabase } from '../utils/supabase';
 import { readShopLogo, SHOP_LOGO_EVENT } from '../utils/storeSettings';
 import PharmaLogo from './PharmaLogo';
 import { StockAlertBell } from './StockAlertBell';
+import {
+  applyUserDisplayPreferences,
+  readUserDisplayPreferences,
+  USER_DISPLAY_PREFERENCES_EVENT,
+} from '../utils/userDisplayPreferences';
 
 interface TopNavProps {
   currentRole: UserRole;
@@ -18,17 +22,6 @@ interface TopNavProps {
   onOpenProducts: (searchText: string | null) => void;
 }
 
-const largeUiKey = (userName: string) => `pharma-care.largeUi.${userName}`;
-type ServerHealth = 'checking' | 'online' | 'offline' | 'unreachable';
-
-function readLargeUiPreference(userName: string): boolean {
-  try {
-    return localStorage.getItem(largeUiKey(userName)) === 'true';
-  } catch {
-    return false;
-  }
-}
-
 export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
   username,
@@ -39,19 +32,14 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenStockInventory,
   onOpenProducts,
 }) => {
-  const [largeUi, setLargeUi] = useState(() => readLargeUiPreference(username));
   const [shopLogo, setShopLogo] = useState(() => readShopLogo());
+  const [animationsEnabled, setAnimationsEnabled] = useState(() =>
+    readUserDisplayPreferences(userId, username).animationsEnabled
+  );
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [serverHealth, setServerHealth] = useState<ServerHealth>('checking');
-  const [theme, setTheme] = useState<'light' | 'night'>(() =>
-    document.documentElement.dataset.theme === 'night' ? 'night' : 'light'
-  );
-  const [animationsEnabled, setAnimationsEnabled] = useState(() =>
-    document.documentElement.dataset.animations !== 'off'
-  );
 
   useEffect(() => {
     const handleLogoChange = (event: Event) => {
@@ -63,13 +51,19 @@ export const TopNav: React.FC<TopNavProps> = ({
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('large-ui', largeUi);
-    try {
-      localStorage.setItem(largeUiKey(username), String(largeUi));
-    } catch {
-      // The selected size remains active for this page view.
-    }
-  }, [username, largeUi]);
+    const handlePreferencesChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; preferences?: { animationsEnabled?: boolean } }>).detail;
+      if (detail?.userId === userId && detail.preferences) {
+        applyUserDisplayPreferences(detail.preferences as ReturnType<typeof readUserDisplayPreferences>);
+        setAnimationsEnabled(detail.preferences.animationsEnabled === true);
+      }
+    };
+    const preferences = readUserDisplayPreferences(userId, username);
+    applyUserDisplayPreferences(preferences);
+    setAnimationsEnabled(preferences.animationsEnabled);
+    window.addEventListener(USER_DISPLAY_PREFERENCES_EVENT, handlePreferencesChange);
+    return () => window.removeEventListener(USER_DISPLAY_PREFERENCES_EVENT, handlePreferencesChange);
+  }, [userId, username]);
 
   useEffect(() => {
     if (!profileOpen) return;
@@ -90,64 +84,6 @@ export const TopNav: React.FC<TopNavProps> = ({
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [profileOpen]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem('pharma-care.theme', theme);
-    } catch {
-      // Keep the selected theme for this page view if browser storage is unavailable.
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.dataset.animations = animationsEnabled ? 'on' : 'off';
-    try {
-      localStorage.setItem('pharma-care.animations', String(animationsEnabled));
-    } catch {
-      // Keep the selected animation preference for this page view.
-    }
-  }, [animationsEnabled]);
-
-  useEffect(() => {
-    let active = true;
-    const checkServerHealth = async () => {
-      if (!navigator.onLine) {
-        if (active) setServerHealth('offline');
-        return;
-      }
-      if (!supabase) {
-        if (active) setServerHealth('unreachable');
-        return;
-      }
-      try {
-        const { error } = await supabase.auth.getUser();
-        if (!active) return;
-        if (!error) {
-          setServerHealth('online');
-          return;
-        }
-        const status = 'status' in error && typeof error.status === 'number'
-          ? error.status
-          : undefined;
-        setServerHealth(status !== undefined && status < 500 ? 'online' : 'unreachable');
-      } catch {
-        if (active) setServerHealth('unreachable');
-      }
-    };
-    const handleOnline = () => void checkServerHealth();
-    const handleOffline = () => setServerHealth('offline');
-    void checkServerHealth();
-    const intervalId = window.setInterval(() => void checkServerHealth(), 60_000);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   const handleProfileMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -184,84 +120,12 @@ export const TopNav: React.FC<TopNavProps> = ({
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
-        <div className="flex items-center gap-1 rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
-          <button
-            type="button"
-            aria-pressed={theme === 'light'}
-            onClick={() => setTheme('light')}
-            className={`rounded-full px-2 py-1.5 ${theme === 'light' ? 'bg-primary text-white' : 'text-muted'}`}
-          >
-            Light Mint
-          </button>
-          <button
-            type="button"
-            aria-pressed={theme === 'night'}
-            onClick={() => setTheme('night')}
-            className={`rounded-full px-2 py-1.5 ${theme === 'night' ? 'bg-primary text-white' : 'text-muted'}`}
-          >
-            Emerald Night
-          </button>
-        </div>
-
-        <div className="flex items-center rounded-full border border-border bg-surface p-0.5 text-[10px] font-semibold">
-          <button
-            type="button"
-            aria-pressed={!largeUi}
-            onClick={() => setLargeUi(false)}
-            className={`rounded-full px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              !largeUi ? 'bg-primary text-white' : 'text-muted'
-            }`}
-          >
-            Normal UI
-          </button>
-          <button
-            type="button"
-            aria-pressed={largeUi}
-            onClick={() => setLargeUi(true)}
-            className={`flex items-center gap-1 rounded-full px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              largeUi ? 'bg-primary text-white' : 'text-muted'
-            }`}
-          >
-            <Type className="h-3 w-3" />
-            Large UI
-          </button>
-        </div>
-
-        <button
-          type="button"
-          aria-pressed={animationsEnabled}
-          onClick={() => setAnimationsEnabled((enabled) => !enabled)}
-          className="rounded-full border border-border bg-surface px-2.5 py-1.5 text-[10px] font-semibold text-muted hover:text-text"
-        >
-          Animations: {animationsEnabled ? 'On' : 'Off'}
-        </button>
-
         <StockAlertBell
           userId={userId}
-          animationsEnabled={animationsEnabled}
+          animationsEnabled={document.documentElement.dataset.animations !== 'off'}
           onOpenStockInventory={onOpenStockInventory}
           onOpenProducts={onOpenProducts}
         />
-
-        <span
-          role="status"
-          aria-live="polite"
-          className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-bold sm:inline-flex ${
-            serverHealth === 'online'
-              ? 'border-border bg-surface text-primary'
-              : 'border-warning bg-warning/15 text-text'
-          }`}
-        >
-          <span className={`system-status-dot h-2 w-2 rounded-full ${serverHealth === 'online' ? 'bg-primary' : 'bg-warning'}`} />
-          {serverHealth === 'online'
-            ? 'AUTH ONLINE'
-            : serverHealth === 'offline'
-              ? 'OFFLINE'
-              : serverHealth === 'checking'
-                ? 'CHECKING AUTH'
-                : 'AUTH UNREACHABLE'}
-        </span>
-
         <div ref={profileRef} className="relative border-l border-border pl-2">
           <button
             ref={profileButtonRef}

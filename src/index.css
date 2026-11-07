@@ -836,6 +836,83 @@ aside[data-collapsed="true"] .sidebar-nav-item > span {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.customer-display-enter {
+  animation: customer-display-enter 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.customer-display-row {
+  animation: customer-display-enter 360ms ease-out both;
+}
+
+.customer-display-row:nth-child(2) { animation-delay: 45ms; }
+.customer-display-row:nth-child(3) { animation-delay: 90ms; }
+.customer-display-row:nth-child(4) { animation-delay: 135ms; }
+.customer-display-row:nth-child(5) { animation-delay: 180ms; }
+
+.customer-display-row-comfortable {
+  height: 50px;
+  padding-block: 4px;
+  font-size: 0.875rem;
+}
+
+.customer-display-row-comfortable > div > p:first-child { font-size: 0.875rem; line-height: 1.15rem; }
+.customer-display-row-comfortable > div > p:nth-child(2) { font-size: 0.75rem; line-height: 1rem; }
+.customer-display-row-comfortable > p { font-size: 0.875rem; }
+
+.customer-display-row-compact {
+  height: 42px;
+  padding-block: 3px;
+  font-size: 0.8125rem;
+}
+
+.customer-display-row-compact > div > p:first-child { font-size: 0.8125rem; line-height: 1rem; }
+.customer-display-row-compact > div > p:nth-child(2) { font-size: 0.6875rem; line-height: 0.875rem; }
+.customer-display-row-compact > p { font-size: 0.8125rem; }
+
+.customer-display-row-dense {
+  height: 40px;
+  padding-block: 2px;
+  font-size: 0.75rem;
+}
+
+.customer-display-row-dense > div > p:first-child { font-size: 0.75rem; line-height: 0.875rem; }
+.customer-display-row-dense > div > p:nth-child(2) { font-size: 0.625rem; line-height: 0.75rem; }
+.customer-display-row-dense > p { font-size: 0.75rem; }
+
+@keyframes customer-display-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.customer-display-logo {
+  flex-direction: row;
+  align-items: center;
+}
+
+.customer-display-logo .pc-mark {
+  padding: 0.1em 2.8em 0.1em 0.1em;
+}
+
+.customer-display-logo .pc-l,
+.customer-display-logo .pc-r {
+  height: 2em;
+  width: 2.35em;
+  border-radius: 0.75em;
+}
+
+.customer-display-logo .pc-l svg,
+.customer-display-logo .pc-r svg {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.customer-display-logo .pc-inline .pc-text,
+.customer-display-logo .pc-text {
+  margin-left: -2.35em;
+  font-size: 0.8em;
+  letter-spacing: 0.08em;
+}
+
 @keyframes pos-cart-enter {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: translateX(0); }

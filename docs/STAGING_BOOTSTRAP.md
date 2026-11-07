@@ -1,5 +1,7 @@
 # Staging Supabase Bootstrap and Read-Only Comparison
 
+> **Superseded for this rollout (2026-11-07):** The owner waived the separate staging comparison. Do not create staging or use the CURRENT-versus-STAGING checklist for this task. Use the current-only queries and S1 snapshot in `supabase/fresh/000_S1_RUNBOOK.md`; the owner executes all SQL.
+
 **Purpose:** prepare a separate, disposable Supabase staging project from the checked-in baseline and forward migrations, then compare public database catalog metadata with the current project before any multi-shop migration is written.
 
 **Gate:** stop after returning the comparison results. Do not apply any multi-shop migration. Do not run migrations or write SQL against the current project. No SQL has been run by the assistant.

@@ -67,6 +67,7 @@ const SalesHistoryView = lazy(() => import('./components/SalesHistoryView').then
 const ReportsScreen = lazy(() => import('./components/ReportsScreen').then(({ ReportsScreen: View }) => ({ default: View })));
 const CashBookScreen = lazy(() => import('./components/CashBookScreen').then(({ CashBookScreen: View }) => ({ default: View })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(({ SettingsView: View }) => ({ default: View })));
+const UserPreferencesPanel = lazy(() => import('./components/UserPreferencesPanel').then(({ UserPreferencesPanel: View }) => ({ default: View })));
 const SuppliersView = lazy(() => import('./components/SuppliersView').then(({ SuppliersView: View }) => ({ default: View })));
 const StockPurchaseView = lazy(() => import('./components/StockPurchaseView').then(({ StockPurchaseView: View }) => ({ default: View })));
 const PurchaseHistoryView = lazy(() => import('./components/PurchaseHistoryView').then(({ PurchaseHistoryView: View }) => ({ default: View })));
@@ -1046,21 +1047,26 @@ function PharmacyWorkspace({
           )}
 
           {activeItem === 'settings' && (
-            <SettingsView
-              activeTemplate={billingPreferences.template}
-              canEditBilling={isAdminRole(currentRole)}
-              onTemplateChange={(template: BillingTemplate) =>
-                updateBillingPreferences({ ...billingPreferences, template })
-              }
-              companyName={companyName}
-              onSaveCompanyName={updateCompanyName}
-              onOpenTemplatePreview={openTemplatePreview}
-              memoSettings={memoSettings}
-              onMemoSettingsChange={updateMemoSettings}
-              memoFormat={billingPreferences.format}
-              onPrintReceipt={handlePrintReceipt}
-              onMemoFormatChange={(format) => updateBillingPreferences({ ...billingPreferences, format })}
-            />
+            <div className="space-y-8">
+              {isAdminRole(currentRole) && (
+                <SettingsView
+                  activeTemplate={billingPreferences.template}
+                  canEditBilling
+                  onTemplateChange={(template: BillingTemplate) =>
+                    updateBillingPreferences({ ...billingPreferences, template })
+                  }
+                  companyName={companyName}
+                  onSaveCompanyName={updateCompanyName}
+                  onOpenTemplatePreview={openTemplatePreview}
+                  memoSettings={memoSettings}
+                  onMemoSettingsChange={updateMemoSettings}
+                  memoFormat={billingPreferences.format}
+                  onPrintReceipt={handlePrintReceipt}
+                  onMemoFormatChange={(format) => updateBillingPreferences({ ...billingPreferences, format })}
+                />
+              )}
+              <UserPreferencesPanel userId={session.userId} username={currentUserName} />
+            </div>
           )}
 
           {activeItem === 'suppliers' && <SuppliersView />}

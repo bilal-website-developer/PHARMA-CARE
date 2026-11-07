@@ -1,26 +1,46 @@
 # Pharma Care — Master Implementation Plan
 
-**Status:** Approved for execution with the owner's decisions recorded below. Execution is stopped at the staging-bootstrap checkpoint pending the owner's SELECT-only comparison results. No application code or migration files have been changed for implementation, and no query has been run against any database by the assistant.
+**Status:** Owner-approved staged execution on the current project. The owner waived the separate staging checkpoint on 2026-11-07. S1 artifacts are prepared but have not been run; no live query or migration has been run by the assistant.
 
-**Execution branch:** `master-plan/implementation`, created from clean commit `adf3606` (`barcode/labels`). No merge or push.
+**Execution branch:** `feature/team-view-manage-users` (owner-directed for this rollout). No merge, push, SQL execution, or deployment by the assistant.
 
 **Git state at planning time:** `git status --short --branch` showed `## barcode/labels` with no changed-file entries; `git branch --show-current` returned `barcode/labels`. The recent history is reproduced in the chat accompanying this file.
 
 ## Owner-approved execution amendments
 
-- Tenancy is one shared Supabase project. Every shop-owned table is scoped by `shop_id`; medicines, categories, brands, suppliers, customers, sales, stock, purchases, settings, and print requests are shop-owned. Proceed only after two-shop isolation tests and staging acceptance.
-- One person/user belongs to exactly one shop. `super_admin` is platform-level: manages shop/account metadata but does not browse shop business data. An explicit exception allows separate, audited, target-shop catalog seeding by Super Admin; it does not grant general shop access. Shop 1 belongs to the owner-designated existing admin account; the current super-admin login will not operate shop pages.
+### Owner waiver and live rollout decisions (2026-11-07)
+
+- The owner explicitly waives the separate staging-project comparison for this rollout. Follow numbered owner-run SQL stages against the current project; stop after each smoke test. This does not authorize the assistant to execute SQL, deploy, merge, or push.
+- Work only on `feature/team-view-manage-users`. S1 is the current-only metadata inventory and isolated SQL snapshot under `supabase/fresh/000_S1_RUNBOOK.md`; no later SQL stage may proceed before its smoke test passes.
+- The Super Admin is platform-only, has `shop_id = NULL`, manages shops/Admin accounts/page grants, and cannot use shop-business pages. The separate, initially empty `Developer Shop` uses its own Admin login. Existing non-Super-Admin accounts and retained data after S2 cleanup map to `Shop 1`.
+- Shop Admins may manage only Manager/Cashier staff assigned to their own shop and may grant only permissions they themselves hold. They cannot create or change Admin/Super Admin accounts or shop assignment. Staff cannot manage accounts. Preserve the creator-scoped Team view and Super-Admin-only status changes.
+- The S1 SQL snapshot is the owner's only recovery point on the Free plan. It is not a full database backup: SQL data restore does not restore Auth users, Storage, platform configuration, or schema objects. Run the separate restore file only after review and after reverting incompatible schema changes.
+
+### User-confirmed tenancy clarifications (updated 2026-11-07)
+
+These latest decisions supersede conflicting older role, catalog-seeding, and staging statements below:
+
+- Multiple Admin-role profiles may belong to one shop; any primary/owner Admin is a provisioning anchor, not a one-Admin cardinality restriction.
+- The Super Admin manually grants page/module access. No user may self-grant. Review role defaults and grantable permission constraints before implementation.
+- Super Admin is platform-only (`shop_id = NULL`): it manages shops, Admin accounts, and page grants, and has no shop-business access or catalog-seeding exception.
+- Shop Admins may manage only Manager/Cashier staff in their own shop, and may grant only permissions they personally hold. Staff cannot manage accounts. Only Super Admin may assign shop membership, manage Admin accounts, or change account status.
+- The Super Admin may read and edit a private note on every Admin profile. Store and serve it only through Super-Admin-authorized server/database paths; never expose it to shop users or browser-local storage.
+- Only the Super Admin may see `shop_id`; tenant scope is derived and enforced server-side and is never user-selectable authority.
+- Every shop-owned business record and operation is scoped by `shop_id` across RLS, RPCs, Edge Functions, references, counts, and exports.
+
+- Tenancy is one shared Supabase project. Every shop-owned table is scoped by `shop_id`; medicines, categories, brands, suppliers, customers, sales, stock, purchases, settings, and print requests are shop-owned. Proceed through owner-run stages and require two-shop isolation tests before release.
+- One person/user belongs to exactly one shop. A shop may have multiple Admin-role profiles; Shop 1 is initially provisioned from the owner-designated existing Admin account, and the Super Admin may assign additional Admins. `super_admin` is platform-level: manages shops, Admin accounts, and page grants, and cannot browse or write shop business data. The current super-admin login will not operate shop pages.
 - Suspension blocks sign-in and business operations while preserving shop data. Licence/renewal and billing dates are deferred. No routine platform-owner support access to business data; emergency access must be explicit and audited where technically possible.
 - Shop name and receipt identity come from one server-backed shop profile editable only by Super Admin. Admin/staff may read their own identity but cannot change it. Keep the logo and WhatsApp Reminders feature; replace the highlighted fixed header branding text with the configured shop name.
-- Shop Admins retain all modules for their own shop. Add a selectable Settings permission for staff roles; it grants operational Settings access only and never shop-identity editing. This supersedes the previous permission design where it conflicts. Verify and widen the live profile permission constraint on staging.
+- The Super Admin grants each Admin's page/module access; a Shop Admin may grant staff only permissions it holds. Role or shop membership alone grants no pages, and users cannot self-grant. Add a selectable Settings permission only if the resulting permission model requires it; it never grants shop-identity editing. This supersedes previous automatic Admin/module defaults where they conflict. Verify the live profile permission constraint from S1 before changing it.
 - Creating a shop and Auth Admin spans separate Auth and Postgres systems; use a stepwise provisioning workflow with compensating undo, surfaced cleanup failures, idempotent retry, and an orphan cleanup check. Do not claim cross-system atomicity.
 - Invoice, memo, and purchase numbers are sequential and unique per shop. Do not promise gap-free numbering unless concurrency, rollback, retry, and failure tests prove it.
-- Table, policy, trigger, and function counts are staging inventory results to verify, not fixed facts; the reconstructed baseline may omit live objects.
+- Table, policy, trigger, and function counts are current-project inventory results to verify, not fixed facts; the reconstructed baseline may omit live objects.
 - Sellable stock is positive quantity, `ACTIVE` or `NEAR_EXPIRY`, active medicine, and `expiry_date >= current_date`. Locate and align every conflicting helper, test, document, and SQL predicate.
 - Do not enable TypeScript `strict` in the main quality package. Measure `noUnusedLocals`, `noUnusedParameters`, and `strict` separately. Enable unused checks and `react-hooks` ESLint first; evaluate strict in a separate final package only if the measured error count is manageable.
-- Split W5: after the staging checkpoint, do the client UI/scanner work early. Every product row/card must expose Edit, Print barcode (with per-product quantity), and Make barcode; include a scanner test tool and scan handling in POS and Products search. Cap at 200 labels per product and 1,000 per job.
+- Split W5: do the client UI/scanner work early. Every product row/card must expose Edit, Print barcode (with per-product quantity), and Make barcode; include a scanner test tool and scan handling in POS and Products search. Cap at 200 labels per product and 1,000 per job.
 - Do not add a QR workflow. Remove `express` or `@types/express` only if repository usage is confirmed absent.
-- First execution package is the staging bootstrap and SELECT-only catalog comparison in [STAGING_BOOTSTRAP.md](./STAGING_BOOTSTRAP.md). Stop and wait for CURRENT and STAGING results before writing any multi-shop migration. The assistant never runs SQL or deploys. Migrations and rollback files are authored for the owner to apply.
+- First execution package is S1 current-only catalog inventory and isolated SQL snapshot in `supabase/fresh/000_S1_RUNBOOK.md`. Stop and wait for the owner-run outputs and smoke test before S2. The assistant never runs SQL or deploys. SQL and rollback files are authored for the owner to apply.
 - Preserve cashier cost confidentiality. Do not change RLS or `is_staff`, `is_admin`, or `has_any_permission` without presenting old and proposed definitions for approval.
 - Progress is recorded in [EXECUTION_PROGRESS.md](./EXECUTION_PROGRESS.md).
 - The detailed tenant design and owner decisions are recorded in [MULTI_SHOP_FULL_PLAN.md](./MULTI_SHOP_FULL_PLAN.md).
@@ -66,15 +86,15 @@ Evidence below is from the checked-out source, supplied baseline, local migratio
 
 ## B. Approved decisions and remaining gates
 
-1. **Shared tenancy:** one Supabase project with `shop_id` on all shop-owned data. Medicines, categories, brands, suppliers, customers, sales, stock, purchases, settings, and print requests are shop-owned. Require two-shop isolation tests and staging acceptance.
-2. **Platform role:** `super_admin` is platform-only for account metadata, Shops page, and Details. Shop 1 belongs to the owner-designated existing admin account. The super-admin login will not operate shop pages.
+1. **Shared tenancy:** one Supabase project with `shop_id` on all shop-owned data. Medicines, categories, brands, suppliers, customers, sales, stock, purchases, settings, and print requests are shop-owned. Require two-shop isolation tests before release.
+2. **Platform role:** `super_admin` is platform-only for shops, Admin accounts, and page grants. It has no shop-business access. Shop 1 belongs to the owner-designated existing Admin account. The Super Admin login will not operate shop pages.
 3. **Helper/RLS change gate:** the current helper behavior and proposed platform-only behavior are compared in C.2. Before implementation changes RLS or `is_staff`, `is_admin`, or `has_any_permission`, show the exact current and replacement definitions and obtain the owner's approval. The approved role outcome does not waive this review.
-4. **Barcode invariant:** unique within a shop across both medicine and medicine-unit barcodes; different shops may reuse a value. Replace the current global `medicines.barcode` index with the shared registry only after staging catalog review and duplicate inventory. Do not ask the owner to apply the two legacy barcode migrations to the current project.
+4. **Barcode invariant:** unique within a shop across both medicine and medicine-unit barcodes; different shops may reuse a value. Replace the current global `medicines.barcode` index only after current-project catalog review and duplicate inventory. Do not ask the owner to apply the two legacy barcode migrations to the current project.
 5. **Expiry boundary:** approved sellable-through-expiry rule is `expiry_date >= current_date`, with positive quantity, `ACTIVE`/`NEAR_EXPIRY`, and active medicine. Reconcile every client, test, document, and server SQL predicate.
 6. **Quality scope:** keep `strict` off in the main package. Measure each of `noUnusedLocals`, `noUnusedParameters`, and `strict` separately; add unused checks and `react-hooks` ESLint first. Decide on strict in its own final package based on measured diagnostics.
-7. **Barcode UI and print limits:** after the staging checkpoint, prioritize client-side W5. Each product row/card has Edit, Print barcode with per-product label quantity, and Make barcode. Include scanner test and POS/Products search scanning. Limit 200 labels per product and 1,000 per print job.
+7. **Barcode UI and print limits:** prioritize client-side W5. Each product row/card has Edit, Print barcode with per-product label quantity, and Make barcode. Include scanner test and POS/Products search scanning. Limit 200 labels per product and 1,000 per print job.
 8. **QR and Express:** QR is out of scope. Remove `express` or `@types/express` only after repository usage is confirmed absent.
-9. **Staging gate:** bootstrap a separate staging project and return CURRENT/STAGING SELECT-only catalog results as documented in [STAGING_BOOTSTRAP.md](./STAGING_BOOTSTRAP.md). Do not write a multi-shop migration until the results are reviewed.
+9. **S1 gate:** owner runs the current-only catalog queries and snapshot package in `supabase/fresh/000_S1_RUNBOOK.md`. Do not proceed to S2 until the owner returns the results and the snapshot smoke test passes.
 10. **Open measurement:** unused-symbol counts and production bundle/gzip size are not measured. W6/W7 use actual output rather than historical estimates.
 
 ## C. Work items W1–W7
@@ -83,7 +103,7 @@ Evidence below is from the checked-out source, supplied baseline, local migratio
 
 **Files already written locally:** `20261012140000_lockdown_anon_public_access.sql` (A); optional `20261012140500_optional_lockdown_supabase_admin_defaults.sql` (B); `20261012141000_revoke_authenticated_table_dml.sql`, `20261012142000_supplier_write_rpcs.sql`, and `20261012143000_revoke_authenticated_supplier_dml.sql` (C); `20261012144000_lockdown_profile_dml.sql` (D). Rollbacks are in `supabase/rollback/`. They are proposals/files, not proof of live application. The optional `supabase_admin` statements are kept separate because owner docs warn that the SQL role may lack role membership.
 
-**Plan:** compare the target staging project's grants/default privileges to the intended A-D state using SELECT-only catalog checks; verify supplier writes call `save_supplier` / `deactivate_supplier`; preserve the five cost-bearing table revokes; keep `profiles` authenticated SELECT if the app requires it while revoking client DML. Do not touch RLS policies or the three protected helper functions until the B approval is recorded. Any missing ACL behavior gets a new forward migration and matching rollback in `supabase/rollback/`, not a live manual patch.
+**Plan:** after S1 results are reviewed, compare the current project's grants/default privileges to the intended A-D state using SELECT-only catalog checks; verify supplier writes call `save_supplier` / `deactivate_supplier`; preserve the five cost-bearing table revokes; keep `profiles` authenticated SELECT if the app requires it while revoking client DML. Do not touch RLS policies or the three protected helper functions until the B approval is recorded. Any missing ACL behavior gets a new forward migration and matching rollback in `supabase/rollback/`, not a live manual patch.
 
 ### C.2 W2 — Shared-database multi-shop tenancy
 
@@ -94,13 +114,12 @@ Evidence below is from the checked-out source, supplied baseline, local migratio
 - `current_shop_id()` returns an active caller's shop or NULL for platform super_admin; `is_platform_admin()` recognizes only an active non-deleted `super_admin`. Both are fixed-search-path helpers; caller must never supply an arbitrary shop id and get authority from it.
 - Existing admin profile becomes Shop 1 owner. All existing business rows become Shop 1. Existing platform super_admin remains `shop_id = NULL`; it sees shop/account metadata only. No business rows are copied to the platform account.
 - Shop name and receipt identity are stored in one server-backed shop profile. Only platform super_admin can edit identity; tenant users may read only their own profile. Existing browser-local identity fields cease to be authoritative. The logo remains; replace fixed header text with the configured shop name while keeping the WhatsApp Reminders feature.
-- A separate Super Admin catalog-seeding operation may create products/suppliers in one explicitly selected shop. It must be narrowly write-scoped and audited; it grants no general shop business read/edit access. Default initial scope is create-only; any broader operation needs separate approval.
 
 **Table inventory (current relations; all rows are one-shop-owned unless marked platform/global)**
 
 | Relation(s) | Target ownership and enforcement |
 |---|---|
-| `shops` (new) | Platform metadata table. Platform-only policies/RPCs; no general business data access for super_admin. Separate, logged catalog-seeding operations may write only to an explicitly selected shop. |
+| `shops` (new) | Platform metadata table. Platform-only policies/RPCs; no business data access for super_admin. |
 | `profiles` | Shop staff rows carry `shop_id`; super_admin rows have NULL. Self/profile list policies constrain staff to current shop. Platform list is limited to account metadata needed by Shops page. |
 | `customers`, `khata_entries` | Shop-owned. `khata_entries` must agree with the referenced customer and sale shop; enforce by constraints and checked RPCs, not merely client-supplied shop id. |
 | `suppliers`, `supplier_ledger` | Shop-owned; ledger references a supplier in the same shop. |
@@ -140,15 +159,15 @@ For every function retain `SECURITY DEFINER` only where required, fixed `search_
 | `has_any_permission(perms)` | Returns true for active `admin`/`super_admin` or a profile with any matching permission (`20261008220000...sql:17-31`). | Shop admins get shop-level admin permission, staff require requested permission; super_admin receives no business permission bypass. Separate platform metadata APIs check `is_platform_admin()`. |
 | `is_staff()` | True for any active non-deleted profile (`supabase/baseline/00_baseline_schema.sql:307-321`). | True only for active shop staff in the current shop (or remain a generic active-profile test and introduce a new shop helper; choose during implementation after call-site inventory). Never use it alone to authorize cross-shop reads. |
 
-**Edge function and UI:** `supabase/functions/manage-users/index.ts` uses elevated server credentials, so every operation must explicitly apply role rules and shop scope. Super_admin may create a shop and its first admin, see only shop/staff metadata, and cannot access business APIs except the separate audited target-shop catalog-seeding write. Shop admin may add/edit/deactivate only non-admin staff in their own shop and may not create another admin. Add Shops page and Details panel with requested shop/admin metadata, status, creator/time, last sign-in, staff totals split by status, staff list, and recent user-management audit. User list/detail and add/edit forms must send no trusted shop id; server derives it.
+**Edge function and UI:** `supabase/functions/manage-users/index.ts` uses elevated server credentials, so every operation must explicitly apply role rules and shop scope. Super_admin may manage shops, Admin accounts, and page grants and see only platform/account metadata; it has no business-data or catalog-seeding operation. Shop admin may add/edit/deactivate only Manager/Cashier staff in their own shop and may grant only permissions it holds. Staff cannot manage accounts. Add Shops page and Details panel with requested shop/admin metadata, status, creator/time, last sign-in, staff totals split by status, staff list, and recent user-management audit. User list/detail and add/edit forms must send no trusted shop id; server derives it.
 
 Shop plus Admin creation crosses the Auth and Postgres systems and is not atomic. Provision in explicit steps using a durable operation ID: create pending shop; create Auth identity through the server Admin API; transactionally create/link profile and initial settings and mark complete. On failure, compensate in reverse order, surface compensation failures, permit safe idempotent retry, and run an orphan cleanup check for incomplete shops/Auth identities. Never report success while either system is inconsistent.
 
-**Permission defaults:** shop Admins keep all shop modules for their own shop. Add selectable `settings` access for staff roles alongside the approved `stock_alerts` permission; staff permissions are server-validated and the actual `profiles.permissions` CHECK must be inspected on staging and widened for approved keys with a rollback. Settings access permits approved operational settings only; shop identity remains Super Admin-only. `super_admin` has no general shop-module bypass or business permission grant; platform management is role-gated by dedicated metadata APIs rather than a shop permission key. This owner-approved rule replaces the former conflicting Admin/Settings permission design.
+**Permission defaults:** no role receives business pages automatically. Super Admin explicitly grants each Admin's page permissions; a Shop Admin may grant staff only permissions it holds. Inspect the current `profiles.permissions` CHECK and widen it for approved keys only, with a rollback. Settings access permits approved operational settings only; shop identity remains Super Admin-only. `super_admin` has no general shop-module bypass or business permission grant; platform management is role-gated by dedicated metadata APIs rather than a shop permission key. This owner-approved rule replaces the former conflicting Admin/Settings permission design.
 
 ### C.3 W3 — Stock alerts
 
-- Add `stock_alerts` and staff-selectable `settings` permission keys: widen the actual `profiles.permissions` check constraint in a migration and update TypeScript validators and user forms. Shop Admin retains all own-shop modules; staff retain their role/configured module permissions, with alerts and Settings individually grantable; platform super_admin receives no shop permissions.
+- Add `stock_alerts` and staff-selectable `settings` permission keys only if approved: widen the actual `profiles.permissions` check constraint in a migration and update TypeScript validators and user forms. Shop Admin and staff receive only explicitly granted pages; Shop Admin cannot grant permissions it does not hold; platform super_admin receives no shop permissions.
 - New RPC signature proposal: `stock_alerts_list()` returns shop-filtered typed records containing medicine ID/name/code, category, stock state, relevant quantity/expiry, alert type and stable alert key; never cost, margin, profit, or batch cost.
 - Alert classes: out-of-stock active products; low stock below reorder threshold; stock expiring in 30/90 days; expired stock remaining. Use the same server sellable/expiry semantics as stock inventory.
 - Add a real header bell, unread badge and accessible panel; poll on a 60-second interval with in-flight cancellation and clear error state. Persist per-user seen alert keys/last-seen timestamp (not full notification history) to avoid an event-history table until history/audit requirements justify one.
@@ -201,7 +220,7 @@ Shop plus Admin creation crosses the Auth and Postgres systems and is not atomic
 
 ## D. Security test plan
 
-All authorization tests run on staging after the owner applies the approved migration sequence. Do not run the checks against production during implementation. Query checks are SELECT-only and must never expose sensitive values.
+After each owner-applied stage, run the specified authorization tests using the approved test accounts/data in the current project. Stop on any failure. Do not use real customer data as test sentinels or return sensitive business values in reports.
 
 ### D.1 Isolation matrix
 
@@ -232,9 +251,9 @@ Test all existing SECURITY DEFINER functions discovered in baseline/migrations, 
 - Ensure `stock_batches`, `purchases`, `purchase_items`, `sale_items`, `sale_item_batch_allocations` remain ungranted to `anon` and `authenticated`; test only privilege metadata, never select cost data.
 - Labels and generated HTML/SVG/export snapshots are scanned for cost/profit/margin field names and values. Keep Pharmacy Memo renderer unchanged except for any separately approved necessary wiring.
 
-### D.4 SELECT-only staging checks and manual checks
+### D.4 Owner-run catalog and manual checks
 
-The following are **planned staging checks only**. They were not executed. They inspect metadata or identifiers; do not use `UPDATE`, `DELETE`, DDL, or data-returning queries on protected cost tables in this checklist.
+The following inventory queries are read-only and apply to the current project; S1's more complete queries are the rollout source of truth. They inspect metadata or identifiers; do not use `UPDATE`, `DELETE`, DDL, or data-returning queries on protected cost tables in this checklist.
 
 Function signatures:
 
@@ -304,33 +323,33 @@ Manual checks: login as each role in both shops; Shops details and staff count a
 
 ## E. Dependency-ordered execution sequence
 
-Estimated engineering sizes are relative effort, not calendar commitments. Every work package gets one isolated commit on the implementation branch, contains only its own task files, and is checked with `git show --stat` afterward. Run `npm run lint`, `npm test`, and `npm run build` after each applicable code package; repair failures before committing the next package. No push/merge. Each migration gets a matching rollback under `supabase/rollback/`. The barcode client UI/scanner package is already complete. The next work follows the staging comparison → ACL reconciliation → multi-shop migrations and acceptance on staging → production release order.
+Estimated engineering sizes are relative effort, not calendar commitments. Every work package gets one isolated commit on the implementation branch, contains only its own task files, and is checked with `git show --stat` afterward. Run `npm run lint`, `npm test`, and `npm run build` after each applicable code package; repair failures before committing the next package. No push/merge. Each migration gets a matching rollback under `supabase/rollback/`. The barcode client UI/scanner package is already complete. Owner-run live stages S1–S6 in `MULTI_SHOP_FULL_PLAN.md` supersede the former staging-comparison order below.
 
 | Order | Work package | Dependencies / owner action | Estimate | Migration / rollback and acceptance |
 |---:|---|---|---|---|
-| 0 | Branch and staging bootstrap/catalog comparison | Written approval; implementation branch exists. Owner creates separate staging project, applies only the listed baseline/forward files, and returns SELECT-only results. | M | Catalog inventory/counts for relations, functions/overloads, policies, triggers, grants, indexes and constraints; reconcile CURRENT vs STAGING. No multi-shop migration. Current checkpoint; stop here until results are reviewed. |
-| 1 | W1 ACL prerequisites | 0; review CURRENT/STAGING results and reconcile migration history. | M | Add only missing forward/rollback files; optional `supabase_admin` stays separate; preserve cost-table revokes. Owner applies and verifies on staging. |
-| 2 | W2 schema foundation and safe Shop 1 backfill | 1; staging ACL reconciliation, backup/restore readiness, and exact helper/RLS changes approved. | XL | Shops/profile/shop_id changes, verified object inventory, counters/constraints and backfill validation; apply on staging; do not enable tenant access until relationships/counts validate. |
-| 3 | W2 tenant RLS, RPC and Edge Function isolation | 2; owner applies schema foundation to staging and returns checks. | XL | Shop-aware policies/RPCs/Edge Function with rollback. Two-shop isolation tests are release blockers. |
+| 0 | S1 current-only catalog inventory and snapshot | Owner runs `supabase/fresh/000_S1_RUNBOOK.md`; no assistant DB access. | M | Return Q1–Q9/Q11, every Q10 batch, and snapshot smoke results; stop if any check fails. |
+| 1 | S2 ACL lockdown and test-data cleanup | S1 outputs reviewed; owner executes the migration and returns smoke results. | M | Preserve non-Super-Admin accounts and intended Shop 1 rows; matching rollback required. |
+| 2 | S3 additive shop ownership schema | S2 passes; owner confirms Shop 1 assignment and Developer Shop setup choice. | XL | Add schema without restrictive tenant RLS; preserve app behavior and test rollback. |
+| 3 | S4 tenant RLS and uniqueness cutover | S3 passes; exact protected-helper changes approved. | XL | Tenant policies, indexes, and functions; run two-shop negative isolation tests and stop on any leak/failure. |
 | 4 | W4 typed data layer and `complete_sale` | 3 | XL | Transactional sale posting, repositories, rollback and FEFO/cost tests; sequential/unique per-shop numbers. |
 | 5 | W3 alert permission and alert service | 3 | L | `stock_alerts` and staff `settings` permission constraints, alert RPC/state, bell and user permission UI. |
 | 6 | W5 per-shop barcode registry and RPCs | 2 | L–XL | Cross-table per-shop registry and counter; remove the legacy global index only after duplicate/backfill validation; no cost data. |
-| 7 | W5 barcode UI/scanner client work | Complete (client-only package already delivered); staging review is the original dependency gate. | Complete | Product row/card actions, per-product label quantities and scanner support are implemented; physical hardware and live RPC/schema behavior remain unverified. |
+| 7 | W5 barcode UI/scanner client work | Complete (client-only package already delivered). | Complete | Product row/card actions, per-product label quantities and scanner support are implemented; physical hardware and live RPC/schema behavior remain unverified. |
 | 8 | W6 unused checks and ESLint | 4–7 | M–L | Enable unused checks and `react-hooks` ESLint; report separate unused/strict measurements. Keep `strict` disabled in this package. |
 | 9 | W7 lazy loading and architecture/hygiene | 8 | L | Measured chunks, dynamic imports, `.gitignore`/noscript/font check, `docs/ARCHITECTURE.md`. |
 | 10 | Final strict TypeScript decision | 9 | S–M | Separate measurement and optional enablement only if error count is manageable; otherwise record why deferred. |
-| 11 | Consolidated staging security/feature verification | 2–10; owner applies approved migrations to staging and performs physical scanner/printer tests. | L | Two-shop isolation, provisioning compensation, role/Settings, number concurrency, receipt snapshot and hardware verification. No production writes. |
-| 12 | Production release | 11; explicit owner go/no-go, verified backup/restore, reviewed migration/rollback sequence. | Owner-controlled | Owner applies/deploys after staging acceptance; capture verification and rollback readiness. No production action by the assistant. |
+| 11 | Consolidated two-shop security/feature verification | S4–S6 complete; owner verifies the app and physical scanner/printer behavior. | L | Two-shop isolation, provisioning compensation, role/Settings, number concurrency, receipt snapshot and hardware verification. Stop on failure. |
+| 12 | Owner release | 11; explicit owner go/no-go and reviewed rollback readiness. | Owner-controlled | Owner deploys the frontend/function and captures verification. No production action by the assistant. |
 
-**Migration run order:** first staging bootstrap and CURRENT/STAGING catalog comparison; then W1 ACL reconciliation; then write/review and owner-apply multi-shop migrations on staging: W2 shop/profile and nullable tenant columns → Shop 1 backfill/inventory validation → scoped keys/counters → tenant policies/functions; W4 sale tables/counter/RPC; W3 `stock_alerts` and `settings` permission constraints/state/RPC; W5 barcode registry/backfill/uniqueness/RPCs; integration migrations. The exact timestamp filenames and SELECT-only verification queries are presented after staging comparison. Do not apply the current global `medicines_barcode_unique` unchanged as the final multi-shop index. After staging acceptance and explicit owner approval, prepare a backed-up production release with matching rollback files.
+**Owner run order:** S1 inventory/snapshot → S2 ACL and agreed cleanup → S3 additive ownership schema → S4 tenant RLS and unique indexes → S5 tenant-aware business functions → S6 `manage-users` and UI. Each stage has its own instructions, smoke checks, and stop point. Do not apply the current global `medicines_barcode_unique` unchanged as the final multi-shop index. The current snapshot is not a full database backup or schema restore.
 
 ## F. Risks and open questions
 
 - **Shared database tenancy is high impact.** One missed RLS predicate, SECURITY DEFINER filter, nested foreign-key check, Edge Function guard, export filter or cache key can disclose or corrupt another shop's data. The table/function/policy inventory and two-shop tests are release blockers.
-- **Platform account behavior changes:** all existing data becomes Shop 1 owned by the selected existing admin; current super_admin becomes platform-level and loses general access to business data by design. A separate shop admin login is necessary for that person to operate the pharmacy. The only planned business-data exception is a separate audited Super Admin create-only product/supplier seed action targeting one shop.
+- **Platform account behavior changes:** retained existing data becomes Shop 1 owned by the selected existing Admin; current super_admin becomes platform-level and loses all access to business data by design. A separate shop Admin login is necessary for that person to operate the pharmacy.
 - **Backfill and rollback:** if existing rows have broken references, inconsistent profile roles, duplicate invoice/barcode identifiers, or null parents, stop before setting NOT NULL or replacing indexes. Take a verified staging backup and preserve row counts/checksums. Rollback must not delete business rows or silently merge shops.
 - **Barcode global index:** if the owner has already applied it, it currently prevents different shops sharing the same manufacturer barcode. Replace it only after cross-table/per-shop registry migration, duplicate normalization and index verification are ready. Cross-table unique constraints cannot be solved by two independent unique indexes.
-- **Existing database state is unknown:** `docs/DATABASE.md` describes a supplied schema snapshot, not a live connection. Prior owner reports that barcode migrations were run are acknowledged but were not checked here. All migrations must be reconciled against staging first.
+- **Existing database state is unknown:** `docs/DATABASE.md` describes a supplied schema snapshot, not a live connection. Prior owner reports that barcode migrations were run are acknowledged but were not checked here. Reconcile all owner-run migrations against the S1/current-project inventory first.
 - **Protected helper/RLS changes need written approval:** especially changing super_admin's present admin/permission bypass. Show exact before/after and all call sites, get approval, then proceed.
 - **Sale accounting details:** define the credit-limit treatment with outstanding sales, returns/void policy, split-tender rounding, sequential/unique counter behavior and concurrency locking, idempotency retention, controlled-drug audit fields, and the final eligible expiry boundary before implementation. Gap-free numbering remains unpromised unless verified by tests.
 - **Alert noise/privacy:** define whether expired stock should include inactive products and whether “unseen” is per-user or per-device. Email/SMS/WhatsApp push remains out of scope.
@@ -338,6 +357,6 @@ Estimated engineering sizes are relative effort, not calendar commitments. Every
 - **Performance target is aspirational until measured:** ~200 kB initial gzip may require more than chunk configuration and could increase navigation latency. Keep route error boundaries and measure on production build.
 - **ESLint strictness may expose more than the historical estimate;** fix genuine errors and avoid broad suppression. `express` dependency disposition and whether QR output is a real product requirement remain open.
 
-**Owner decisions recorded in `MULTI_SHOP_FULL_PLAN.md`:** one user per shop; Super Admin has a separate audited target-shop catalog-seeding exception but no general business-data access; platform-owner business-data access is emergency-only and audited where technically possible; suspension blocks sign-in and business operations; licence/billing dates are deferred; staff may receive Settings permission while shop Admins retain all own-shop modules and cannot edit shop identity.
+**Owner decisions recorded in `MULTI_SHOP_FULL_PLAN.md`:** one user per shop; a shop may have multiple Admins; Super Admin manages shops, Admin accounts, and page grants but has no business-data access or catalog-seeding exception; Shop Admins may manage only Manager/Cashier staff in their own shop and grant only permissions they hold; staff cannot manage accounts; private Admin notes and shop IDs are Super-Admin-only; suspension blocks sign-in and business operations; licence/billing dates are deferred.
 
-**Execution gate:** The plan is approved, but implementation remains stopped at staging bootstrap/catalog comparison. Follow `STAGING_BOOTSTRAP.md`: owner builds a separate staging project and returns CURRENT/STAGING SELECT-only results; review and reconcile inventory counts/differences; reconcile ACL prerequisites; then author/review and owner-applies multi-shop migrations on staging; complete two-shop isolation/recovery/concurrency tests; only then prepare production with verified backup and rollback. Do not write multi-shop migrations until staging results are reviewed. Never run SQL or deploy functions on the owner's behalf.
+**Execution gate:** The owner waived the separate staging comparison. S1 current-only catalog inventory and isolated SQL snapshot are prepared in `supabase/fresh/000_S1_RUNBOOK.md` and await owner execution. Review Q1-Q9/Q11, every Q10 batch, and the passing snapshot smoke test before S2. Continue through S2-S6 only at their explicit stop points. The assistant never runs SQL or deploys functions; the SQL snapshot is not a full database backup or schema restore.

@@ -50,6 +50,8 @@ test('admin roles override assigned permissions while limited roles remain permi
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'manage-users'), true);
   assert.equal(canAccessPage(UserRole.SUPER_ADMIN, [], 'manage-users'), true);
   assert.equal(canAccessPage(UserRole.SUPER_ADMIN, [], 'settings'), true);
+  assert.equal(canAccessPage(UserRole.MANAGER, [], 'settings'), true);
+  assert.equal(canAccessPage(UserRole.CASHIER, [], 'settings'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'expenses'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, ['expenses'], 'expenses'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'manage-users'), true);
@@ -60,7 +62,7 @@ test('admin roles override assigned permissions while limited roles remain permi
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'manage-users'), false);
   assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'manage-users'), true);
   assert.equal(canAccessPage(UserRole.MANAGER, [], 'manage-users'), false);
-  assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'settings'), false);
+  assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'settings'), true);
   assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'trash-bin'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'my-print-requests'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'print-requests'), false);
