@@ -16,18 +16,18 @@ The customer display is a read-only, second-window view of the active POS sale. 
 2. **Current order:** A count and a bill table with Medicine, Qty, Batch, Expiry, and Amount. Each item also shows its unit and per-unit price. The footer remains visible.
 3. **Payment details:** The same order plus the payment summary. Shows subtotal, optional discount, and total. Credit displays only the amount due for this bill; other methods show paid, this-bill due, and change. All money values are formatted as `Rs. xx.xx` from integer paisa.
 4. **Also available:** Optional alternatives for the current medicine. Up to three selectable matches show brand, company, strength/unit, and price; if none qualify, an empty-state message is shown. A customer selection is sent to POS, which replaces that cart line.
-5. **Thank you:** Confirmation icon, “Thank you,” and a short closing message after a completed sale.
+5. **Thank you:** Confirmation icon, animated “Thank you,” and a short closing message after a completed sale. With motion enabled, capsules fall behind the content and a one-time capsule burst plays when the screen opens.
 6. **Error:** Invalid/missing channel, unsupported browser, or channel setup failure is displayed as an alert instead of a blank screen.
 
 ## Layout and visual design
 
 - Full-viewport, overflow-hidden layout intended for a customer-facing monitor; centered content is capped at `max-w-5xl`.
-- Pale emerald/mint gradient background, soft decorative blurred circles, dark emerald text, white translucent cards, thin green borders, and subtle shadows.
+- Clean Classic styling uses a pale emerald/mint gradient, dark emerald text, white cards, thin green borders, and soft shadows. Welcome includes three service chips; the thank-you screen alone uses falling and burst capsule animations.
 - Header: shop logo or Pharma Care logo on the left; green “Live” pill on the right. Footer: “Pharma Care · Thank you for visiting.”
-- Responsive padding and type scales use Tailwind `sm` and `lg` breakpoints. The bill table keeps five columns and truncates long product, batch, and expiry text rather than growing the page.
+- Responsive padding and type scales use Tailwind `sm` and `lg` breakpoints. On large screens, the bill table and summary sit side by side; on smaller screens they stack. The bill table keeps five columns and truncates long product, batch, and expiry text rather than growing the page.
 - Item row density adapts to item count: comfortable (up to five), compact (six to ten), dense (more than ten). The available row height is measured with `ResizeObserver`; if the list needs multiple pages, it rotates every five seconds.
 - Sections use polite live regions; errors use `role="alert"`. Buttons for alternatives have accessible labels and visible keyboard focus.
-- Motion is controlled by the app's personal display preferences. Keep animations subtle and preserve the reduced/disabled-animation behavior when changing visual effects.
+- Motion follows the personal display animation preference and `prefers-reduced-motion`. When motion is disabled/reduced, the customer display renders without row entrance effects, capsule rain/burst, or waving letters.
 
 ## Similar-medicine option rules
 

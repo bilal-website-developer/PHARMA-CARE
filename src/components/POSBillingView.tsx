@@ -12,6 +12,7 @@ import {
   Monitor,
   X,
   Zap,
+  ChevronDown,
 } from 'lucide-react';
 import {
   PaymentMethod,
@@ -861,7 +862,20 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
       )}
       {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-text shrink-0">{printNotice}</p>}
-      {displayNotice && <p role="status" className="rounded-control border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-text shrink-0">{displayNotice}</p>}
+      {displayNotice && (
+        <div role="status" className="flex shrink-0 items-center justify-between gap-2 rounded-control border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-text">
+          <span>{displayNotice}</span>
+          <button
+            type="button"
+            onClick={() => setDisplayNotice('')}
+            aria-label="Dismiss customer display notification"
+            title="Dismiss notification"
+            className="shrink-0 rounded p-1 text-muted hover:bg-primary/10 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* ── Main Split View ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 items-stretch">
@@ -1156,27 +1170,31 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                     key={`${item.productId}-${idx}`}
                     className="pos-cart-item p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs"
                   >
-                    <div className="flex-1 pr-2 truncate">
-                      <div className="font-bold text-slate-900 truncate">{item.productName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">
-                        Rs. {(item.mrpPaisaPerUnit / 100).toFixed(0)} × {item.quantityInUnit} · {item.unitName}
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <div className="min-w-0 flex-1 truncate font-bold text-slate-900">{item.productName}</div>
+                        {(products.find((product) => product.id === item.productId)?.units.length ?? 0) > 0 && (
+                          <label className="relative inline-flex h-6 w-7 shrink-0 cursor-pointer items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 focus-within:ring-2 focus-within:ring-accent" title="Change sale unit">
+                            <span className="sr-only">Sale unit for {item.productName}</span>
+                            <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+                            <select
+                              value={item.unitId ?? ''}
+                              onChange={(event) => changeCartUnit(idx, event.target.value)}
+                              aria-label={`Sale unit for ${item.productName}`}
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                            >
+                              {products.find((product) => product.id === item.productId)?.units.map((unit) => (
+                                <option key={unit.id} value={unit.id}>
+                                  {unit.name} · {unit.conversionFactor} {unit.conversionFactor === 1 ? 'base unit' : 'base units'} · Rs. {(unit.pricePerUnitPaisa / 100).toFixed(2)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                       </div>
-                      {products.find((product) => product.id === item.productId)?.units.length ? (
-                        <label className="mt-1 block max-w-44">
-                          <span className="sr-only">Sale unit for {item.productName}</span>
-                          <select
-                            value={item.unitId ?? ''}
-                            onChange={(event) => changeCartUnit(idx, event.target.value)}
-                            className="w-full rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                          >
-                            {products.find((product) => product.id === item.productId)?.units.map((unit) => (
-                              <option key={unit.id} value={unit.id}>
-                                {unit.name} · {unit.conversionFactor} base units · Rs. {(unit.pricePerUnitPaisa / 100).toFixed(2)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
+                      <div className="truncate text-[10px] text-slate-500 font-mono">
+                        Rs. {(item.mrpPaisaPerUnit / 100).toFixed(0)} × {item.quantityInUnit} · {item.unitName} · {item.conversionFactor} {item.conversionFactor === 1 ? 'base unit' : 'base units'}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2">

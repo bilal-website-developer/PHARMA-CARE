@@ -96,7 +96,7 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 - **2026-11-07 — Reviewed owner attachment:** The submitted SQL output is labeled `type_and_aggregate_inventory` (Q11), not the Q1 role check; awaiting the actual Q1 booleans. No database access was performed.
 - **2026-11-07 — Git guidance:** Clarified Git install versus GitHub account/authentication, the local commit author identity, and the HTTPS push sign-in flow. The LF/CRLF warning on Windows is harmless.
 - **2026-11-07 — Vercel routing fix:** Added a root SPA rewrite in `vercel.json` after the Ready deployment returned 404 for direct `/customer-display?channel=...`. Pushed the rewrite to `main`; unauthenticated `curl` checks returned HTTP 200 for both homepage and route. No custom domain is needed to use the provided `vercel.app` URL.
-- **2026-11-07 — Customer display guide:** Added `docs/CUSTOMER_DISPLAY_GUIDE.md` describing page states, UI, message flow, privacy boundaries, alternative selection, frontend edit points, and the same-browser BroadcastChannel limitation.
+- **2026-11-07 — Customer display:** Redesigned Welcome, order/payment, alternatives, thank-you, and error screens in `CustomerDisplayView.tsx`; added a dismissible POS display notice and compact cart unit picker that retains base-unit conversion details. Updated the guide. Typecheck, customer-display tests, full tests, and build pass; interactive order/payment viewport testing remains blocked by the customer route's sign-in/POS permission gate.
 - **2026-11-07 — Multi-tenant plan reviewed:** Read the local-only `.private/multi-tenant-plan.md` against the user's confirmed rules. The target model is documented under Roles and permissions below; no tenant schema, RLS, RPC, or UI implementation was made.
 - **2026-11-03 — Prepared Track A hardening package:** Added `supabase/fresh/trackA/001_revoke_anon_public_execute.sql`, the companion rollback/test files, the optional `002_default_privileges.sql` pair, `SMOKE_TEST.md`, and `README_trackA.md`. No SQL was run or deployed; the branch remains `feature/team-view-manage-users`.
 - **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing.
@@ -162,6 +162,7 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 ## Changelog
 
 - 2026-11-07 — Prepared owner-run S1 current-only inventory, `backup_20261107` data/selected-definition/ACL/sequence snapshot, guarded data restore, snapshot cleanup, and row-count smoke test. Added the owner's no-staging rollout and Developer Shop/account-boundary decisions to the multi-shop plans. Static review only; no database or deployment actions.
+- 2026-11-07 — Redesigned the POS customer display with Clean Classic screens and an animated Pill Rain thank-you screen; updated its guide, added a dismissible display notice, and moved the cart unit selector to a compact icon beside the medicine name while retaining base-unit details. Typecheck, tests, and build pass; authenticated visual test coverage is limited by the POS access gate. Data flow, logo, permissions, and channel behavior are unchanged.
 - 2026-11-07 — Fast-forwarded `feature/team-view-manage-users` into `main` and pushed customer-display/manage-users changes, S1/Track A preparation, and docs to GitHub. Test suite and production build passed.
 - 2026-11-07 — Added root `vercel.json` rewrite for direct Vite SPA routes; Vite build and JSON validation passed, then live homepage and `/customer-display` both returned HTTP 200.
 - 2026-11-07 — Reviewed `.private/multi-tenant-plan.md` against the user's confirmed tenant rules and recorded the target model and implementation status in Roles and permissions. No application, database, or plan-file changes.
@@ -192,15 +193,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T13:01:52.964Z
+Generated at (UTC): 2026-11-07T13:40:30.672Z
 Git branch: main
 
 Last 5 commit subjects:
+- Document customer display frontend
 - versal fix bug
 - Fix Vercel single-page app deep links
 - Document Vercel customer display 404 investigation
 - Record main branch publication
-- Update published branch status
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
