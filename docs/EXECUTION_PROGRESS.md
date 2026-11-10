@@ -5,17 +5,17 @@
 ## Branch and baseline
 
 - [x] Owner-directed execution branch is `feature/team-view-manage-users`; current checkout verified on that branch. No merge or push.
-- [x] Owner waived the staging comparison on 2026-11-07; current-only S1 inventory and snapshot package is awaiting owner execution/results.
+- [x] Owner waived the staging comparison on 2026-11-07; current-only S1 inventory and snapshot package is complete based on owner-provided results.
 
 ## Work packages
 
 | Package | Status | Commit hash | Migrations written | Migrations applied by owner | Tests / checks |
 |---|---|---|---|---|---|
 | 0. Branch and read-only baseline | Complete; repository/branch audit only | — | None | None | `git branch -a`, `git branch --merged main`, branch divergence and diff inspected; no application tests |
-| 1. Current-only S1 inventory and SQL snapshot | Files authored; waiting for owner to run and return Q1-Q10 plus smoke output | — | `supabase/fresh/000_backup_to_schema.sql` + restore/rollback/smoke files | None; SQL has not been run by assistant | Static review only; owner smoke test pending |
-| 2. W1 ACL prerequisite reconciliation | Blocked on S1 results and owner approval | — | Existing Track A files only | None | Not run |
+| 1. Current-only S1 inventory and SQL snapshot | Complete; owner reports snapshot success and smoke test `complete: true` with all 26 table counts matching | — | `supabase/fresh/000_backup_to_schema.sql` + restore/rollback/smoke files | Owner ran snapshot and smoke test; assistant did not execute SQL | Owner-provided smoke output reviewed; all `match` values true |
+| 2. W1 ACL prerequisite reconciliation | ACL portion complete; owner reports A1 and table/sequence ACL changes applied, all verification checks pass, and website works without errors. S2 test-data cleanup/fresh snapshot remains pending; missing `restore_trash_medicine(uuid)` is a separate mismatch | — | Track A A1/A2 and `supabase/fresh/trackA/003_*` ACL package | A1 and S2 table ACL owner-reported applied | Owner-reported A1 zero rows, S2 `all_passed: true`, and post-change app smoke good |
 | 3. W5 barcode UI/scanner improvements (early client-only package) | Complete; client-only, no schema/database work | `818af6c` | None | None | `npm test`, `npm run lint`, `npm run build` passed; targeted scanner (4) and label (5) tests passed |
-| 4. W2 schema foundation and Shop 1 backfill | Blocked on S1 results and S2 smoke test | — | None | None | Not run |
+| 4. W2 schema foundation and Shop 1 backfill | Blocked on S2 cleanup/keep-list and fresh snapshot gate | — | None | None | Not run |
 | 5. W2 tenant RLS, RPC, and Edge Function isolation | Blocked on package 4 and its smoke test | — | None | None | Not run |
 | 6. W4 persistence and transactional `complete_sale` | Blocked on package 5 | — | None | None | Not run |
 | 7. W3 stock alerts | Header alerts implemented for current single-shop schema; shop-scoped follow-up remains blocked on package 5 | — | `20261013140000_stock_alerts_summary.sql` plus rollback | Not applied; owner applies manually | `npm run lint`, `npm test`, `npm run build` passed; database/grant checks not run |
@@ -153,6 +153,6 @@ Proposed npm script: `"lint:eslint": "eslint ."`; no packages were installed and
 - Barcode UI is an early client-only package after the staging checkpoint. Product rows/cards must expose Edit, Print barcode with per-product quantity, and Make barcode; scanner test and POS/Products scan handling are required. Caps: 200 labels per product and 1,000 per print job.
 - Package 3 delivered product row/card/details actions, independent label quantities with both caps, a scanner test dialog, and keyboard-scanner parsing in Products search and POS. Barcode RPC availability is reported clearly when absent. Physical scanner/printer checks remain manual.
 - QR is out of scope. Remove `express` and `@types/express` only after confirming they are unused.
-- No SQL execution or deployment by the assistant. Migrations and rollback files only; cashier never receives cost data.
+- No SQL execution or deployment by the assistant. Migrations and rollback files only. A Cashier granted `products` may view product cost on Products/Add Product screens only; POS and other interfaces must not expose cost, batch cost, profit, or margin.
 - Show the old and proposed definitions and obtain approval before changing RLS or `is_staff`, `is_admin`, or `has_any_permission`.
-- **Current stop:** S1 owner-run current-only inventory and snapshot. Do not begin S2 until its smoke test passes and the owner returns the requested results. No SQL has been run by the assistant.
+- **Current stop:** Owner reports S1 passed; A1 committed with zero final verification rows; S2 table/sequence ACL committed with all five checks true; and website works without errors. ACL smoke gate is complete. S2 test-data cleanup and a fresh snapshot before any cleanup/backfill remain unresolved. The Trash Bin table, indexes and triggers exist, but `restore_trash_medicine(uuid)` is missing; do not replay the full migration, and track its repair separately. A2 defaults remain optional/unapplied.

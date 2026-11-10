@@ -26,6 +26,7 @@ import { Sidebar, NavItemKey } from './components/Sidebar';
 import { getSidebarPage, sidebarPageForRoute } from './components/sidebarPages';
 import { toggleSidebarFavorite } from './components/sidebarPinLogic';
 import { TopNav } from './components/TopNav';
+import { InstallAppPrompt } from './components/InstallAppPrompt';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { canAccessCustomerDisplay } from './utils/customerDisplay';
@@ -56,6 +57,11 @@ import {
   saveSidebarPreferences,
   visibleSidebarPageKeys,
 } from './data/sidebarPreferences';
+import {
+  BeforeInstallPromptEvent,
+  isInstallPromptDismissed,
+  rememberInstallPromptDismissed,
+} from './utils/installPrompt';
 
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
 const CustomerDisplayView = lazy(() => import('./components/CustomerDisplayView').then(({ CustomerDisplayView: View }) => ({ default: View })));
@@ -99,6 +105,36 @@ export default function App() {
   const [session, setSession] = useState<WorkspaceSession | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installPromptDismissed, setInstallPromptDismissed] = useState(isInstallPromptDismissed);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      if (!isInstallPromptDismissed()) setInstallPromptEvent(event as BeforeInstallPromptEvent);
+    };
+    const handleAppInstalled = () => {
+      setInstallPromptEvent(null);
+      setInstallPromptDismissed(true);
+      if (!rememberInstallPromptDismissed()) {
+        console.error('Could not persist the installed-app state in browser storage.');
+      }
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const dismissInstallPrompt = () => {
+    setInstallPromptEvent(null);
+    setInstallPromptDismissed(true);
+    if (!rememberInstallPromptDismissed()) {
+      console.error('Could not persist the install-prompt dismissal in browser storage.');
+    }
+  };
 
   useEffect(() => {
     const client = supabase;
@@ -261,14 +297,19 @@ export default function App() {
   }
 
   return (
-    <AppErrorBoundary>
-      <PharmacyApp
-        key={session.userId}
-        session={session}
-        onLogout={handleLogout}
-        authMessage={authMessage}
-      />
-    </AppErrorBoundary>
+    <>
+      <AppErrorBoundary>
+        <PharmacyApp
+          key={session.userId}
+          session={session}
+          onLogout={handleLogout}
+          authMessage={authMessage}
+        />
+      </AppErrorBoundary>
+      {installPromptEvent && !installPromptDismissed && (
+        <InstallAppPrompt promptEvent={installPromptEvent} onDismiss={dismissInstallPrompt} />
+      )}
+    </>
   );
 }
 

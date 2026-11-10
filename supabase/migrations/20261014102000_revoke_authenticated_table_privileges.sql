@@ -33,7 +33,7 @@ begin
   loop
     if to_regclass(format('public.%I', v_table)) is not null then
       execute format(
-        'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM authenticated',
+        'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.%I FROM authenticated',
         v_table
       );
     end if;
@@ -56,5 +56,8 @@ begin
   end loop;
 end;
 $$;
+
+REVOKE ALL PRIVILEGES ON SEQUENCE public.medicine_barcode_seq
+  FROM PUBLIC, anon, authenticated;
 
 commit;

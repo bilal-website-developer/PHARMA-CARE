@@ -103,8 +103,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:px-6">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6">
+      <div className="flex min-w-0 items-center">
         {shopLogo ? (
           <img
             src={shopLogo}
@@ -114,12 +114,13 @@ export const TopNav: React.FC<TopNavProps> = ({
         ) : (
           <PharmaLogo size={2.6} layout="inline" className="pharma-brand header-pharma-logo" />
         )}
-        <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted">
-          {activeTitle}
-        </div>
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+      <div className="max-w-[35vw] truncate text-center text-[10px] font-semibold uppercase tracking-wider text-muted sm:max-w-[30vw]">
+        {activeTitle}
+      </div>
+
+      <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-3">
         <StockAlertBell
           userId={userId}
           animationsEnabled={document.documentElement.dataset.animations !== 'off'}

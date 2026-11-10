@@ -16,6 +16,13 @@ export interface TrashBinEvent {
   can_restore: boolean;
 }
 
+const ENTITY_SEARCH_LABELS: Record<TrashEntityType, string> = {
+  profile: 'user',
+  medicine: 'product',
+  supplier: 'supplier',
+  purchase: 'purchase',
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -58,4 +65,21 @@ export function filterTrashBinEvents(
   return filter === 'all'
     ? [...events]
     : events.filter((event) => event.entity_type === filter);
+}
+
+export function searchTrashBinEvents(
+  events: readonly TrashBinEvent[],
+  search: string,
+): TrashBinEvent[] {
+  const query = search.trim().toLocaleLowerCase();
+  if (!query) return [...events];
+
+  return events.filter((event) => [
+    event.entity_type,
+    ENTITY_SEARCH_LABELS[event.entity_type],
+    event.display_name,
+    event.action,
+    event.actor_name,
+    event.reason ?? '',
+  ].some((value) => value.toLocaleLowerCase().includes(query)));
 }

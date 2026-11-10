@@ -1,6 +1,6 @@
 # Pharma Care — Full Multi-Shop Plan
 
-**Status:** Owner-run staged execution is approved. S1 files are prepared under `supabase/fresh/`; no database changes have been applied. Do not treat checked-in SQL as applied until the owner reports its result.
+**Status:** Owner-run staged execution is approved. S1 snapshot and S2 ACL results are owner-reported complete; S2 test-data cleanup remains pending. S3–S6 tenant changes have not been implemented or applied. Do not treat checked-in SQL as applied until the owner reports its result.
 
 ## Owner-approved live execution override (2026-11-07)
 
@@ -13,7 +13,7 @@ The owner-confirmed account model is:
 - A Shop Admin may create/manage only Manager/Cashier staff in its own shop and may grant only permissions it personally holds. It cannot create/change Admin or Super Admin profiles or change anyone's shop assignment. Staff cannot manage accounts.
 - Preserve the creator-scoped Team view: Super Admin can inspect an Admin's team and change active/removal status; an Admin sees only its own team and cannot change member status.
 
-For this execution, the former staging-comparison checkpoint is replaced by S1 in `supabase/fresh/000_S1_RUNBOOK.md`. No S2 or tenant migration is authorized until the owner returns the current-only catalog results and S1 smoke-test output.
+For this execution, the former staging-comparison checkpoint is replaced by S1 in `supabase/fresh/000_S1_RUNBOOK.md`. The owner reports S1 catalog/snapshot checks and S2 ACL checks passed. S2 cleanup and all tenant stages remain gated on reviewed keep-list, fresh snapshot, and stage-specific SQL/test/rollback packages.
 
 ## User-confirmed clarifications (2026-11-05)
 
@@ -38,7 +38,7 @@ These requirements supersede conflicting planning defaults below; they are desig
 | S5 — Server operations | Rewrite SECURITY DEFINER functions in small groups with same-shop identity, role, permission, and reference checks. | Per-function positive/negative tests and smoke test pass after each group. |
 | S6 — Accounts and UI | Update `manage-users`, shops/Admin provisioning, private notes, grants, Team view, and UI. | Edge Function and UI policy tests pass; owner deploys only after SQL smoke tests. |
 
-**Current stop:** S1 is authored but not run. The owner waived staging only; no later stage is approved until S1 results are reviewed.
+**Current stop:** S1 passed by owner report; S2 ACL lockdown is applied and verified by owner report, and the website smoke test passed. S2 test-data cleanup/keep-list and fresh snapshot gate remain pending. No S3–S6 migration packages exist yet; do not begin those stages until their SQL, rollback, and tests are prepared and reviewed.
 
 ## 1. Goal and security rules
 
@@ -47,7 +47,7 @@ These requirements supersede conflicting planning defaults below; they are desig
 3. Shop separation is enforced in database policies, RPCs, Edge Functions, storage policies, and server-derived identity—not just in UI filtering.
 4. The platform Super Admin manages shops and account metadata, but has no general access to shop business data.
 5. The Super Admin has no business-data exception: it cannot browse or write shop catalog, inventory, purchase, or sales data.
-6. Cashiers never receive cost, profit, or margin. Preserve the existing revokes on the five cost-bearing tables; no tenancy work may widen access to them.
+6. Cashiers explicitly granted the `products` page may view product cost on Products/Add Product screens only; they never receive cost in POS or other interfaces, and never receive batch cost, purchase data, profit, or margin. This is view-only access. Preserve revokes on cost-bearing base tables; use only a narrowly scoped, permission-checked product path.
 
 ## 2. Current state and evidence limits
 
@@ -208,7 +208,7 @@ Follow the owner-approved live stages in section 0 and `supabase/fresh/000_S1_RU
 5. **S5 function rewrites and S6 `manage-users`/UI.** Test each function group and account policy before moving forward.
 6. **Owner release.** Owner alone deploys the frontend/function after SQL smoke tests and sends verification results.
 
-**Current first stop:** S1 files are prepared and awaiting owner execution. No S2 or tenant code/schema is implemented.
+**Current stop:** S1 and the S2 ACL portion are owner-reported complete. S2 test-data cleanup remains pending. No S3–S6 tenant SQL/code has been implemented; this plan is design guidance, not executable migration SQL.
 
 ## 19. Owner decisions recorded
 

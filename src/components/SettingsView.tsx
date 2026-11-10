@@ -22,7 +22,10 @@ import {
   withReceiptTheme,
 } from '../utils/receipt';
 import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
-import { readShopLogo, saveShopLogo } from '../utils/storeSettings';
+import {
+  getPharmacyMemoSettingsValidationMessage,
+  readShopLogo,
+} from '../utils/storeSettings';
 import { checkDemoDataStatus, loadDemoData, removeDemoData } from '../data/demoDataManager';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
@@ -99,6 +102,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [debtTemplate, setDebtTemplate] = useState(savedShopProfile.debtTemplate);
   const [logoUrl, setLogoUrl] = useState<string>(() => savedShopProfile.logoUrl || readShopLogo());
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
 
@@ -231,6 +235,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedShopName = shopName.trim();
+    const nextMemoSettings: PharmacyMemoSettings = {
+      ...memoSettings,
+      storeName: canEditBilling ? normalizedShopName : memoSettings.storeName.trim(),
+      logoUrl: canEditBilling ? logoUrl : memoSettings.logoUrl,
+      printLogo: memoSettings.printLogo !== false,
+    };
+    if (canEditBilling && !normalizedShopName) {
+      setSavedSuccess(false);
+      setSaveNotice({ text: 'Enter a shop name before updating the profile.', error: true });
+      return;
+    }
+    const memoValidationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
+    if (memoValidationMessage) {
+      setSavedSuccess(false);
+      setSaveNotice({ text: memoValidationMessage, error: true });
+      return;
+    }
+
     try {
       globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
         phone,
@@ -239,27 +262,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         debtTemplate,
         logoUrl: canEditBilling ? logoUrl : savedShopProfile.logoUrl,
       }));
-      if (canEditBilling) {
-        saveShopLogo(logoUrl);
-      }
     } catch {
-      window.alert('Contact phone, location, invoice footer, and reminder template could not be saved in this browser.');
-      return;
-    }
-    if (canEditBilling && !onSaveCompanyName(shopName)) {
       setSavedSuccess(false);
-      window.alert('Contact phone, location, invoice footer, and reminder template were saved, but the shop name could not be saved.');
+      setSaveNotice({
+        text: 'Profile details could not be saved in this browser. Check browser storage and try again.',
+        error: true,
+      });
       return;
     }
-    if (!onMemoSettingsChange({
-      ...memoSettings,
-      storeName: canEditBilling ? (memoSettings.storeName.trim() || shopName) : memoSettings.storeName,
-      logoUrl: canEditBilling ? logoUrl : memoSettings.logoUrl,
-      printLogo: memoSettings.printLogo !== false,
-    })) {
-      window.alert('Shop details were saved, but Pharmacy Memo settings could not be saved. Check the required fields and browser storage.');
+    if (canEditBilling && !onSaveCompanyName(normalizedShopName)) {
+      setSavedSuccess(false);
+      setSaveNotice({
+        text: 'Other profile details were saved, but the shop name could not be saved. Check browser storage.',
+        error: true,
+      });
       return;
     }
+    if (!onMemoSettingsChange(nextMemoSettings)) {
+      setSavedSuccess(false);
+      setSaveNotice({
+        text: 'Shop details were saved, but Pharmacy Memo settings could not be saved. Check browser storage and try again.',
+        error: true,
+      });
+      return;
+    }
+    setMemoSettings(nextMemoSettings);
+    setSaveNotice(null);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };
@@ -289,7 +317,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               type="text"
               value={shopName}
               disabled={!canEditBilling}
-              onChange={(e) => setShopName(e.target.value)}
+              onChange={(e) => {
+                setShopName(e.target.value);
+                setMemoSettings((current) => ({ ...current, storeName: e.target.value }));
+              }}
               className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:opacity-60 disabled:cursor-not-allowed"
             />
             {!canEditBilling && (
@@ -565,16 +596,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {memoPreviewOpen ? 'Hide live preview' : 'Show live preview'}
           </button>
           <button type="button" disabled={!canEditBilling} onClick={() => {
-            if (!onMemoSettingsChange({
+            const nextMemoSettings = {
               ...memoSettings,
-              storeName: memoSettings.storeName.trim() || shopName,
+              storeName: shopName.trim(),
               logoUrl,
               printLogo: memoSettings.printLogo !== false,
-            })) {
-              window.alert('Could not save Pharmacy Memo settings. Check that the store name, terminal, notes, and digit count are valid.');
+            };
+            const validationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
+            if (validationMessage) {
+              setSaveNotice({ text: validationMessage, error: true });
               return;
             }
-            saveShopLogo(logoUrl);
+            if (!onMemoSettingsChange(nextMemoSettings)) {
+              setSaveNotice({ text: 'Pharmacy Memo settings could not be saved. Check browser storage and try again.', error: true });
+              return;
+            }
+            setMemoSettings(nextMemoSettings);
+            setSaveNotice(null);
             setSavedSuccess(true);
             setTimeout(() => setSavedSuccess(false), 2500);
           }} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
@@ -721,9 +759,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* ── Bottom Save Strip ──────────────────────────────────────────────── */}
       <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-card border border-border bg-white p-4 shadow-sm">
         <div className="text-xs text-muted">
-          {savedSuccess ? (
+          {saveNotice ? (
+            <span role={saveNotice.error ? 'alert' : 'status'} className={saveNotice.error ? 'font-semibold text-red-700' : 'font-bold text-primary'}>
+              {saveNotice.text}
+            </span>
+          ) : savedSuccess ? (
             <span className="flex items-center gap-1 font-bold text-primary">
-              <Check className="w-4 h-4" /> Shop name, contact phone, location, invoice footer, and reminder template saved in this browser.
+              <Check className="w-4 h-4" /> Shop profile and Pharmacy Memo settings saved in this browser.
             </span>
           ) : (
             'Make changes and click Update Profile.'

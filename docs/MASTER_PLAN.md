@@ -1,6 +1,6 @@
 # Pharma Care — Master Implementation Plan
 
-**Status:** Owner-approved staged execution on the current project. The owner waived the separate staging checkpoint on 2026-11-07. S1 artifacts are prepared but have not been run; no live query or migration has been run by the assistant.
+**Status:** Owner-approved staged execution on the current project. The owner waived the separate staging checkpoint on 2026-11-07. S1 inventory and snapshot passed based on owner-provided results; no live query or migration has been run by the assistant. S2 ACL reconciliation is in progress.
 
 **Execution branch:** `feature/team-view-manage-users` (owner-directed for this rollout). No merge, push, SQL execution, or deployment by the assistant.
 
@@ -41,7 +41,7 @@ These latest decisions supersede conflicting older role, catalog-seeding, and st
 - Split W5: do the client UI/scanner work early. Every product row/card must expose Edit, Print barcode (with per-product quantity), and Make barcode; include a scanner test tool and scan handling in POS and Products search. Cap at 200 labels per product and 1,000 per job.
 - Do not add a QR workflow. Remove `express` or `@types/express` only if repository usage is confirmed absent.
 - First execution package is S1 current-only catalog inventory and isolated SQL snapshot in `supabase/fresh/000_S1_RUNBOOK.md`. Stop and wait for the owner-run outputs and smoke test before S2. The assistant never runs SQL or deploys. SQL and rollback files are authored for the owner to apply.
-- Preserve cashier cost confidentiality. Do not change RLS or `is_staff`, `is_admin`, or `has_any_permission` without presenting old and proposed definitions for approval.
+- Preserve the approved Cashier cost rule: a Cashier explicitly granted `products` may view product cost on Products/Add Product screens only, never POS or other interfaces. Do not change RLS or `is_staff`, `is_admin`, or `has_any_permission` without presenting old and proposed definitions for approval.
 - Progress is recorded in [EXECUTION_PROGRESS.md](./EXECUTION_PROGRESS.md).
 - The detailed tenant design and owner decisions are recorded in [MULTI_SHOP_FULL_PLAN.md](./MULTI_SHOP_FULL_PLAN.md).
 
@@ -94,7 +94,7 @@ Evidence below is from the checked-out source, supplied baseline, local migratio
 6. **Quality scope:** keep `strict` off in the main package. Measure each of `noUnusedLocals`, `noUnusedParameters`, and `strict` separately; add unused checks and `react-hooks` ESLint first. Decide on strict in its own final package based on measured diagnostics.
 7. **Barcode UI and print limits:** prioritize client-side W5. Each product row/card has Edit, Print barcode with per-product label quantity, and Make barcode. Include scanner test and POS/Products search scanning. Limit 200 labels per product and 1,000 per print job.
 8. **QR and Express:** QR is out of scope. Remove `express` or `@types/express` only after repository usage is confirmed absent.
-9. **S1 gate:** owner runs the current-only catalog queries and snapshot package in `supabase/fresh/000_S1_RUNBOOK.md`. Do not proceed to S2 until the owner returns the results and the snapshot smoke test passes.
+9. **S1 gate:** passed from owner-provided results: snapshot smoke test returned `complete: true` and all 26 counts matched. S2 ACL reconciliation is next; compare the exact owner-provided Q6 object grants to intended privileges before drafting any ACL migration.
 10. **Open measurement:** unused-symbol counts and production bundle/gzip size are not measured. W6/W7 use actual output rather than historical estimates.
 
 ## C. Work items W1–W7
@@ -103,7 +103,11 @@ Evidence below is from the checked-out source, supplied baseline, local migratio
 
 **Files already written locally:** `20261012140000_lockdown_anon_public_access.sql` (A); optional `20261012140500_optional_lockdown_supabase_admin_defaults.sql` (B); `20261012141000_revoke_authenticated_table_dml.sql`, `20261012142000_supplier_write_rpcs.sql`, and `20261012143000_revoke_authenticated_supplier_dml.sql` (C); `20261012144000_lockdown_profile_dml.sql` (D). Rollbacks are in `supabase/rollback/`. They are proposals/files, not proof of live application. The optional `supabase_admin` statements are kept separate because owner docs warn that the SQL role may lack role membership.
 
-**Plan:** after S1 results are reviewed, compare the current project's grants/default privileges to the intended A-D state using SELECT-only catalog checks; verify supplier writes call `save_supplier` / `deactivate_supplier`; preserve the five cost-bearing table revokes; keep `profiles` authenticated SELECT if the app requires it while revoking client DML. Do not touch RLS policies or the three protected helper functions until the B approval is recorded. Any missing ACL behavior gets a new forward migration and matching rollback in `supabase/rollback/`, not a live manual patch.
+**Owner Q6 review (2026-11-07):** authenticated has direct write privileges on `customers`, `khata_entries`, `medicine_units`, `medicines`, `sale_payments`, `sales`, `stock_movements`, and `supplier_ledger`; it also has `SELECT/UPDATE/USAGE` on `medicine_barcode_seq`. `profiles` and `suppliers` have SELECT plus REFERENCES/TRIGGER/MAINTAIN. `user_favorites` and `user_sidebar_preferences` have direct per-user CRUD grants and own-row RLS policies. No anon/authenticated ACL was listed for the five cost-bearing base tables. Sixteen business/helper routines have anon and/or PUBLIC EXECUTE. `save_supplier` is six-argument in the live inventory. Default ACLs for `postgres` expose future functions to anon/authenticated and sequences to authenticated; `supabase_admin` defaults expose future tables, sequences, and functions to anon/authenticated.
+
+**Plan:** compare the exact owner Q6 grants to intended privileges; revoke direct business-table DML and direct barcode-sequence access while preserving profile/supplier SELECT and own-row preference writes; remove unnecessary REFERENCES/TRIGGER/MAINTAIN privileges; lock down the 16 current anon/PUBLIC routine grants; and use explicit future-object grants. The existing function-lockdown file was corrected for the live `save_supplier` signature and exact rollback. `supabase_admin` default changes are conditional on role-membership preflight. Do not touch RLS policies or the three protected helper functions until their old/proposed definitions are reviewed with the owner. Any missing ACL behavior gets a matching forward migration and rollback, not a live manual patch.
+
+Supplier save, deactivate, and activate paths use RPCs; the direct-write activation fallback was removed. Demo cleanup now propagates RPC failures and no longer attempts a direct medicine delete. Owner-run ACL application and runtime smoke tests are still pending.
 
 ### C.2 W2 — Shared-database multi-shop tenancy
 
@@ -180,7 +184,7 @@ Shop plus Admin creation crosses the Auth and Postgres systems and is not atomic
 - New RPC signature proposal: `complete_sale(p_customer_id uuid, p_items jsonb, p_tenders jsonb, p_discount_mode text, p_discount_paisa bigint, p_discount_percent numeric, p_idempotency_key uuid) returns jsonb`. Server derives actor, role and shop; validates the selected discount input, rejects malformed/duplicate item/tender shapes and replay conflicts; returns persisted sale id, per-shop invoice number, totals, and safe receipt snapshot. All monetary JSON fields and persisted values are integer paisa.
 - In one DB transaction: lock eligible stock rows; validate active product/unit/shop; allocate across FEFO batches with `quantity_remaining > 0`, eligible status and agreed expiry boundary; prevent oversell; validate role percent cap and Rs 200 hard maximum; validate explicit split tender totals and reject cash underpayment; enforce customer credit limit; decrement stock; persist sale, sale lines, payment rows, per-batch cost snapshots, movements and audit; reserve a sequential, unique per-shop invoice number. No partial sale. Do not promise gap-free numbering unless concurrency, rollback, retry, and failure tests prove it.
 - Save a safe server-backed shop-identity snapshot with each completed sale so later profile edits do not rewrite historical receipts. New receipts use the current server-backed shop profile; browser-local shop identity is not authoritative.
-- Do not return batch cost/cost snapshot to cashier clients. Returns/voids need permission-checked RPCs and safe return-price/cost handling; cashier UI/API must not expose cost.
+- Cashiers explicitly granted the `products` page may view product cost on Products/Add Product screens only. This is view-only and does not grant batch-cost, purchase-history, profit, or margin access. POS, sales/returns/voids, receipts, labels, reports, imports/exports, alerts, and other interfaces must omit cost and cost-derived values for Cashiers. Returns/voids need permission-checked RPCs and safe return-price/cost handling.
 - Wire POSBillingView, Sales History (locate actual view in App before editing), Customer Ledger, Cash Book, Dashboard and Reports to shop-scoped repositories/RPCs and persist mutations so reload reconstructs the same records. Products and Stock Inventory stay on their existing RPC path with added tenant filters.
 
 ### C.5 W5 — Barcode, labels and scanner
@@ -246,8 +250,8 @@ Test all existing SECURITY DEFINER functions discovered in baseline/migrations, 
 
 ### D.3 Cost confidentiality tests
 
-- Cashier: API/RPC response schemas for Products, POS, sales, receipts, labels, reports, imports/exports, alerts, and Edge Function must contain no cost price, batch cost, profit, margin, or cost-derived totals.
-- Manager/accountant/admin: compare returned cost to existing role/permission decision; cashier-denied values are omitted/null, never zero-filled.
+- Cashier without `products`: all cost fields are denied. Cashier with `products`: product cost may be returned only by the Products/Add Product path; all other API/RPC responses, including POS, sales, receipts, labels, reports, imports/exports, alerts, and Edge Function, must omit cost, batch cost, profit, margin, and cost-derived totals.
+- Manager/accountant/admin: compare returned cost to the role/permission decision; denied values are omitted/null, never zero-filled. Product-cost visibility is view-only and must not grant access to cost-bearing base tables or unrelated purchase/batch data.
 - Ensure `stock_batches`, `purchases`, `purchase_items`, `sale_items`, `sale_item_batch_allocations` remain ungranted to `anon` and `authenticated`; test only privilege metadata, never select cost data.
 - Labels and generated HTML/SVG/export snapshots are scanned for cost/profit/margin field names and values. Keep Pharmacy Memo renderer unchanged except for any separately approved necessary wiring.
 
@@ -359,4 +363,4 @@ Estimated engineering sizes are relative effort, not calendar commitments. Every
 
 **Owner decisions recorded in `MULTI_SHOP_FULL_PLAN.md`:** one user per shop; a shop may have multiple Admins; Super Admin manages shops, Admin accounts, and page grants but has no business-data access or catalog-seeding exception; Shop Admins may manage only Manager/Cashier staff in their own shop and grant only permissions they hold; staff cannot manage accounts; private Admin notes and shop IDs are Super-Admin-only; suspension blocks sign-in and business operations; licence/billing dates are deferred.
 
-**Execution gate:** The owner waived the separate staging comparison. S1 current-only catalog inventory and isolated SQL snapshot are prepared in `supabase/fresh/000_S1_RUNBOOK.md` and await owner execution. Review Q1-Q9/Q11, every Q10 batch, and the passing snapshot smoke test before S2. Continue through S2-S6 only at their explicit stop points. The assistant never runs SQL or deploys functions; the SQL snapshot is not a full database backup or schema restore.
+**Execution gate:** The owner waived the separate staging comparison. S1 current-only inventory and isolated SQL snapshot passed based on owner-provided output. Continue through S2-S6 only at explicit stop points. S2 requires exact Q6 ACL rows to reconcile live grants and owner review before application. The assistant never runs SQL or deploys functions; the SQL snapshot is not a full database backup or schema restore.

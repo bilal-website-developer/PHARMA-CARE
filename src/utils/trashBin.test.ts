@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterTrashBinEvents, parseTrashBinEvent, TrashBinEvent } from './trashBin';
+import { filterTrashBinEvents, parseTrashBinEvent, searchTrashBinEvents, TrashBinEvent } from './trashBin';
 
 const events: TrashBinEvent[] = [
   {
@@ -35,6 +35,16 @@ test('filters Trash Bin events by entity type', () => {
   assert.deepEqual(filterTrashBinEvents(events, 'all'), events);
   assert.deepEqual(filterTrashBinEvents(events, 'medicine'), [events[0]]);
   assert.deepEqual(filterTrashBinEvents(events, 'purchase'), [events[1]]);
+});
+
+test('searches Trash Bin activity by item, action, actor, entity, and reason', () => {
+  assert.deepEqual(searchTrashBinEvents(events, '  PANADOL '), [events[0]]);
+  assert.deepEqual(searchTrashBinEvents(events, 'ADMIN'), [events[0]]);
+  assert.deepEqual(searchTrashBinEvents(events, 'Duplicate'), [events[1]]);
+  assert.deepEqual(searchTrashBinEvents(events, 'voided'), [events[1]]);
+  assert.deepEqual(searchTrashBinEvents(events, 'product'), [events[0]]);
+  assert.deepEqual(searchTrashBinEvents(events, '  '), events);
+  assert.deepEqual(searchTrashBinEvents(events, 'missing'), []);
 });
 
 test('parses events and applies safe display fallbacks', () => {

@@ -7,7 +7,6 @@ import { SIDEBAR_CATEGORIES, SIDEBAR_PAGES, type SidebarPageKey } from './sideba
 import { clampSidebarMenuPosition } from './sidebarMenuPosition';
 import { toggleSidebarFavorite } from './sidebarPinLogic';
 import PharmaLogo from './PharmaLogo';
-import GlowCredit from './GlowCredit';
 
 export type NavItemKey = SidebarPageKey;
 
@@ -311,10 +310,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {limitNotice || preferenceNotice}
         </div>
       )}
-
-      {!isCollapsed && <div className="mt-auto border-t border-white/10 p-3">
-        <GlowCredit />
-      </div>}
 
       {contextMenu && (
         <div

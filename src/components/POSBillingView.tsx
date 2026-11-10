@@ -44,6 +44,7 @@ import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
 import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
+import { resolvePosCustomerName } from '../utils/posCustomer';
 import {
   buildCustomerDisplayOptionsMessage,
   buildCustomerDisplayPayment,
@@ -105,7 +106,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [walkInName, setWalkInName] = useState<string>('Walk-in Customer');
+  const [walkInName, setWalkInName] = useState('');
   const [displayChannelId, setDisplayChannelId] = useState<string | null>(null);
   const [displayNotice, setDisplayNotice] = useState('');
   const [displayThankYou, setDisplayThankYou] = useState(false);
@@ -794,7 +795,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     }
     const saleInput: PostSaleInput = {
       customerId: customer?.id ?? null,
-      customerName: customer?.name ?? walkInName,
+      customerName: resolvePosCustomerName(customer?.name, walkInName),
       items: saleItems,
       discountPaisa,
       roundingPaisa,
@@ -819,6 +820,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       setCart([]);
       setDiscount({ mode: 'percent', value: '' });
       setTenderedAmountPKR(0);
+      setSelectedCustomerId('');
+      setWalkInName('');
     }).catch((error: unknown) => {
       setSaleError(error instanceof Error ? error.message : 'Could not complete the sale.');
     }).finally(() => setIsPostingSale(false));
@@ -1124,21 +1127,27 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               <div className="flex items-center gap-2">
                 <select
                   value={selectedCustomerId}
-                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCustomerId(e.target.value);
+                    setWalkInName('');
+                  }}
                   className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium text-slate-700 max-w-[150px]"
                 >
-                  <option value="">👤 Walk-in Customer</option>
+                  <option value="">Walk-in Customer</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  placeholder="Customer name"
-                  value={walkInName}
-                  onChange={(e) => setWalkInName(e.target.value)}
-                  className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 w-32"
-                />
+                {!selectedCustomerId && (
+                  <input
+                    type="text"
+                    placeholder="Customer name (optional)"
+                    aria-label="Walk-in customer name"
+                    value={walkInName}
+                    onChange={(e) => setWalkInName(e.target.value)}
+                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 w-32"
+                  />
+                )}
               </div>
             </div>
 
@@ -1440,7 +1449,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
             <div className="flex min-h-0 flex-col space-y-4 overflow-y-auto p-5 text-xs">
               <div className="order-1 text-slate-600 font-medium">
-                Customer: <strong>{walkInName}</strong>
+                Customer: <strong>{resolvePosCustomerName(
+                  customers.find((customer) => customer.id === selectedCustomerId)?.name,
+                  walkInName,
+                )}</strong>
               </div>
 
               <DiscountBox

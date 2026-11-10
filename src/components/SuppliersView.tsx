@@ -382,14 +382,7 @@ export const SuppliersView: React.FC = () => {
       const { error: activateError } = await supabase.rpc('activate_supplier', {
         p_supplier_id: supplier.id,
       });
-      if (activateError) {
-        // Fallback to direct update if RPC is pending migration
-        const { error: directError } = await supabase
-          .from('suppliers')
-          .update({ is_active: true })
-          .eq('id', supplier.id);
-        if (directError) throw activateError;
-      }
+      if (activateError) throw activateError;
 
       setSuppliers((current) =>
         current.map((item) => item.id === supplier.id ? { ...item, is_active: true } : item)

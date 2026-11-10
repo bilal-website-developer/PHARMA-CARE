@@ -41,11 +41,11 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 
 ## Data and storage
 
-- Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, and purchase workflows use server RPCs; Suppliers still has direct table reads/writes. Authorization and persistence are not uniform across every screen.
+- Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, purchase workflows, and supplier writes use server RPCs; supplier, product-unit, and profile reads still include direct table reads. Authorization and persistence are not uniform across every screen.
 - Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, audited receipt-only modification, and profile Trash Bin events use database RPCs/Edge Functions.
 - Supabase CLI is available as a local development dependency (`npx supabase`); hosted deployment still requires an authenticated CLI session and the correct project ref.
 - Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters.
-- S1 owner-run SQL recovery package is prepared under `supabase/fresh/`: it snapshots `public` table data, selected catalog metadata, and sequence state into an isolated forced-RLS schema. It has not been run; catalog metadata is not a complete schema restore. It is not a full database backup and does not include Auth users, Storage objects, or platform configuration.
+- S1 owner-run SQL recovery package is under `supabase/fresh/`: it snapshots `public` table data, selected catalog metadata, and sequence state into an isolated forced-RLS schema. Owner reports successful snapshot execution and smoke test `complete: true` with all 26 table counts matching. Catalog metadata is not a complete schema restore. It is not a full database backup and does not include Auth users, Storage objects, or platform configuration.
 - Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. They are presented as compact segmented controls and toggle rows. Shop identity, billing, and business settings remain hidden from non-admin roles.
 - Mixed persistence: the active POS catalog and sales use `pos_catalog()` and `post_sale()` RPCs; customer/ledger and sales-history paths also use RPCs. Dashboard stock/expiry KPIs still use `INITIAL_PRODUCTS` sample data, and Cash Book transactions/expenses remain React in-memory state. `POSScreen` and controlled-drug sample types are legacy/unreferenced paths; confirm each active page before relying on its data source.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
@@ -59,9 +59,13 @@ Permission keys in `src/permissions.tsx`: `pos`, `products`, `categories`, `supp
 
 UI defaults: Admin and Super Admin get every module. Manager gets POS, Products, Categories, Suppliers, Customers, Sales History, Purchase History, Purchases, Stock Inventory, and Reports. Cashier gets POS and Customers. Accountant gets Customers, Suppliers, Sales History, Purchase History, Expenses, and Reports. Non-admin permissions can be configured; admin roles use their full defaults. Dashboard/help, personal print requests, and the Settings route are available to all; non-admin Settings contains personal display/accessibility preferences only. Shop/business Settings, Trash Bin, and print-request administration remain Admin/Super Admin-only. UI checks do not replace database/server authorization.
 
-Cost visibility decision: Admin and Super Admin may view cost; Manager may view it only with at least one of `products`, `stock_inventory`, `purchases`, or `purchase_history`; Accountant may view it read-only through `purchase_history` or `reports`; Cashier never may. There is no Pharmacist role in the current app. The server rule exists in migrations; its effective production definition and table grants still require live verification.
+Cost visibility target: Admin and Super Admin may view cost; Manager may view it only with at least one of `products`, `stock_inventory`, `purchases`, or `purchase_history`; Accountant may view it read-only through `purchase_history` or `reports`; a Cashier explicitly granted `products` may view product cost on Products/Add Product screens only, never in POS or other interfaces. This is view-only access and does not grant purchase, batch-cost, profit, or margin access. Current `can_view_cost()` excludes Cashiers, so this approved change is not yet implemented; production behavior still requires live verification.
 
-Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), manages shops/Admin accounts/page grants, and has no shop-business access or catalog-seeding exception. The initially empty Developer Shop uses a separate Admin login; retained non-Super-Admin accounts/data map to Shop 1. A shop may have multiple Admins. Super Admin grants each Admin's pages; Shop Admins may manage only Manager/Cashier staff in their shop and may grant only permissions they hold. Staff cannot manage accounts; only Super Admin manages Admins, shop assignment, and account status. Preserve creator-scoped Team view behavior. Only Super Admin may see shop IDs or read/edit private Admin notes through protected server paths. These rules are approved but not implemented; schema, RLS, RPCs, Edge Function, and UI await S1 owner results and later smoke tests.
+Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), manages shops/Admin accounts/page grants, and has no shop-business access or catalog-seeding exception. The initially empty Developer Shop uses a separate Admin login; retained non-Super-Admin accounts/data map to Shop 1. A shop may have multiple Admins. Super Admin grants each Admin's pages; Shop Admins may manage only Manager/Cashier staff in their shop and may grant only permissions they hold. Staff cannot manage accounts; only Super Admin manages Admins, shop assignment, and account status. Preserve creator-scoped Team view behavior. Only Super Admin may see shop IDs or read/edit private Admin notes through protected server paths. S1 and S2 ACL gates passed by owner report; tenant implementation remains unstarted pending S2 cleanup and remaining owner-run stage gates.
+
+Permission review findings from current source: Admin and Super Admin bypass assigned page permissions in both UI defaults and database `has_any_permission`; Super Admin can therefore reach business pages despite the platform-only target. Shop Admin user management can grant any permission and is scoped by `created_by`, not shop. Non-admin users granted `manage_users` can manage lower-role accounts, contrary to the approved staff boundary. Cashier defaults are POS and Customers; POS catalog omits cost, but `can_view_cost()` also denies Cashiers with `products`, so the approved Products-only cost exception is not implemented. Client page checks are UX controls; database/RPC/Edge Function checks remain authoritative.
+
+Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_entries, medicine_units, medicines, sale_payments, sales, stock_movements, and supplier_ledger; authenticated also has SELECT/UPDATE/USAGE on medicine_barcode_seq. Profiles and suppliers retain REFERENCES/TRIGGER/MAINTAIN alongside SELECT. Direct per-user CRUD on user_favorites and user_sidebar_preferences is protected by own-row RLS. Sixteen current routines expose EXECUTE to anon and/or PUBLIC. Future-object defaults expose postgres-owned functions to anon/authenticated and sequences to authenticated; supabase_admin defaults expose tables, sequences, and functions to anon/authenticated. The five cost-bearing base tables have no anon/authenticated ACL listed in Q6. ACL lockdown files now match the six-argument save_supplier signature and exact rollback grants; table ACL migration also removes excess MAINTAIN and barcode-sequence grants. Supplier activation and demo cleanup no longer fall back to direct table writes. `npm run lint`, `npm run build`, and `git diff --check` pass; SQL has not been runtime-tested or applied.
 
 ## Business rules
 
@@ -86,25 +90,19 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 - Date: 2026-10-13 — Stock alerts are server-counted, visible to every active signed-in profile, and never include cost-bearing fields. Navigation is permission-gated in the header; seen alert keys are per-user and browser-local. Owner reports the `stock_alerts_summary(integer)` RPC metadata is verified: `SECURITY DEFINER`, `search_path=public`, anon execute false, authenticated execute true.
 - Date: 2026-10-13 — Owner reports the corrected `20261013160000_persist_sales_and_returns.sql` migration applied. Owner-shared metadata query verified `SECURITY DEFINER`, `search_path=public`, `anon EXECUTE=false`, and `authenticated EXECUTE=true` for its 13 RPCs and `pos_catalog()`. End-to-end behavior remains unverified. Return totals are capped cumulatively at the sold quantity; multiple partial-return transactions remain possible.
 - Date: 2026-10-29 — Part B pack-pricing files are draft-only. Do not enforce global unit-barcode uniqueness until live shop scoping is verified; rollback must not automatically delete migration-created fallback units. Do not begin Part A before the owner confirms Part B is tested.
-- Date: 2026-10-12 — Cost access is role-and-permission scoped by `can_view_cost()`; Cashier is always denied, Accountants are read-only, and Manager access requires a relevant module permission. Verify the deployed function and table grants in Supabase.
+- Date: 2026-10-12 — Historical cost-access rule: Cashier was always denied, Accountants were read-only, and Manager access required a relevant module permission. The 2026-11-07 approved Products-only Cashier exception is a target decision; current `can_view_cost()` still denies Cashiers.
 - Date: 2026-10-09 — Pharmacy Memo uses a shared sanitized renderer for 58mm/80mm and A4; template and paper preferences remain browser-local because shared settings storage is not implemented.
 
 ## Current status
 
-- **2026-11-07 — Owner waived staging:** S1 current-only metadata queries, isolated SQL snapshot, guarded data restore, rollback, and smoke-test files are prepared under `supabase/fresh/`. Static review adjusted partition copying; the catalog archive is selected metadata, not a full catalog/schema restore. SQL remains untested and unrun; wait for owner results before S2. No live database was accessed.
-- **2026-11-07 — S1 owner guidance provided:** Supplied the exact read-only Q1 query and step-by-step SQL Editor instructions; waiting for its two access booleans before advising further. No database or deployment actions were taken.
-- **2026-11-07 — Reviewed owner attachment:** The submitted SQL output is labeled `type_and_aggregate_inventory` (Q11), not the Q1 role check; awaiting the actual Q1 booleans. No database access was performed.
-- **2026-11-07 — Git guidance:** Clarified Git install versus GitHub account/authentication, the local commit author identity, and the HTTPS push sign-in flow. The LF/CRLF warning on Windows is harmless.
-- **2026-11-07 — Publish status:** Commits `0d4227a` and `551c954` are present on `origin/feature/team-view-manage-users`; test suite and production build passed before publication. Owner requests these changes be added to `main`.
-- **2026-11-07 — Multi-tenant plan reviewed:** Read the local-only `.private/multi-tenant-plan.md` against the user's confirmed rules. The target model is documented under Roles and permissions below; no tenant schema, RLS, RPC, or UI implementation was made.
-- **2026-11-06 — Visual design reference retained:** Created `docs/DESIGN_REFERENCE.md` as a plain-English visual-only description of the current application, based on the theme stylesheet and UI component structure. The document was scanned for URLs, credential terms, environment names/values, and personal paths/names; the scan passed with no hits. The file remains in the workspace; no commit or push was made.
-- **2026-11-06 — Customer display refined:** Uses the same saved shop logo as POS (static Pharma Care mark fallback); removed the manual cashier Show options button and global header controls. Personal theme/text-size/motion and similar-medicine options are in Settings for all signed-in roles, now as a compact preferences group; non-admins see personal preferences only. Customer bill has Medicine, Qty, Batch, Expiry, and Amount columns; batch/expiry use current FEFO allocations, with no remaining stock/cost/supplier fields. Bill rows compact to three readable densities; fixed-viewport display auto-rotates long bills in timed pages including payment stage. Up to three in-stock generic/strength options appear only when that user's setting is enabled; customer choice sends only a bounded index back to POS. Full registered tests, TypeScript, and build pass; authenticated visual/hardware testing is unverified. Dosage form is not in the POS catalog and is not matched.
-- **2026-11-05 — Checkout verified for this task:** `git rev-parse --show-toplevel` returned `D:/PHARMA CARE WEBSITE`, branch is `feature/team-view-manage-users`, and `E:\PHARMCYYYY1` does not exist on this machine. Work was made only in the available D: checkout; prior E: changes could not be inspected.
-- **2026-11-05 — Same-computer customer display Part A extensions implemented locally:** Added payment-stage paid/bill-balance/change values (credit displays only this sale's due), a welcome and thank-you view, and a cashier-driven `Also available` options screen with one-tap cart replacement. Options match generic and strength, require enough sellable stock, sort by displayed price, and cap at seven. Channel messages project presentation fields only; no cost, margin, supplier, batch, exact stock, phone, or history fields are transmitted. Seven focused tests, the full 134-test suite, TypeScript check, and production build pass. Dosage form is not in the current POS catalog and is not matched. Local UI behavior still requires manual browser testing.
-- **2026-11-04 — Manage Users function deployed:** The owner-run Supabase CLI output confirms `manage-users` deployed to production project `itdetfyxrwixhxsfydfz`, matching the ref extracted from `VITE_SUPABASE_URL`. The deployment command exited 0 and uploaded `index.ts` plus `policy.ts`; Docker was not running, but deployment succeeded. Refresh/retest the Users page; runtime behavior is not yet confirmed.
-- **2026-10-29 PDF audit / Part B draft (approval scoped):** Five draft-only files now exist under `supabase/fresh/features/`: migration, rollback, six one-cell read-only preflight queries, regression-test harness, and SQL Editor README. A static review removed an immediate unique index that could conflict with the current `save_medicine()` unit-update order. Risks/assumptions are documented in the README. No application source changed; no SQL was run or deployed. Live schema, grants/RLS, RPCs, and shop scope remain **ASSUMED: verify**. POS filtering, dosage/base-label RPC persistence, and multi-pack CSV remain unfinished; original Part A remains blocked until Part B is tested and owner-approved.
-- **2026-10-29 PDF 4 audit and approved cleanup:** Production serves hashed JS assets without source maps; the main `.map` URL returns 404. `HelpSupportView` now imports only `version` from `package.json`. Rebuild produced 43 JS bundles, zero source maps/markers, and zero test-file path strings; the Help chunk contains the package version and `Version` label once each. `npm run lint` passed. No deployment or Vercel settings were changed. The app reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; owner reports the current Vercel variable list has no `VITE_` names. No committed `.env`/`.env.production` or hardcoded app fallback was found; `.env.example` is the only tracked env file in current/history. The live bundle contains one Supabase URL and one JWT-shaped public-client literal, already compiled into the deployed artifact. The current Vercel names supplied by the owner do not match Vite's variable names; verify build-time values before the next deployment. `SUPABASE_SERVICE_ROLE_KEY` is read by the Supabase Edge Function and local seed script, not the Vercel frontend build. Git history contains `supabase/.temp/pooler-url` with a Postgres URL lacking an embedded password; no values are recorded. No known credential-shaped literal was found in the repository/history scan.
-- **Current checkout:** branch `feature/team-view-manage-users`, based on `1ef1d68`; changes stay on this branch. Task 1 policy tests pass 18/18; authenticated behavior unverified. Same-computer customer display now includes cart, payment, alternatives, welcome, and thank-you states in source; `customer_display` login role and separate-device transport remain unbuilt. PDF 4's named-version cleanup is local only; no deploy. Production Vercel variables are saved; Preview variables were skipped because no test Supabase project is available. PDF 2 Track A A0 read-only SQL Editor queries were provided and await owner results; no SQL file was created or run. Track B stays off. Pack-size and Team SQL remain drafts; no SQL, push, merge, or deploy.
+- **2026-11-07 — Owner waived staging / S1 passed:** Owner reports the isolated SQL snapshot smoke test passed with all 26 table counts matching. It is not a full database backup. Initial role, schema, ACL, and permission review identified tenant-boundary work for the S1-S6 rollout.
+- **2026-11-07 — A2 default-privilege gate:** Added a read-only preflight covering global and `public` defaults for `postgres` and `supabase_admin`, plus `supabase_admin` membership. The earlier Q6 output only covered `public`; optional A2 changes and rollbacks must wait until the owner returns the preflight and the matching rollback is confirmed. The `supabase_admin` rollback now checks role membership before executing.
+- **2026-11-08 — A1 owner-reported applied and smoke checked:** Owner confirms A1 was run in the intended Supabase project, final verification returned zero rows, and reports the app is working properly afterward. No table-privilege reconciliation or tenant schema/RLS changes are confirmed; no tenancy or role-boundary changes are implemented yet.
+- **2026-11-08 — S2 workflow:** Owner prefers one copy/paste read-only verification query returning one result cell per stage where practical; keep migrations and rollbacks separate.
+- **2026-11-08 — S2 live reality-check stop:** Owner-provided result shows zero remaining anon/PUBLIC function EXECUTE and no literal-true policies, but authenticated still has direct business-table writes/extra privileges and barcode-sequence SELECT/UPDATE/USAGE. The expected `restore_trash_medicine(uuid)` RPC is absent from the live catalog while present in the checked-in migration. Stop before ACL changes and reconcile this live/deployed-function mismatch. `customers.store_credit_paisa` is a false positive from the broad shop/tenant/store column-name detector, not a tenancy column.
+- **2026-11-09 — S2 live catalog/Trash Bin mismatch:** Owner reports no migration ledger; Trash Bin table, indexes, and triggers exist, but `restore_trash_medicine(uuid)` is absent. Do not rerun `20261012170000_trash_bin_history.sql` wholesale; repair the RPC separately.
+- **2026-11-09 — S2 ACL completed by owner report:** Added the table/sequence ACL package under `supabase/fresh/trackA/003_*`. Owner reports dry-run and permanent checks passed (`all_passed: true`) and website works without errors. A2 defaults remain optional/unapplied; test-data cleanup and a fresh snapshot remain pending. No owner-run forward migration, rollback, or verification pack for S3–S6 exists yet; do not use legacy migrations as substitutes.
+- **2026-11-07 — Prior work summary:** Customer-display/payment/alternative flows, user-management changes, S1 inventory and recovery package, and SPA/PWA work were previously delivered on the repository's mainline. Details and their verification remain in the corresponding feature files and history.
 - **2026-11-03 — Prepared Track A hardening package:** Added `supabase/fresh/trackA/001_revoke_anon_public_execute.sql`, the companion rollback/test files, the optional `002_default_privileges.sql` pair, `SMOKE_TEST.md`, and `README_trackA.md`. No SQL was run or deployed; the branch remains `feature/team-view-manage-users`.
 - **Added; migration owner-reported applied and RPC ACL checked:** Header Stock Alert Bell, accessible alert panel, per-user unseen indicators, permission-aware Products/Stock Inventory navigation, and stock-change refresh events. `stock_alerts_summary(integer)` and its rollback are in `supabase/migrations/20261013140000_stock_alerts_summary.sql` and `supabase/rollback/rollback_20261013140000_stock_alerts_summary.sql`; alert counts/data and UI behavior still need runtime testing.
 - **Verified in history:** The low-stock alert feature is committed as `da7ed5d` on `feature/low-stock-alerts`; it is present in that commit, not missing from the repository history.
@@ -132,6 +130,7 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 ## Known issues and Later
 
 - Owner-approved multi-shop decisions and the detailed plan are in `docs/MULTI_SHOP_FULL_PLAN.md` and `docs/MASTER_PLAN.md`. No tenancy implementation or database changes have been made. Private notes require reviewed server/database support, not browser-local storage. S1 results are required before S2; each later owner-run stage has a stop gate.
+- Optional A2 default-privilege changes remain unapplied. The Q6 inventory omits global default ACLs; do not apply A2 or run either rollback until `supabase/fresh/trackA/002_default_privilege_preflight.sql` has been run by the owner and the rollback has been matched to its output.
 - Current code conflicts with the target: Admin/Super Admin defaults grant every module, Admin can grant all permission keys, and staff with `manage_users` may manage lower-role accounts. Shop-profile fields remain browser-local; no shop schema exists. Explicit page grants, role boundaries, and server-backed shop identity are still plan-only. Implement after S1 review and ACL reconciliation.
 - DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
@@ -168,19 +167,11 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 
 ## Changelog
 
-- 2026-11-07 — Prepared owner-run S1 current-only inventory, `backup_20261107` data/selected-definition/ACL/sequence snapshot, guarded data restore, snapshot cleanup, and row-count smoke test. Added the owner's no-staging rollout and Developer Shop/account-boundary decisions to the multi-shop plans. Static review only; no database or deployment actions.
-- 2026-11-07 — Committed the staged customer-display, preferences, documentation, and S1/Track A preparation as `0d4227a`, plus context updates as `551c954`; both are on `origin/feature/team-view-manage-users`. Test suite and production build passed; owner now requests fast-forwarding these changes into `main`.
-- 2026-11-07 — Reviewed `.private/multi-tenant-plan.md` against the user's confirmed tenant rules and recorded the target model and implementation status in Roles and permissions. No application, database, or plan-file changes.
-- 2026-11-06 — Created and retained `docs/DESIGN_REFERENCE.md`, a plain-English visual reference covering the shared themes, workspace shell, responsive patterns, and screen-specific visual layouts. Exclusion scan found no URLs, credential terms, environment names/values, or personal paths/names. No commit or push.
-- 2026-11-06 — Removed the cashier manual Show/Hide options panel; alternatives now appear only through the customer Settings preference. Moved theme/text-size/motion and similar-medicine controls to the all-role Settings route as compact segmented controls/toggle rows; shop/business settings remain admin-only. Removed those controls and the auth-status badge from global headers. Added customer display Qty/Batch/Expiry/Amount columns, using only sale FEFO allocations and allowlisted fields. Updated all-role Settings tests. Full tests, TypeScript and build pass. No SQL, deployment, merge or push.
-- 2026-11-05 — Confirmed task checkout root `D:/PHARMA CARE WEBSITE` and branch `feature/team-view-manage-users`; prior `E:\PHARMCYYYY1` checkout is absent on this machine. No work was performed outside the available checkout.
-- 2026-11-05 — Extended the same-computer customer display locally with payment summary, welcome/thank-you states, safe same-generic/strength in-stock alternatives, cashier line swap/hide controls, and an exact channel payload allowlist. Focused tests (7), full suite (134), TypeScript check, and production build passed. Dosage form is absent from the current POS catalog and therefore not matched. No role, SQL, database, deployment, merge, or push changes.
-- 2026-11-04 — Owner deployed `manage-users` to the configured production Supabase project (`itdetfyxrwixhxsfydfz`). CLI output confirmed successful upload of the function entrypoint and policy module; Docker warning was non-blocking. Waiting for UI refresh/runtime verification.
-- 2026-11-03 — Diagnosed the Manage Users API-version warning, added Supabase CLI, and documented PATH limitations; direct executable paths worked. No database or deployment action was taken.
-- 2026-11-03 — Prepared the Track A SQL hardening package under `supabase/fresh/trackA/` with the 001 lock-down, rollback, test, optional 002 default-privilege files, smoke checklist, and run order README. No SQL was run or deployed; branch remains `feature/team-view-manage-users`.
-- 2026-10-29/11-01 — Audited supplied PDFs and drafted Part B SQL Editor preflight/README; completed Task 1 Admin team/access controls and the approved same-device customer display. Tests/build pass; Team policy 18/18; authenticated UI and live display sync unverified. PDF 4 has no production source maps; approved named-version cleanup removes local test-file paths. Production Vercel variables were saved by owner; Preview variables skipped due no test Supabase project. PDF 2 Track A A0 read-only queries provided; awaiting owner results before creating any SQL files. No SQL run, merge, push, or deployment. PDF 1 Part A's four requested additions remain unbuilt; Track B remains off.
-- 2026-10-21/23 — Recorded owner-supplied read-only DB inventory and DBCode connection guidance; no SQL migration or DBCode query was run. Exact earlier counts and setup details are historical and must not be treated as current.
-- 2026-10-10/19 — Earlier work covered POS/barcode features, alerts/returns, Admin team controls, UI redesigns, performance, ACL proposals, and project-context tooling. Tests and live/deployment status are documented in the relevant plans and current source; historical staging gates have been superseded by S1-S6.
+- 2026-11-10 — Removed the sidebar developer credit, centered the existing page title without changing its size, fixed walk-in customer name entry, added a bottom-right install prompt with persistent dismissal, and improved shop-name/Pharmacy Memo settings validation and save feedback. Completed the Trash Bin redesign with search. Focused and full tests, TypeScript, and production build pass; authenticated visual verification was unavailable, and install availability remains browser-dependent.
+- 2026-11-07–09 — Completed the owner-run S1 snapshot, A1 function ACL, and S2 table/sequence ACL gates by owner report. S2 tests and app smoke passed. The owner prefers one-cell read-only checks. Remaining: S2 cleanup/snapshot refresh, optional A2, separate missing Trash Bin RPC repair, then S3+ tenant work.
+- 2026-11-06 — Updated the all-role Settings controls and same-device customer display; tests, TypeScript, and build passed. Added the design reference.
+- 2026-11-03–05 — Prepared Track A hardening and deployed Manage Users function (owner-reported); see runbooks and recent Git history for details.
+- 2026-10-10–11-01 — Earlier work covered barcode/returns, Admin team controls, UI redesigns, performance, and POS/customer display; historical status is in the relevant plans and Git history.
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
 
@@ -198,15 +189,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T12:27:46.763Z
+Generated at (UTC): 2026-11-10T14:47:28.443Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- Update published branch status
 - Document GitHub push authentication status
 - Prepare customer display and multi-tenant rollout
 - coustmer role
 - nothing
-- idk
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -228,6 +219,9 @@ npm scripts:
 - - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
 - - `test:print-request-editor`: `tsx --test src/utils/printRequestEditor.test.ts`
 - - `test:trash-bin`: `tsx --test src/utils/trashBin.test.ts`
+- - `test:store-settings`: `tsx --test src/utils/storeSettings.test.ts`
+- - `test:install-prompt`: `tsx --test src/utils/installPrompt.test.ts`
+- - `test:pos-customer`: `tsx --test src/utils/posCustomer.test.ts`
 - - `test:report`: `tsx --test src/utils/salesReport.test.ts`
 - - `test:discount`: `tsx --test src/utils/discount.test.ts`
 - - `test:barcode-scanner`: `tsx --test src/utils/useBarcodeScanner.test.ts`
@@ -236,7 +230,7 @@ npm scripts:
 - - `test:sidebar`: `tsx --test src/components/sidebarPinLogic.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
 - - `test:customer-display`: `tsx --test src/utils/customerDisplay.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:install-prompt && npm run test:pos-customer && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -279,6 +273,7 @@ src/
     src/components/GlowCredit.css
     src/components/GlowCredit.tsx
     src/components/HelpSupportView.tsx
+    src/components/InstallAppPrompt.tsx
     src/components/inventory/
     src/components/InventoryScreen.tsx
     src/components/labels/
@@ -345,8 +340,12 @@ src/
     src/utils/fefo.test.ts
     src/utils/fefo.ts
     src/utils/fetchAllSupabaseRows.ts
+    src/utils/installPrompt.test.ts
+    src/utils/installPrompt.ts
     src/utils/labelUtils.test.ts
     src/utils/labelUtils.ts
+    src/utils/posCustomer.test.ts
+    src/utils/posCustomer.ts
     src/utils/printRequestEditor.test.ts
     src/utils/printRequestEditor.ts
     src/utils/printRequestTypes.ts
@@ -359,6 +358,7 @@ src/
     src/utils/salesReport.ts
     src/utils/stockAlertsEvents.ts
     src/utils/storageMigration.ts
+    src/utils/storeSettings.test.ts
     src/utils/storeSettings.ts
     src/utils/supabase.ts
     src/utils/supabaseError.test.ts
@@ -384,11 +384,14 @@ Test files:
 - src/utils/customerDisplay.test.ts
 - src/utils/discount.test.ts
 - src/utils/fefo.test.ts
+- src/utils/installPrompt.test.ts
 - src/utils/labelUtils.test.ts
+- src/utils/posCustomer.test.ts
 - src/utils/printRequestEditor.test.ts
 - src/utils/printSnapshot.test.ts
 - src/utils/receipt.test.ts
 - src/utils/salesReport.test.ts
+- src/utils/storeSettings.test.ts
 - src/utils/supabaseError.test.ts
 - src/utils/trashBin.test.ts
 - src/utils/useBarcodeScanner.test.ts

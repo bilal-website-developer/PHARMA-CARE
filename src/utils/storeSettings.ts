@@ -80,20 +80,27 @@ export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): Ph
   }
 }
 
+export function getPharmacyMemoSettingsValidationMessage(
+  settings: PharmacyMemoSettings,
+): string | null {
+  if (!settings.storeName.trim()) return 'Enter a shop name before saving memo settings.';
+  if (!settings.terminalName.trim()) return 'Enter a terminal name before saving memo settings.';
+  const emptyNoteIndex = settings.notes.findIndex((note) => !note.trim());
+  if (emptyNoteIndex >= 0) return `Enter text for memo note ${emptyNoteIndex + 1}, or restore its default text.`;
+  if (!['none', '1', '5', '10'].includes(settings.roundNet)) return 'Choose a valid net-rounding option.';
+  if (!Number.isInteger(settings.numberDigits) || settings.numberDigits < 1 || settings.numberDigits > 20) {
+    return 'Memo number digits must be a whole number from 1 to 20.';
+  }
+  return null;
+}
+
 export function savePharmacyMemoSettings(settings: PharmacyMemoSettings): boolean {
-  if (!settings.storeName.trim() || !settings.terminalName.trim()
-    || settings.notes.some((note) => !note.trim())
-    || !['none', '1', '5', '10'].includes(settings.roundNet)
-    || !Number.isInteger(settings.numberDigits)
-    || settings.numberDigits < 1
-    || settings.numberDigits > 20) return false;
+  if (getPharmacyMemoSettingsValidationMessage(settings)) return false;
   try {
     const storage = globalThis.localStorage;
     if (!storage) return false;
     storage.setItem(PHARMACY_MEMO_SETTINGS_KEY, JSON.stringify(settings));
-    if (settings.logoUrl !== undefined) {
-      saveShopLogo(settings.logoUrl);
-    }
+    if (settings.logoUrl !== undefined && !saveShopLogo(settings.logoUrl)) return false;
     return true;
   } catch {
     return false;
@@ -212,4 +219,3 @@ export function saveAdminShopProfile(adminId: string, profile: AdminShopProfile)
     return false;
   }
 }
-

@@ -433,59 +433,66 @@ BEGIN
   JOIN pg_catalog.pg_roles AS r ON r.oid = e.extowner;
 
   INSERT INTO backup_20261107._object_definitions (object_type, object_name, definition)
+  SELECT 'aggregate_metadata',
+         p.oid::regprocedure::text,
+         pg_catalog.jsonb_build_object(
+          'catalog_row', pg_catalog.to_jsonb(a),
+          'owner', pg_catalog.pg_get_userbyid(p.proowner),
+          'identity_arguments', pg_catalog.pg_get_function_identity_arguments(p.oid),
+          'result_type', pg_catalog.format_type(p.prorettype, NULL),
+          'transition_function', a.aggtransfn::regprocedure::text,
+          'final_function', CASE WHEN a.aggfinalfn = 0 THEN NULL ELSE a.aggfinalfn::regprocedure::text END,
+          'combine_function', CASE WHEN a.aggcombinefn = 0 THEN NULL ELSE a.aggcombinefn::regprocedure::text END,
+          'serialize_function', CASE WHEN a.aggserialfn = 0 THEN NULL ELSE a.aggserialfn::regprocedure::text END,
+          'deserialize_function', CASE WHEN a.aggdeserialfn = 0 THEN NULL ELSE a.aggdeserialfn::regprocedure::text END,
+          'state_type', pg_catalog.format_type(a.aggtranstype, NULL),
+          'moving_transition_function', CASE WHEN a.aggmtransfn = 0 THEN NULL ELSE a.aggmtransfn::regprocedure::text END,
+          'moving_inverse_function', CASE WHEN a.aggminvtransfn = 0 THEN NULL ELSE a.aggminvtransfn::regprocedure::text END,
+          'moving_final_function', CASE WHEN a.aggmfinalfn = 0 THEN NULL ELSE a.aggmfinalfn::regprocedure::text END,
+          'moving_state_type', CASE WHEN a.aggmtranstype = 0 THEN NULL ELSE pg_catalog.format_type(a.aggmtranstype, NULL) END,
+          'sort_operator', CASE WHEN a.aggsortop = 0 THEN NULL ELSE a.aggsortop::regoperator::text END
+         )::text
+  FROM pg_catalog.pg_proc AS p
+  JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+  JOIN pg_catalog.pg_aggregate AS a ON a.aggfnoid = p.oid
+  WHERE n.nspname = 'public';
+
+  INSERT INTO backup_20261107._object_definitions (object_type, object_name, definition)
   SELECT 'table_definition_summary',
          'public',
          pg_catalog.jsonb_build_object(
-           'top_level_tables', (
-             SELECT count(*)
-             FROM pg_catalog.pg_class AS c
-             JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
-             WHERE n.nspname = 'public'
-               AND c.relkind IN ('r', 'p')
-               AND NOT c.relispartition
-           ),
-           'functions_and_procedures', (
-             SELECT count(*)
-             FROM pg_catalog.pg_proc AS p
-             JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-             WHERE n.nspname = 'public'
-               AND p.prokind IN ('f', 'p', 'w')
-
-             INSERT INTO backup_20261107._object_definitions (object_type, object_name, definition)
-             SELECT 'aggregate_metadata',
-                    p.oid::regprocedure::text,
-                    pg_catalog.jsonb_build_object(
-                      'catalog_row', pg_catalog.to_jsonb(a),
-                      'owner', pg_catalog.pg_get_userbyid(p.proowner),
-                      'identity_arguments', pg_catalog.pg_get_function_identity_arguments(p.oid),
-                      'result_type', pg_catalog.format_type(p.prorettype, NULL),
-                      'transition_function', a.aggtransfn::regprocedure::text,
-                      'final_function', CASE WHEN a.aggfinalfn = 0 THEN NULL ELSE a.aggfinalfn::regprocedure::text END,
-                      'combine_function', CASE WHEN a.aggcombinefn = 0 THEN NULL ELSE a.aggcombinefn::regprocedure::text END,
-                      'serialize_function', CASE WHEN a.aggserialfn = 0 THEN NULL ELSE a.aggserialfn::regprocedure::text END,
-                      'deserialize_function', CASE WHEN a.aggdeserialfn = 0 THEN NULL ELSE a.aggdeserialfn::regprocedure::text END,
-                      'state_type', pg_catalog.format_type(a.aggtranstype, NULL),
-                      'moving_transition_function', CASE WHEN a.aggmtransfn = 0 THEN NULL ELSE a.aggmtransfn::regprocedure::text END,
-                      'moving_inverse_function', CASE WHEN a.aggminvtransfn = 0 THEN NULL ELSE a.aggminvtransfn::regprocedure::text END,
-                      'moving_final_function', CASE WHEN a.aggmfinalfn = 0 THEN NULL ELSE a.aggmfinalfn::regprocedure::text END,
-                      'moving_state_type', CASE WHEN a.aggmtranstype = 0 THEN NULL ELSE pg_catalog.format_type(a.aggmtranstype, NULL) END,
-                      'sort_operator', CASE WHEN a.aggsortop = 0 THEN NULL ELSE a.aggsortop::regoperator::text END
-                    )::text
-             FROM pg_catalog.pg_proc AS p
-             JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-             JOIN pg_catalog.pg_aggregate AS a ON a.aggfnoid = p.oid
-             WHERE n.nspname = 'public';
-           ),
-           'policies', (SELECT count(*) FROM pg_catalog.pg_policies WHERE schemaname = 'public'),
-           'triggers', (
-             SELECT count(*)
-             FROM pg_catalog.pg_trigger AS tr
-             JOIN pg_catalog.pg_class AS t ON t.oid = tr.tgrelid
-             JOIN pg_catalog.pg_namespace AS n ON n.oid = t.relnamespace
-             WHERE n.nspname = 'public'
-               AND NOT tr.tgisinternal
-           ),
-           'sequences', (SELECT count(*) FROM backup_20261107._sequence_snapshots)
+          'top_level_tables', (
+            SELECT count(*)
+            FROM pg_catalog.pg_class AS c
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind IN ('r', 'p')
+              AND NOT c.relispartition
+          ),
+          'functions_and_procedures', (
+            SELECT count(*)
+            FROM pg_catalog.pg_proc AS p
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.prokind IN ('f', 'p', 'w')
+          ),
+          'aggregates', (
+            SELECT count(*)
+            FROM pg_catalog.pg_proc AS p
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+            JOIN pg_catalog.pg_aggregate AS a ON a.aggfnoid = p.oid
+            WHERE n.nspname = 'public'
+          ),
+          'policies', (SELECT count(*) FROM pg_catalog.pg_policies WHERE schemaname = 'public'),
+          'triggers', (
+            SELECT count(*)
+            FROM pg_catalog.pg_trigger AS tr
+            JOIN pg_catalog.pg_class AS t ON t.oid = tr.tgrelid
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public'
+              AND NOT tr.tgisinternal
+          ),
+          'sequences', (SELECT count(*) FROM backup_20261107._sequence_snapshots)
          )::text;
 
   FOR role_acl IN

@@ -903,49 +903,37 @@ export async function removeDemoData(): Promise<{ success: boolean; deletedCount
     let deletedCount = 0;
 
     if (supabase) {
-      // 1. Find demo medicine IDs in DB
-      try {
-        const { data: demoMeds } = await supabase
-          .from('medicines')
-          .select('id')
-          .like('code', 'DEMO-%');
+      const { data: demoMeds, error: medsError } = await supabase
+        .from('medicines')
+        .select('id')
+        .like('code', 'DEMO-%');
+      if (medsError) throw new Error(medsError.message);
 
-        if (demoMeds && demoMeds.length > 0) {
-          const ids = demoMeds.map((m) => m.id);
-
-          // Use the authorized SECURITY DEFINER RPC products_bulk_update to deactivate demo medicines
-          const { error: bulkErr } = await supabase.rpc('products_bulk_update', {
-            ids,
-            action: 'deactivate',
-            value: '',
-          });
-
-          if (!bulkErr) {
-            deletedCount = ids.length;
-          } else {
-            // Fallback attempt direct delete if table permissions permit
-            const { error: delErr } = await supabase.from('medicines').delete().in('id', ids);
-            if (!delErr) deletedCount = ids.length;
-          }
-        }
-      } catch (medErr) {
-        console.warn('Demo medicine deactivation warning:', medErr);
+      if (demoMeds?.length) {
+        const ids = demoMeds.map((medicine) => medicine.id);
+        const { error: bulkError } = await supabase.rpc('products_bulk_update', {
+          ids,
+          action: 'deactivate',
+          value: '',
+        });
+        if (bulkError) throw new Error(bulkError.message);
+        deletedCount = ids.length;
       }
 
-      // 2. Deactivate demo supplier
-      try {
-        const { data: sups } = await supabase
-          .from('suppliers')
-          .select('id, is_active')
-          .eq('name', DEMO_SUPPLIER.name)
-          .eq('is_active', true)
-          .limit(1);
+      const { data: suppliers, error: suppliersError } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('name', DEMO_SUPPLIER.name)
+        .eq('is_active', true)
+        .limit(1);
+      if (suppliersError) throw new Error(suppliersError.message);
 
-        if (sups && sups.length > 0) {
-          await supabase.rpc('deactivate_supplier', { p_supplier_id: sups[0].id });
-        }
-      } catch (supErr) {
-        console.warn('Demo supplier deactivation warning:', supErr);
+      const demoSupplier = suppliers?.[0];
+      if (demoSupplier) {
+        const { error: deactivateError } = await supabase.rpc('deactivate_supplier', {
+          p_supplier_id: demoSupplier.id,
+        });
+        if (deactivateError) throw new Error(deactivateError.message);
       }
     }
 
