@@ -167,6 +167,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 
 ## Changelog
 
+- 2026-11-10 — Customer display channel IDs are now persisted per signed-in user in browser storage, so reopening POS or refreshing retains that user’s link; other user IDs get separate links. Live display communication remains same-browser only via `BroadcastChannel`. Customer-display regression test and TypeScript check pass.
 - 2026-11-10 — Removed the sidebar developer credit, centered the existing page title without changing its size, fixed walk-in customer name entry, added a bottom-right install prompt with persistent dismissal, and improved shop-name/Pharmacy Memo settings validation and save feedback. Completed the Trash Bin redesign with search. Focused and full tests, TypeScript, and production build pass; authenticated visual verification was unavailable, and install availability remains browser-dependent.
 - 2026-11-07–09 — Completed the owner-run S1 snapshot, A1 function ACL, and S2 table/sequence ACL gates by owner report. S2 tests and app smoke passed. The owner prefers one-cell read-only checks. Remaining: S2 cleanup/snapshot refresh, optional A2, separate missing Trash Bin RPC repair, then S3+ tenant work.
 - 2026-11-06 — Updated the all-role Settings controls and same-device customer display; tests, TypeScript, and build passed. Added the design reference.
@@ -189,15 +190,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-10T14:47:28.443Z
+Generated at (UTC): 2026-11-10T15:15:38.214Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- Complete POS settings and access-control updates
 - Update published branch status
 - Document GitHub push authentication status
 - Prepare customer display and multi-tenant rollout
 - coustmer role
-- nothing
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

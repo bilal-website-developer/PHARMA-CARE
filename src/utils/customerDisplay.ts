@@ -57,6 +57,7 @@ const MAX_DISPLAY_LINES = 100;
 const MAX_DISPLAY_OPTIONS = 3;
 const MAX_DISPLAY_LABEL_LENGTH = 120;
 const CHANNEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DISPLAY_CHANNEL_KEY_PREFIX = 'pharma-care.customer-display.channel.';
 const DISPLAY_ALTERNATIVES_EVENT = 'pharma-care:customer-display-alternatives-changed';
 const PAYMENT_METHODS = new Set<CustomerDisplayPaymentMethod>(['CASH', 'ONLINE', 'CREDIT', 'SPLIT']);
 const DISPLAY_STAGES = new Set<CustomerDisplayStage>(['welcome', 'order', 'payment']);
@@ -139,6 +140,33 @@ export function createCustomerDisplayChannelId(): string {
     throw new Error('This browser cannot create a secure customer display session.');
   }
   return globalThis.crypto.randomUUID();
+}
+
+export function getCustomerDisplayChannelId(userId: string): string {
+  if (!userId) {
+    throw new Error('Sign in before opening the customer display.');
+  }
+  const storageKey = `${DISPLAY_CHANNEL_KEY_PREFIX}${userId}`;
+  let storage: Storage | undefined;
+  let savedId: string | null;
+  try {
+    storage = globalThis.localStorage;
+    savedId = storage?.getItem(storageKey) ?? null;
+  } catch {
+    throw new Error('Browser storage is unavailable; the customer display link could not be loaded.');
+  }
+  if (isCustomerDisplayChannelId(savedId)) return savedId;
+  if (!storage) {
+    throw new Error('Browser storage is unavailable; the customer display link could not be saved.');
+  }
+
+  const channelId = createCustomerDisplayChannelId();
+  try {
+    storage.setItem(storageKey, channelId);
+  } catch {
+    throw new Error('Browser storage is unavailable; the customer display link could not be saved.');
+  }
+  return channelId;
 }
 
 export function isCustomerDisplayChannelId(value: string | null): value is string {

@@ -51,7 +51,7 @@ import {
   buildCustomerDisplaySnapshot,
   buildSameMedicineOptions,
   canAccessCustomerDisplay,
-  createCustomerDisplayChannelId,
+  getCustomerDisplayChannelId,
   parseCustomerDisplayMessage,
   readCustomerDisplayAlternatives,
   subscribeCustomerDisplayAlternatives,
@@ -107,7 +107,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [walkInName, setWalkInName] = useState('');
-  const [displayChannelId, setDisplayChannelId] = useState<string | null>(null);
+  const [displayChannel, setDisplayChannel] = useState<{ userId: string; id: string } | null>(null);
   const [displayNotice, setDisplayNotice] = useState('');
   const [displayThankYou, setDisplayThankYou] = useState(false);
   const [showDisplayAlternatives, setShowDisplayAlternatives] = useState(() =>
@@ -304,7 +304,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [customerDisplayMessage]);
 
   useEffect(() => {
-    if (!displayChannelId || !canAccessCustomerDisplay(currentRole, permissions)) return;
+    if (
+      !displayChannel
+      || displayChannel.userId !== currentUserId
+      || !canAccessCustomerDisplay(currentRole, permissions)
+    ) return;
     if (typeof BroadcastChannel === 'undefined') {
       setDisplayNotice('This browser does not support a live customer display.');
       return;
@@ -312,9 +316,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
     let channel: BroadcastChannel;
     try {
-      channel = new BroadcastChannel(`pharma-care.customer-display.${displayChannelId}`);
+      channel = new BroadcastChannel(`pharma-care.customer-display.${displayChannel.id}`);
     } catch (error) {
-      setDisplayChannelId(null);
       setDisplayNotice(error instanceof Error ? error.message : 'Could not start the customer display.');
       return;
     }
@@ -335,7 +338,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       channel.close();
       if (displayChannelRef.current === channel) displayChannelRef.current = null;
     };
-  }, [displayChannelId, currentRole, permissions]);
+  }, [displayChannel, currentUserId, currentRole, permissions]);
 
   useEffect(() => {
     displayChannelRef.current?.postMessage(customerDisplayMessage);
@@ -832,16 +835,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       setDisplayNotice('POS access is required to open the customer display.');
       return;
     }
-    let channelId = displayChannelId;
-    if (!channelId) {
-      try {
-        channelId = createCustomerDisplayChannelId();
-      } catch (error) {
-        setDisplayNotice(error instanceof Error ? error.message : 'Could not create a customer display session.');
-        return;
-      }
-      setDisplayChannelId(channelId);
+    let channelId: string;
+    try {
+      channelId = getCustomerDisplayChannelId(currentUserId);
+    } catch (error) {
+      setDisplayNotice(error instanceof Error ? error.message : 'Could not load the customer display link.');
+      return;
     }
+    setDisplayChannel({ userId: currentUserId, id: channelId });
 
     const displayWindow = window.open('about:blank', '_blank');
     if (!displayWindow) {

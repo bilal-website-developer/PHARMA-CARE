@@ -7,6 +7,7 @@ import {
   buildCustomerDisplaySnapshot,
   buildSameMedicineOptions,
   canAccessCustomerDisplay,
+  getCustomerDisplayChannelId,
   getCustomerDisplayPageSize,
   isCustomerDisplayChannelId,
   parseCustomerDisplayMessage,
@@ -296,4 +297,25 @@ test('customer display channel id must be a UUID', () => {
   assert.equal(isCustomerDisplayChannelId('d8de2ef6-20a0-4b9b-8db7-2ad0d011aaaa'), true);
   assert.equal(isCustomerDisplayChannelId('not-a-channel'), false);
   assert.equal(isCustomerDisplayChannelId(null), false);
+});
+
+test('customer display channel link persists per user', () => {
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  try {
+    const firstUserId = getCustomerDisplayChannelId('user-a');
+    assert.equal(getCustomerDisplayChannelId('user-a'), firstUserId);
+    assert.equal(getCustomerDisplayChannelId('user-b') === firstUserId, false);
+    assert.equal(isCustomerDisplayChannelId(firstUserId), true);
+  } finally {
+    if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
 });
