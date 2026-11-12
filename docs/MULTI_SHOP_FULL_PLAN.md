@@ -1,6 +1,6 @@
 # Pharma Care — Full Multi-Shop Plan
 
-**Status:** Owner-run staged execution is approved. S1 snapshot and S2 ACL results are owner-reported complete; S2 test-data cleanup remains pending. S3–S6 tenant changes have not been implemented or applied. Do not treat checked-in SQL as applied until the owner reports its result.
+**Status:** Owner-run staged execution is approved. S1/S2 and S3 checks passed by owner report; the owner chose to preserve all current data. Inventory confirms 24 tenant tables have `shop_id` and RLS (not forced), two self-scoped preference tables, and no public views. S4 duplicate preflight found no duplicates. Owner applied 011 and 013; smoke tests confirm 16 scoped indexes and all 27 composite FKs validated. Owner applied 014; its smoke test confirms global-key/FK cutover. Owner's 008 metadata smoke test passed, and the owner reports app/role checks work. S4 is complete for the current single-shop phase; cross-shop verification remains a release gate. S5 inventory found 70 routines (67 `SECURITY DEFINER`), none executable by `anon`. Review found the first four product/catalog reads lacked tenant filters and permitted Super Admin entry; owner reports the scoped fix and rollback-only cross-shop smoke test passed. Owner reports 019 `save_medicine` migration and smoke test passed. Query 020 is prepared for the next category/brand write review; later S5 work remains.
 
 ## Owner-approved live execution override (2026-11-07)
 
@@ -9,11 +9,11 @@ The owner explicitly waived the separate staging-project/catalog-comparison chec
 The owner-confirmed account model is:
 
 - The platform `super_admin` has no shop (`shop_id = NULL`) and no shop-business access. It manages shops, Admin profiles, and page/feature grants.
-- Create a separate, initially empty `Developer Shop` with a separate Admin login for development and demos. Existing non-Super-Admin accounts and retained business data after S2 cleanup belong to `Shop 1`.
+- Create a separate, initially empty `Developer Shop` with a separate Admin login for development and demos. All current non-Super-Admin accounts and business data belong to `Shop 1`; the owner chose to preserve all current data without S2 cleanup.
 - A Shop Admin may create/manage only Manager/Cashier staff in its own shop and may grant only permissions it personally holds. It cannot create/change Admin or Super Admin profiles or change anyone's shop assignment. Staff cannot manage accounts.
 - Preserve the creator-scoped Team view: Super Admin can inspect an Admin's team and change active/removal status; an Admin sees only its own team and cannot change member status.
 
-For this execution, the former staging-comparison checkpoint is replaced by S1 in `supabase/fresh/000_S1_RUNBOOK.md`. The owner reports S1 catalog/snapshot checks and S2 ACL checks passed. S2 cleanup and all tenant stages remain gated on reviewed keep-list, fresh snapshot, and stage-specific SQL/test/rollback packages.
+For this execution, the former staging-comparison checkpoint is replaced by S1 in `supabase/fresh/000_S1_RUNBOOK.md`. The owner reports S1 catalog/snapshot checks and S2 ACL checks passed. S2 backup-only verification passed for all 26 tables. The owner chose to preserve all current data, so cleanup is skipped. S3–S6 remain gated on fresh schema preflight and stage-specific SQL/test/rollback packages.
 
 ## User-confirmed clarifications (2026-11-05)
 
@@ -32,13 +32,13 @@ These requirements supersede conflicting planning defaults below; they are desig
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | S1 — Current-only inventory and snapshot | Run `000_current_only_catalog_queries.sql`, then create and verify `backup_20261107` using the `000_*` S1 files. | Q1-Q9 and Q11 returned; all Q10 function batches returned; every public-table row count matches; backup RLS/no-policy/API-denial smoke test passes. |
-| S2 — ACL lockdown and test-data cleanup | Apply Track A only after reviewing S1 results; then clean test data while preserving all existing non-Super-Admin accounts and the retained Shop 1 data. | Track A and cleanup smoke tests pass; account/data keep-list verified. |
-| S3 — Additive tenant foundation | Add shops, profile ownership/backfill, trusted `current_shop_id()`, additive `shop_id` columns/defaults/indexes; do not make access restrictive yet. | Counts/references/default behavior pass; existing frontend still works. |
+| S2 — ACL lockdown and optional test-data cleanup | Apply Track A only after reviewing S1 results; perform cleanup only with explicit owner-provided targets and keep-list. | ACL and backup-only checks pass; cleanup is verified if explicitly approved, otherwise preserve all data. |
+| S3 — Additive tenant foundation | Add the Shop 1 record and ownership/backfill, trusted internal shop identity, `shop_id` columns/FKs/indexes, and safe authenticated column grants/RPC output masking so IDs remain hidden. Use triggers rather than a client-callable ID-returning default. Do not add tenant-row RLS until S4. | Counts/references/trigger behavior and strict ID concealment pass; existing frontend works; `tenant_private` stays outside exposed API schemas. |
 | S4 — Tenant enforcement | Add shop RLS, per-shop uniqueness and server scope boundaries. | Two shops and multiple Admins pass cross-shop denial tests; platform Super Admin sees no business data/screens. |
 | S5 — Server operations | Rewrite SECURITY DEFINER functions in small groups with same-shop identity, role, permission, and reference checks. | Per-function positive/negative tests and smoke test pass after each group. |
 | S6 — Accounts and UI | Update `manage-users`, shops/Admin provisioning, private notes, grants, Team view, and UI. | Edge Function and UI policy tests pass; owner deploys only after SQL smoke tests. |
 
-**Current stop:** S1 passed by owner report; S2 ACL lockdown is applied and verified by owner report, and the website smoke test passed. S2 test-data cleanup/keep-list and fresh snapshot gate remain pending. No S3–S6 migration packages exist yet; do not begin those stages until their SQL, rollback, and tests are prepared and reviewed.
+**Current stop:** S1/S2/S3 and S4 are complete for the current single-shop phase by owner report. Owner reports S5 batches 017 and 019 and their smoke tests passed. Run `supabase/fresh/020_s5_catalog_write_rpc_definitions.sql` as a read-only query in Supabase SQL Editor and share its output; review the live definitions before preparing the next change. S6 accounts/UI, cross-table barcode registry, and permanent two-shop verification remain.
 
 ## 1. Goal and security rules
 
@@ -208,7 +208,7 @@ Follow the owner-approved live stages in section 0 and `supabase/fresh/000_S1_RU
 5. **S5 function rewrites and S6 `manage-users`/UI.** Test each function group and account policy before moving forward.
 6. **Owner release.** Owner alone deploys the frontend/function after SQL smoke tests and sends verification results.
 
-**Current stop:** S1 and the S2 ACL portion are owner-reported complete. S2 test-data cleanup remains pending. No S3–S6 tenant SQL/code has been implemented; this plan is design guidance, not executable migration SQL.
+**Current stop:** S1/S2/S3 and S4 are complete for the current single-shop phase by owner report. Owner reports S5 product/catalog read batch 017 and medicine-write batch 019 passed with their smoke tests. Read-only query 020 is prepared for the category/brand writes and product-import caller. Later S5 function groups, S6 accounts/UI, barcode registry, and two-shop verification remain.
 
 ## 19. Owner decisions recorded
 

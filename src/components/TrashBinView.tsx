@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, RotateCcw, Search } from 'lucide-react';
+import { RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { UserRole } from '../types/pharmacy';
 import { invokeManageUsers } from './ManageUsersView';
 import { supabase } from '../utils/supabase';
@@ -33,15 +33,17 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
+  const [selectedEventId, setSelectedEventId] = useState('');
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setSelectedEventId('');
     setNotice(null);
     if (!supabase) {
       setNotice({ text: 'Supabase is not configured.', error: true });
       setLoading(false);
-      return;
+      return false;
     }
     try {
       const { data, error } = await supabase.rpc('trash_bin_events_list');
@@ -49,11 +51,13 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
       if (!Array.isArray(data)) throw new Error('Trash Bin returned an invalid activity list.');
       setEvents(data.map(parseTrashBinEvent));
       setNotice(null);
+      return true;
     } catch (caught) {
       setNotice({
         text: `Could not load Trash Bin activity: ${caught instanceof Error ? caught.message : 'Unexpected error.'}`,
         error: true,
       });
+      return false;
     } finally {
       setLoading(false);
     }
@@ -67,6 +71,8 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
     () => searchTrashBinEvents(filterTrashBinEvents(events, filter), search),
     [events, filter, search],
   );
+  const selectedEvent = visibleEvents.find((event) => event.id === selectedEventId);
+  const selectableEventCount = visibleEvents.filter((event) => event.can_permanently_delete).length;
 
   const restore = async (event: TrashBinEvent) => {
     if (!event.can_restore || !supabase) return;
@@ -105,6 +111,43 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
     }
   };
 
+  const permanentlyDeleteSelected = async () => {
+    if (!selectedEvent?.can_permanently_delete || !supabase || busyId) return;
+    const event = selectedEvent;
+    if (!window.confirm(
+      `Permanently delete "${event.display_name}"? This cannot be undone. Items with transaction history cannot be deleted.`,
+    )) return;
+
+    setBusyId(event.id);
+    setNotice(null);
+    try {
+      if (event.entity_type === 'profile') {
+        const result = await invokeManageUsers<{ message: string }>({
+          action: 'permanently_delete',
+          event_id: event.id,
+        });
+        if (await refresh()) {
+          setNotice({ text: result.message || `${event.display_name} permanently deleted.`, error: false });
+        }
+      } else {
+        const { error } = await supabase.rpc('trash_bin_permanently_delete', {
+          p_event_id: event.id,
+        });
+        if (error) throw new Error(error.message);
+        if (await refresh()) {
+          setNotice({ text: `${event.display_name} permanently deleted.`, error: false });
+        }
+      }
+    } catch (caught) {
+      setNotice({
+        text: caught instanceof Error ? caught.message : 'Could not permanently delete this item.',
+        error: true,
+      });
+    } finally {
+      setBusyId('');
+    }
+  };
+
   return (
     <section className="mx-auto max-w-6xl">
       <div className="overflow-hidden rounded-card border border-border bg-white shadow-sm">
@@ -120,7 +163,10 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
                 key={item.value}
                 type="button"
                 aria-pressed={filter === item.value}
-                onClick={() => setFilter(item.value)}
+                onClick={() => {
+                  setSelectedEventId('');
+                  setFilter(item.value);
+                }}
                 className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                   filter === item.value
                     ? 'border-primary bg-primary text-white'
@@ -138,7 +184,10 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
               <input
                 type="search"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSelectedEventId('');
+                  setSearch(event.target.value);
+                }}
                 aria-label="Search Trash Bin activity"
                 placeholder="Search"
                 className="h-8 w-32 rounded-control border border-border bg-white pl-8 pr-2 text-xs text-text outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/15 sm:w-36"
@@ -157,6 +206,22 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
           </div>
         </div>
 
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <p className="text-xs text-muted">
+            Select one row using the circle at its left, then permanently delete it. Purchases remain in audit history.
+            {!loading && selectableEventCount === 0 && ' No visible items are currently eligible for permanent deletion.'}
+          </p>
+          <button
+            type="button"
+            disabled={!selectedEvent?.can_permanently_delete || busyId !== ''}
+            onClick={() => void permanentlyDeleteSelected()}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-control bg-danger px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete permanently
+          </button>
+        </div>
+
         {notice && (
           <p role={notice.error ? 'alert' : 'status'} className={`border-b px-3 py-2 text-xs ${notice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-primary/30 bg-primary/5 text-text'}`}>
             {notice.text}
@@ -164,16 +229,18 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] table-fixed text-left text-xs">
+          <table className="w-full min-w-[680px] table-fixed text-left text-xs">
             <colgroup>
-              <col className="w-[13%]" />
-              <col className="w-[34%]" />
-              <col className="w-[20%]" />
+              <col className="w-[5%]" />
+              <col className="w-[12%]" />
+              <col className="w-[31%]" />
+              <col className="w-[19%]" />
               <col className="w-[17%]" />
               <col className="w-[16%]" />
             </colgroup>
             <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted">
               <tr>
+                <th className="w-10 px-3 py-2">Select</th>
                 <th className="px-3 py-2">Type</th>
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Action</th>
@@ -183,14 +250,37 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
-                <tr><td colSpan={5} className="px-3 py-8 text-center text-muted">Loading activity…</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-muted">Loading activity…</td></tr>
               ) : visibleEvents.length === 0 ? (
-                <tr><td colSpan={5} className="px-3 py-8 text-center text-muted">No matching Trash Bin activity.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-muted">No matching Trash Bin activity.</td></tr>
               ) : visibleEvents.map((event) => {
                 const canRestore = event.can_restore
                   && (event.entity_type !== 'profile' || currentRole === UserRole.SUPER_ADMIN);
                 return (
-                  <tr key={event.id} className="hover:bg-surface/60">
+                  <tr
+                    key={event.id}
+                    className={`hover:bg-surface/60 ${selectedEventId === event.id ? 'bg-primary/5' : ''}`}
+                  >
+                    <td className="px-3 py-2">
+                      <input
+                        type="radio"
+                        name="trash-bin-selection"
+                        checked={selectedEventId === event.id}
+                        onChange={() => setSelectedEventId(event.id)}
+                        disabled={busyId !== '' || !event.can_permanently_delete}
+                        aria-label={
+                          event.can_permanently_delete
+                            ? `Select ${ENTITY_LABELS[event.entity_type].toLowerCase()}: ${event.display_name} for permanent deletion`
+                            : `${event.display_name} cannot be permanently deleted by this account`
+                        }
+                        title={
+                          event.can_permanently_delete
+                            ? `Select ${event.display_name}`
+                            : 'This item is not eligible or you do not have permission to permanently delete it.'
+                        }
+                        className="h-4 w-4 accent-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                    </td>
                     <td className="truncate px-3 py-2">{ENTITY_LABELS[event.entity_type]}</td>
                     <td className="truncate px-3 py-2 font-medium text-text" title={event.display_name}>{event.display_name}</td>
                     <td className="px-3 py-2">
@@ -221,7 +311,7 @@ export function TrashBinView({ currentRole }: { currentRole: UserRole }) {
           </table>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-muted">Purchase voids remain in the audit history and cannot be restored. User restores follow account-role restrictions. Search also checks the event reason.</p>
+      <p className="mt-2 text-[11px] text-muted">Purchase voids remain in the audit history and cannot be restored or permanently deleted. User deletion follows account-role restrictions. Search also checks the event reason.</p>
     </section>
   );
 }

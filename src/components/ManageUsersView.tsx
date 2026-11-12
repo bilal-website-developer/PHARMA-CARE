@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Pencil, Plus, Store, Trash2, Upload, X } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import {
   MODULES,
@@ -125,6 +125,7 @@ export function ManageUsersView({
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [showFormPassword, setShowFormPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [serviceReady, setServiceReady] = useState(false);
@@ -221,6 +222,7 @@ export function ManageUsersView({
   const startAdd = () => {
     if (!serviceReady) return;
     setEditingId(null);
+    setShowFormPassword(false);
     setIsFormOpen(true);
     const role = assignableRoles[0] ?? UserRole.CASHIER;
     setForm({
@@ -245,6 +247,7 @@ export function ManageUsersView({
     setAdminTeamCount(0);
     const email = String(user.email ?? '');
     setEditingId(user.id);
+    setShowFormPassword(false);
     setIsFormOpen(true);
     const userRole = Object.values(UserRole).includes(user.role as UserRole)
       ? user.role as UserRole
@@ -270,6 +273,7 @@ export function ManageUsersView({
     setAdminTeamCount(0);
     setEditingId(null);
     setIsFormOpen(false);
+    setShowFormPassword(false);
     setForm({
       ...EMPTY_FORM,
       permissions: [...EMPTY_FORM.permissions],
@@ -488,7 +492,18 @@ export function ManageUsersView({
             </label>
             {!(editingId === currentUserId && currentRole === UserRole.ADMIN) && <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
               {editingId ? 'Set New Password (optional)' : 'Password *'}
-              <input type="password" autoComplete="new-password" required={!editingId} minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal" />
+              <span className="relative block">
+                <input type={showFormPassword ? 'text' : 'password'} autoComplete="new-password" required={!editingId} minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} className="w-full rounded-control border border-border bg-white px-3 py-2 pr-10 text-sm font-normal" />
+                <button
+                  type="button"
+                  aria-label={showFormPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showFormPassword}
+                  onClick={() => setShowFormPassword((visible) => !visible)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted hover:text-text"
+                >
+                  {showFormPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </span>
               {editingId && <span className="block text-xs font-normal text-muted">Passwords cannot be viewed. Setting a new password replaces the current one.</span>}
             </label>}
             <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
@@ -584,8 +599,10 @@ export function ManageUsersView({
           {/* ── Shop Profile (Super Admin adding / editing an Admin) ── */}
           {isSuperAdmin && form.role === UserRole.ADMIN && (
             <fieldset className="space-y-4 rounded-card border border-purple-200 bg-purple-50 p-4">
-              <legend className="px-2 text-sm font-bold text-purple-700">
-                🏪 Shop Profile <span className="text-xs font-normal text-purple-500">(shown on receipts &amp; reports)</span>
+              <legend className="px-2 text-sm font-bold text-purple-700 flex items-center gap-1.5">
+                <Store size={16} />
+                <span>Shop Profile</span>
+                <span className="text-xs font-normal text-purple-500">(shown on receipts &amp; reports)</span>
               </legend>
               <div className="grid gap-4 sm:grid-cols-2">
                 {/* Store Name */}
@@ -643,7 +660,8 @@ export function ManageUsersView({
                     </div>
                   ) : (
                     <label className="flex cursor-pointer items-center gap-2 rounded-control border border-dashed border-purple-300 bg-white px-4 py-3 text-sm text-purple-600 hover:bg-purple-50">
-                      <span>📁 Choose logo image…</span>
+                      <Upload size={16} />
+                      <span>Choose logo image…</span>
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/svg+xml,image/webp"

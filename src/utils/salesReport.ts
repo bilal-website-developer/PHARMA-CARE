@@ -15,10 +15,16 @@ export interface SalesReportSummary {
 }
 
 export function parseSaleDate(timestamp: string): Date | null {
-  const isoDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(timestamp);
-  if (isoDate) {
-    const parsed = new Date(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const isoDateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(timestamp);
+  if (isoDateOnly) {
+    const parsed = new Date(Number(isoDateOnly[1]), Number(isoDateOnly[2]) - 1, Number(isoDateOnly[3]));
+    if (
+      Number.isNaN(parsed.getTime())
+      || parsed.getFullYear() !== Number(isoDateOnly[1])
+      || parsed.getMonth() !== Number(isoDateOnly[2]) - 1
+      || parsed.getDate() !== Number(isoDateOnly[3])
+    ) return null;
+    return parsed;
   }
 
   const localDate = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(timestamp);
@@ -28,7 +34,49 @@ export function parseSaleDate(timestamp: string): Date | null {
   }
 
   const parsed = new Date(timestamp);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+export function parseLocalDateInput(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getFullYear() !== Number(match[1])
+    || parsed.getMonth() !== Number(match[2]) - 1
+    || parsed.getDate() !== Number(match[3])
+  ) return null;
+  return parsed;
+}
+
+export function formatLocalDateInput(date: Date): string {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function localEndOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+export function localStartOfNextDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+}
+
+export function filterSalesBetween(
+  sales: CompletedSale[],
+  start: Date,
+  end: Date,
+): CompletedSale[] {
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return [];
+  return sales.filter((sale) => {
+    const date = parseSaleDate(sale.timestamp);
+    return date !== null && date >= start && date <= end;
+  });
 }
 
 export function salesForPeriod(
@@ -43,10 +91,7 @@ export function salesForPeriod(
     start.setDate(1);
   }
 
-  return sales.filter((sale) => {
-    const date = parseSaleDate(sale.timestamp);
-    return date !== null && date >= start && date <= now;
-  });
+  return filterSalesBetween(sales, start, now);
 }
 
 export function summarizeSales(sales: CompletedSale[]): SalesReportSummary {

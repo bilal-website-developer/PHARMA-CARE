@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, LoaderCircle, RefreshCw, X } from 'lucide-react';
+import { Check, LoaderCircle, RefreshCw, RotateCcw, X } from 'lucide-react';
 import {
   getReturnPolicySettings,
   loadPendingSaleReturns,
@@ -241,7 +241,8 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
         onClick={() => setOpen(true)}
         className={triggerClassName ?? "rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"}
       >
-        <span>🔄 Medicine returns</span>
+        <RotateCcw size={14} className="inline mr-1 text-primary" />
+        <span>Medicine returns</span>
       </button>
       {open && (
         <div
@@ -267,7 +268,7 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
             </header>
             <div className="min-h-0 space-y-5 overflow-y-auto p-4">
               {error && <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-text">{error}</p>}
-              {notice && <p role="status" className="rounded-control border border-success/40 bg-success/10 px-3 py-2 text-sm text-text">{notice}</p>}
+              {notice && <p role="status" className="rounded-control border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-text">{notice}</p>}
 
               <form onSubmit={findSale} className="flex flex-col gap-2 sm:flex-row">
                 <label className="sr-only" htmlFor="return-invoice-number">Invoice number</label>

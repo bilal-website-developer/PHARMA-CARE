@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
@@ -21,6 +22,7 @@ import {
   CompletedSale,
   MAX_DISCOUNT_PAISA,
   ROLE_MAX_DISCOUNT,
+  type SaleCustomerType,
 } from '../types/pharmacy';
 import { allocateFefo, localIsoDate } from '../utils/fefo';
 import {
@@ -44,7 +46,7 @@ import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
 import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
-import { resolvePosCustomerName } from '../utils/posCustomer';
+import { isValidOptionalPhone, resolvePosCustomerName } from '../utils/posCustomer';
 import {
   buildCustomerDisplayOptionsMessage,
   buildCustomerDisplayPayment,
@@ -58,6 +60,20 @@ import {
   type CustomerDisplayMessage,
   type CustomerDisplayOptionCandidate,
 } from '../utils/customerDisplay';
+
+const emptyCustomerDetails = () => ({
+  phone: '',
+  whatsapp: '',
+  sameWhatsappAsPhone: true,
+  address: '',
+  notes: '',
+});
+const customerPhoneValidationError = (details: ReturnType<typeof emptyCustomerDetails>) => {
+  if (!isValidOptionalPhone(details.phone) || !isValidOptionalPhone(details.whatsapp)) {
+    return 'Use digits with an optional leading +, or leave the number empty.';
+  }
+  return '';
+};
 
 interface POSBillingViewProps {
   customers: Customer[];
@@ -107,6 +123,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [walkInName, setWalkInName] = useState('');
+  const [customerType, setCustomerType] = useState<SaleCustomerType>('WALK_IN');
+  const [customerDetails, setCustomerDetails] = useState(emptyCustomerDetails);
+  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+  const [customerPhoneError, setCustomerPhoneError] = useState('');
+  const customerDetailsRef = useRef<HTMLDivElement>(null);
+  const customerNameRef = useRef<HTMLInputElement>(null);
+  const customerPhoneRef = useRef<HTMLInputElement>(null);
   const [displayChannel, setDisplayChannel] = useState<{ userId: string; id: string } | null>(null);
   const [displayNotice, setDisplayNotice] = useState('');
   const [displayThankYou, setDisplayThankYou] = useState(false);
@@ -122,6 +145,39 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const displayChannelRef = useRef<BroadcastChannel | null>(null);
   const activeOptionsRef = useRef(activeOptions);
   const swapOptionRef = useRef<(option: CustomerDisplayOptionCandidate) => void>(() => undefined);
+
+  useEffect(() => {
+    if (cart.length !== 0) return;
+    setSelectedCustomerId('');
+    setWalkInName('');
+    setCustomerType('WALK_IN');
+    setCustomerDetails(emptyCustomerDetails());
+    setShowCustomerDetails(false);
+    setCustomerPhoneError('');
+  }, [cart.length]);
+
+  useEffect(() => {
+    if (!showCustomerDetails) return;
+    customerPhoneRef.current?.focus();
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!customerDetailsRef.current?.contains(event.target as Node)) {
+        setShowCustomerDetails(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setShowCustomerDetails(false);
+      customerNameRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showCustomerDetails]);
 
   useEffect(() => {
     setShowDisplayAlternatives(readCustomerDisplayAlternatives(currentUserId));
@@ -752,6 +808,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
     setSaleError('');
     const customer = customers.find((c) => c.id === selectedCustomerId);
+    const phoneError = customer ? '' : customerPhoneValidationError(customerDetails);
+    if (phoneError) {
+      setCustomerPhoneError(phoneError);
+      setShowCustomerDetails(true);
+      setSaleError('Check the customer phone number before charging.');
+      return;
+    }
+    setCustomerPhoneError('');
     const splitCashPaisa = Math.round(splitCashPaymentPKR * 100);
     let payments: PostSaleInput['payments'];
     let tenderedPaisa: number;
@@ -799,6 +863,15 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     const saleInput: PostSaleInput = {
       customerId: customer?.id ?? null,
       customerName: resolvePosCustomerName(customer?.name, walkInName),
+      customerType: paymentMethod === 'CREDIT' ? 'CREDIT' : customerType,
+      customerPhone: customer?.phone ?? customerDetails.phone.trim(),
+      customerWhatsapp: customer
+        ? customer.phone
+        : customerDetails.sameWhatsappAsPhone
+          ? customerDetails.phone.trim()
+          : customerDetails.whatsapp.trim(),
+      customerAddress: customer?.address ?? customerDetails.address.trim(),
+      customerNotes: customer ? '' : customerDetails.notes.trim(),
       items: saleItems,
       discountPaisa,
       roundingPaisa,
@@ -857,7 +930,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-auto lg:h-[calc(100vh-5.25rem)] min-h-[600px] gap-2">
+    <div className="flex h-auto min-h-[600px] flex-col gap-1 lg:h-full lg:min-h-0">
       {saleError && (
         <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shrink-0">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -873,24 +946,25 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         <div className="lg:col-span-7 flex flex-col gap-2 min-h-0">
           {/* Top Tabs (Sale, Medicine Returns, Barcode Scan) moved here to eliminate right-side gap */}
           <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200/90 shadow-xs">
+            <div className="flex items-center gap-1.5 bg-surface p-1 rounded-xl border border-border shadow-xs">
               <button
                 type="button"
                 onClick={() => setActiveTopTab('sale')}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                   activeTopTab === 'sale'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted hover:bg-surface-2'
                 }`}
               >
-                <span>🟦 Sale</span>
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>Sale</span>
               </button>
 
               <SaleReturnsPanel
                 canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
                   && permissions.includes('sales_history')}
                 canRestock={permissions.includes('stock_inventory')}
-                triggerClassName="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-600 hover:bg-slate-100 border-0 bg-transparent shadow-none"
+                triggerClassName="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-muted hover:bg-surface-2 border-0 bg-transparent shadow-none"
               />
 
               <button
@@ -904,8 +978,8 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 }}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                   activeTopTab === 'barcode'
-                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-300'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-primary text-white shadow-xs ring-2 ring-accent'
+                    : 'text-muted hover:bg-surface-2'
                 }`}
               >
                 <Barcode className="w-3.5 h-3.5" />
@@ -1103,10 +1177,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
 
         {/* Right 5 Cols: Cart & Checkout Bar (Matching Screenshot 7, 8, 61, 62) */}
-        <div className="lg:col-span-5 bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full min-h-0 justify-between">
+        <div className="lg:col-span-5 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full min-h-0 justify-between">
           <div className="flex flex-col min-h-0 flex-1">
             {/* Top Cart Header & Layout Switches (Matching Screenshot 7) */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2 shrink-0">
+            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 mb-1.5 shrink-0">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-blue-600" />
                 <span className="pos-cart-count text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
@@ -1124,30 +1198,195 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </button>
               </div>
 
-              {/* Walk-in Customer — positioned in header where layout pills/medicine returns was */}
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                 <select
-                  value={selectedCustomerId}
-                  onChange={(e) => {
-                    setSelectedCustomerId(e.target.value);
-                    setWalkInName('');
+                  aria-label="Customer type"
+                  value={customerType}
+                  onChange={(event) => {
+                    const nextType = event.target.value as SaleCustomerType;
+                    setCustomerType(nextType);
+                    if (nextType !== 'REGISTERED' && nextType !== 'CREDIT' && selectedCustomerId) {
+                      const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+                      setWalkInName(selectedCustomer?.name ?? '');
+                      setCustomerDetails({
+                        ...emptyCustomerDetails(),
+                        phone: selectedCustomer?.phone ?? '',
+                        whatsapp: selectedCustomer?.phone ?? '',
+                        address: selectedCustomer?.address ?? '',
+                      });
+                      setSelectedCustomerId('');
+                    }
                   }}
-                  className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium text-slate-700 max-w-[150px]"
+                  className="max-w-[135px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <option value="WALK_IN">Walk-in Customer</option>
+                  <option value="REGISTERED">Registered Customer</option>
+                  <option value="CREDIT">Credit Customer</option>
+                  <option value="DOCTOR_CLINIC">Doctor / Clinic</option>
+                  <option value="WHOLESALE_RETAILER">Wholesale / Retailer</option>
+                </select>
+                <select
+                  aria-label="Registered customer"
+                  value={selectedCustomerId}
+                  onChange={(event) => {
+                    setSelectedCustomerId(event.target.value);
+                    setWalkInName('');
+                    if (event.target.value) {
+                      setCustomerType((type) => type === 'CREDIT' ? type : 'REGISTERED');
+                      setCustomerDetails(emptyCustomerDetails());
+                    }
+                  }}
+                  className="max-w-[135px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <option value="">Walk-in Customer</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>{customer.name}</option>
                   ))}
                 </select>
                 {!selectedCustomerId && (
-                  <input
-                    type="text"
-                    placeholder="Customer name (optional)"
-                    aria-label="Walk-in customer name"
-                    value={walkInName}
-                    onChange={(e) => setWalkInName(e.target.value)}
-                    className="px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 w-32"
-                  />
+                  <div className="relative" ref={customerDetailsRef}>
+                    <input
+                      ref={customerNameRef}
+                      type="text"
+                      placeholder="Customer name (optional)"
+                      aria-label="Walk-in customer name"
+                      aria-haspopup="dialog"
+                      aria-expanded={showCustomerDetails}
+                      aria-controls="pos-customer-details"
+                      value={walkInName}
+                      onChange={(event) => setWalkInName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        const name = walkInName.trim();
+                        if (!name) return;
+                        setWalkInName(name);
+                        setCustomerPhoneError('');
+                        setShowCustomerDetails(true);
+                      }}
+                      className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    />
+                    {showCustomerDetails && (
+                      <div
+                        role="dialog"
+                        id="pos-customer-details"
+                        aria-label="Customer Details"
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return;
+                          event.preventDefault();
+                          const phoneError = customerPhoneValidationError(customerDetails);
+                          if (phoneError) {
+                            setCustomerPhoneError(phoneError);
+                            return;
+                          }
+                          setCustomerPhoneError('');
+                          setShowCustomerDetails(false);
+                          customerNameRef.current?.focus();
+                        }}
+                        className="absolute right-0 top-full z-40 mt-1 w-[min(18rem,calc(100vw-2rem))] space-y-2 rounded-xl border border-border bg-surface p-3 text-left shadow-lg"
+                      >
+                        <div>
+                          <h3 className="text-xs font-bold text-text">Customer Details</h3>
+                          <p className="truncate text-[11px] text-muted">{walkInName.trim()}</p>
+                        </div>
+                        <label className="grid gap-1 text-[10px] font-semibold text-muted">
+                          Phone number
+                          <input
+                            ref={customerPhoneRef}
+                            aria-describedby={customerPhoneError ? 'pos-customer-phone-error' : undefined}
+                            type="tel"
+                            inputMode="tel"
+                            value={customerDetails.phone}
+                            onChange={(event) => {
+                              const phone = event.target.value;
+                              const nextDetails = {
+                                ...customerDetails,
+                                phone,
+                                ...(customerDetails.sameWhatsappAsPhone ? { whatsapp: phone } : {}),
+                              };
+                              setCustomerDetails(nextDetails);
+                              setCustomerPhoneError(customerPhoneValidationError(nextDetails));
+                            }}
+                            className="rounded-control border border-border bg-surface px-2 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[10px] font-medium text-text">
+                          <input
+                            type="checkbox"
+                            checked={customerDetails.sameWhatsappAsPhone}
+                            onChange={(event) => setCustomerDetails((details) => ({
+                              ...details,
+                              sameWhatsappAsPhone: event.target.checked,
+                              whatsapp: event.target.checked ? details.phone : details.whatsapp,
+                            }))}
+                          />
+                          WhatsApp number is the same as phone
+                        </label>
+                        {!customerDetails.sameWhatsappAsPhone && (
+                          <label className="grid gap-1 text-[10px] font-semibold text-muted">
+                            WhatsApp number
+                            <input
+                              type="tel"
+                              inputMode="tel"
+                              value={customerDetails.whatsapp}
+                              onChange={(event) => {
+                                const whatsapp = event.target.value;
+                                const nextDetails = { ...customerDetails, whatsapp };
+                                setCustomerDetails(nextDetails);
+                                setCustomerPhoneError(customerPhoneValidationError(nextDetails));
+                              }}
+                              className="rounded-control border border-border bg-surface px-2 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            />
+                          </label>
+                        )}
+                        <label className="grid gap-1 text-[10px] font-semibold text-muted">
+                          Address
+                          <input
+                            type="text"
+                            value={customerDetails.address}
+                            onChange={(event) => setCustomerDetails((details) => ({
+                              ...details,
+                              address: event.target.value,
+                            }))}
+                            className="rounded-control border border-border bg-surface px-2 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-[10px] font-semibold text-muted">
+                          Notes
+                          <input
+                            type="text"
+                            value={customerDetails.notes}
+                            onChange={(event) => setCustomerDetails((details) => ({
+                              ...details,
+                              notes: event.target.value,
+                            }))}
+                            className="rounded-control border border-border bg-surface px-2 py-1.5 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          />
+                        </label>
+                        {customerPhoneError && (
+                          <p id="pos-customer-phone-error" role="alert" className="text-[10px] font-semibold text-danger">
+                            {customerPhoneError}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const phoneError = customerPhoneValidationError(customerDetails);
+                            if (phoneError) {
+                              setCustomerPhoneError(phoneError);
+                              return;
+                            }
+                            setCustomerPhoneError('');
+                            setShowCustomerDetails(false);
+                            customerNameRef.current?.focus();
+                          }}
+                          className="w-full rounded-control bg-primary px-3 py-1.5 text-xs font-bold text-white"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

@@ -10,6 +10,9 @@
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-border: var(--border);
+  --color-surface-muted: var(--surface-2);
+  --color-surface-2: var(--surface-2);
+  --color-success: var(--primary);
   --font-inter: "Inter", Arial, sans-serif;
   --font-urdu: "Noto Nastaliq Urdu", serif;
   --radius-card: 12px;

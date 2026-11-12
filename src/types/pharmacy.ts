@@ -166,13 +166,24 @@ export interface CashTransaction {
   handledBy: string;
 }
 
+export type SaleCustomerType =
+  | 'WALK_IN'
+  | 'REGISTERED'
+  | 'CREDIT'
+  | 'DOCTOR_CLINIC'
+  | 'WHOLESALE_RETAILER';
+
 export interface CompletedSale {
   id: string;
   invoiceNumber: string;
   timestamp: string;
   cashierName: string;
+  customerType?: SaleCustomerType;
   customerName?: string;
   customerPhone?: string;
+  customerWhatsapp?: string;
+  customerAddress?: string;
+  customerNotes?: string;
   customerId?: string;
   items: CartItem[];
   subtotalPaisa: number;

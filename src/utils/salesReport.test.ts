@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CompletedSale, PaymentMethod } from '../types/pharmacy';
-import { renderSalesReport, salesForPeriod, summarizeSales, withSalesReportBranding } from './salesReport';
+import {
+  filterSalesBetween,
+  localEndOfDay,
+  localStartOfNextDay,
+  parseLocalDateInput,
+  parseSaleDate,
+  renderSalesReport,
+  salesForPeriod,
+  summarizeSales,
+  withSalesReportBranding,
+} from './salesReport';
 import { APP_NAME } from '../constants/brand';
 
 const sampleSale: CompletedSale = {
@@ -47,6 +57,40 @@ test('filters sales by current day, week, and month using DD/MM/YYYY dates', () 
   assert.equal(salesForPeriod([sampleSale, yesterday, lastMonth], 'today', now).length, 1);
   assert.equal(salesForPeriod([sampleSale, yesterday, lastMonth], 'week', now).length, 2);
   assert.equal(salesForPeriod([sampleSale, yesterday, lastMonth], 'month', now).length, 2);
+});
+
+test('filters custom ranges inclusively using local calendar dates', () => {
+  const start = parseLocalDateInput('2026-10-07');
+  const end = parseLocalDateInput('2026-10-08');
+  assert.ok(start);
+  assert.ok(end);
+
+  const before = { ...sampleSale, id: 'before', timestamp: new Date(2026, 9, 6, 23, 59).toISOString() };
+  const after = { ...sampleSale, id: 'after', timestamp: new Date(2026, 9, 9, 0).toISOString() };
+  const filtered = filterSalesBetween([before, sampleSale, after], start, localEndOfDay(end));
+
+  assert.deepEqual(filtered.map((sale) => sale.id), ['sale-1']);
+});
+
+test('rejects invalid local dates and reversed custom ranges', () => {
+  const start = parseLocalDateInput('2026-10-08');
+  const end = parseLocalDateInput('2026-10-07');
+
+  assert.equal(parseLocalDateInput('2026-02-30'), null);
+  assert.ok(start);
+  assert.ok(end);
+  assert.deepEqual(filterSalesBetween([sampleSale], start, localEndOfDay(end)), []);
+  assert.equal(localStartOfNextDay(end).getDate(), 8);
+});
+
+test('interprets ISO timestamps in the user local timezone', () => {
+  const timestamp = new Date(2026, 9, 7, 23, 30).toISOString();
+  const parsed = parseSaleDate(timestamp);
+
+  assert.ok(parsed);
+  assert.equal(parsed.getFullYear(), 2026);
+  assert.equal(parsed.getMonth(), 9);
+  assert.equal(parsed.getDate(), 7);
 });
 
 test('summarizes invoice, discount, payment method, medicine quantity and cashier totals', () => {

@@ -184,6 +184,83 @@ Deno.serve(async (request) => {
     }
 
     const action = payload.action;
+    if (action === 'permanently_delete') {
+      if (callerRole !== 'admin' && callerRole !== 'super_admin') {
+        return response(403, { message: 'Only admin or super_admin may permanently delete Trash Bin items.' });
+      }
+      const eventId = typeof payload.event_id === 'string' ? payload.event_id : '';
+      if (!eventId) return response(400, { message: 'Trash Bin event id is required.' });
+
+      const { data: trashEvent, error: eventError } = await adminClient
+        .from('trash_bin_events')
+        .select('id,entity_id,entity_type,action,display_name,created_at')
+        .eq('id', eventId)
+        .maybeSingle();
+      if (eventError) throw eventError;
+      if (!trashEvent || trashEvent.entity_type !== 'profile' || trashEvent.action !== 'deleted') {
+        return response(404, { message: 'Deleted user Trash Bin item not found.' });
+      }
+
+      const { data: latestEvent, error: latestError } = await adminClient
+        .from('trash_bin_events')
+        .select('id')
+        .eq('entity_type', 'profile')
+        .eq('entity_id', trashEvent.entity_id)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestError) throw latestError;
+      if (latestEvent?.id !== trashEvent.id) {
+        return response(409, { message: 'This Trash Bin item is no longer the latest event and cannot be permanently deleted.' });
+      }
+
+      const { data: target, error: targetError } = await adminClient
+        .from('profiles')
+        .select('id,full_name,username,email,role,permissions,deleted_at,created_by')
+        .eq('id', trashEvent.entity_id)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (target) {
+        if (target.deleted_at === null || !validRole(target.role)) {
+          return response(404, { message: 'The deleted user profile is no longer available.' });
+        }
+        if (target.id === authData.user.id || !canManageTarget(
+          callerRole,
+          authData.user.id,
+          target.id,
+          target.role,
+          target.permissions ?? [],
+          callerPermissions,
+          target.created_by,
+        )) {
+          return response(403, { message: 'You are not allowed to permanently delete this user.' });
+        }
+
+        const { error: deleteError } = await adminClient.auth.admin.deleteUser(target.id);
+        if (deleteError) {
+          return response(409, {
+            message: `Could not permanently delete ${trashEvent.display_name}: ${deleteError.message}`,
+          });
+        }
+      } else if (callerRole !== 'super_admin') {
+        return response(403, { message: 'Only super_admin may clean up an already deleted user record.' });
+      }
+
+      const { error: cleanupError } = await adminClient.rpc('trash_bin_finalize_profile_purge', {
+        p_event_id: trashEvent.id,
+        p_target_id: trashEvent.entity_id,
+        p_actor_id: authData.user.id,
+      });
+      if (cleanupError) {
+        return response(500, {
+          message: `The account was deleted, but its Trash Bin history could not be cleaned up: ${cleanupError.message}`,
+        });
+      }
+
+      return response(200, { message: `${trashEvent.display_name} permanently deleted.` });
+    }
+
     if (action === 'get_team') {
       if (typeof payload.admin_id !== 'string') {
         return response(400, { message: 'Admin id is required.' });

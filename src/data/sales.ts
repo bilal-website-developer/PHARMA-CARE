@@ -5,6 +5,7 @@ import {
   type CartItem,
   type CompletedSale,
   type Customer,
+  type SaleCustomerType,
 } from '../types/pharmacy';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
@@ -17,6 +18,11 @@ export interface SalePaymentInput {
 export interface PostSaleInput {
   customerId: string | null;
   customerName: string;
+  customerType: SaleCustomerType;
+  customerPhone: string;
+  customerWhatsapp: string;
+  customerAddress: string;
+  customerNotes: string;
   items: Array<{ medicineId: string; unitId: string; quantityInUnit: number }>;
   discountPaisa: number;
   roundingPaisa: number;
@@ -68,6 +74,14 @@ function isDrugClass(value: unknown): value is DrugClass {
 
 function isPaymentMethod(value: unknown): value is PaymentMethod {
   return Object.values(PaymentMethod).some((paymentMethod) => paymentMethod === value);
+}
+
+function isSaleCustomerType(value: unknown): value is SaleCustomerType {
+  return value === 'WALK_IN'
+    || value === 'REGISTERED'
+    || value === 'CREDIT'
+    || value === 'DOCTOR_CLINIC'
+    || value === 'WHOLESALE_RETAILER';
 }
 
 function isCustomer(value: unknown): value is Customer {
@@ -136,15 +150,19 @@ function isCompletedSale(value: unknown): value is CompletedSale {
     && isString(value.invoiceNumber)
     && isString(value.timestamp)
     && isString(value.cashierName)
+    && (value.customerType === undefined || isSaleCustomerType(value.customerType))
     && (value.customerId === null || isString(value.customerId))
     && isString(value.customerName)
     && isString(value.customerPhone)
+    && (value.customerWhatsapp === undefined || isString(value.customerWhatsapp))
+    && (value.customerAddress === undefined || isString(value.customerAddress))
+    && (value.customerNotes === undefined || isString(value.customerNotes))
     && Array.isArray(value.items)
     && value.items.every(isCartItem)
     && isNonNegativeInteger(value.subtotalPaisa)
     && isNonNegativeInteger(value.discountPaisa)
     && isNonNegativeInteger(value.totalPaisa)
-    && isNonNegativeInteger(value.roundingPaisa)
+    && Number.isSafeInteger(value.roundingPaisa)
     && isPaymentMethod(value.paymentMethod)
     && isNonNegativeInteger(value.amountTenderedPaisa)
     && isNonNegativeInteger(value.changePaisa);
@@ -201,6 +219,10 @@ function parseSaleHistory(value: unknown): CompletedSale | null {
     customerId: value.customerId,
     customerName: value.customerName,
     customerPhone: value.customerPhone,
+    customerType: isSaleCustomerType(value.customerType) ? value.customerType : undefined,
+    customerWhatsapp: isString(value.customerWhatsapp) ? value.customerWhatsapp : undefined,
+    customerAddress: isString(value.customerAddress) ? value.customerAddress : undefined,
+    customerNotes: isString(value.customerNotes) ? value.customerNotes : undefined,
     items: parsedItems,
     subtotalPaisa: value.subtotalPaisa,
     discountPaisa: value.discountPaisa,
@@ -278,9 +300,14 @@ export async function recordCustomerPayment(
 }
 
 export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
-  const raw = await callSupabaseRpc('post_sale', {
+  const raw = await callSupabaseRpc('post_sale_with_customer_details', {
     p_customer_id: input.customerId,
     p_customer_name: input.customerName,
+    p_customer_type: input.customerType,
+    p_customer_phone: input.customerPhone,
+    p_customer_whatsapp: input.customerWhatsapp,
+    p_customer_address: input.customerAddress,
+    p_customer_notes: input.customerNotes,
     p_items: input.items.map((item) => ({
       medicine_id: item.medicineId,
       unit_id: item.unitId,
@@ -297,15 +324,47 @@ export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
   return raw;
 }
 
-export async function loadSalesHistory(limit = 100): Promise<CompletedSale[]> {
-  const raw = await callSupabaseRpc('sales_history', { p_limit: limit }, 'Could not load sales history.', (value): value is unknown[] =>
-    Array.isArray(value));
+function parseSalesHistoryRows(raw: unknown[], fallbackMessage = 'Could not load sales history.'): CompletedSale[] {
   const parsed = raw.map(parseSaleHistory);
   if (parsed.some((sale) => sale === null)) {
     throw new Error(getSupabaseErrorMessage(
       new Error('Sales history returned an invalid response.'),
-      'Could not load sales history.',
+      fallbackMessage,
     ));
   }
   return parsed.filter((sale): sale is CompletedSale => sale !== null);
+}
+
+export async function loadSalesHistory(limit = 100): Promise<CompletedSale[]> {
+  const raw = await callSupabaseRpc(
+    'sales_history',
+    { p_limit: limit },
+    'Could not load sales history.',
+    (value): value is unknown[] => Array.isArray(value),
+  );
+  return parseSalesHistoryRows(raw);
+}
+
+export async function loadSalesHistoryRange(
+  from: Date,
+  toExclusive: Date,
+): Promise<CompletedSale[]> {
+  if (
+    Number.isNaN(from.getTime())
+    || Number.isNaN(toExclusive.getTime())
+    || from >= toExclusive
+  ) {
+    throw new RangeError('Choose a valid sales date range.');
+  }
+
+  const raw = await callSupabaseRpc(
+    'sales_history_range',
+    {
+      p_from: from.toISOString(),
+      p_to_exclusive: toExclusive.toISOString(),
+    },
+    'Could not load sales for the selected date range.',
+    (value): value is unknown[] => Array.isArray(value),
+  );
+  return parseSalesHistoryRows(raw, 'Could not load sales for the selected date range.');
 }

@@ -9,8 +9,10 @@ import {
   ScrollText,
   ClipboardList,
   Database,
+  Store,
   Trash2,
   CheckCircle2,
+  MessageSquare,
 } from 'lucide-react';
 import {
   BillingTemplate,
@@ -298,7 +300,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
         <div>
           <h2 className="flex items-center gap-2 text-base font-black text-text">
-            <span>⚙️</span> Shop Profile
+            <Store size={16} className="text-primary" /> Shop Profile
           </h2>
           <p className="text-xs text-muted">This information will appear on your prints and invoices.</p>
         </div>
@@ -647,7 +649,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* ── WhatsApp Messaging Templates (Matching Screenshot 51 & 52) ────── */}
       <div className="space-y-3 rounded-card border border-border bg-white p-6 shadow-xs">
         <h3 className="flex items-center gap-2 text-sm font-black text-text">
-          <span>💬</span> WhatsApp Messaging Templates
+          <MessageSquare size={16} className="text-primary" />
+          <span>WhatsApp Messaging Templates</span>
         </h3>
         <p className="text-xs text-muted">
           Variables: <code>[Name]</code>, <code>[Shop Name]</code>, <code>[Amount]</code>, <code>[ID]</code>

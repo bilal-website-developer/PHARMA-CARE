@@ -42,12 +42,39 @@ The Q6 output shows that future functions created by `postgres` currently defaul
 
 `002_default_privileges.sql` also revokes default function EXECUTE from PUBLIC for the selected creator role, across schemas. Do not apply it until the preflight baseline and the corresponding rollback behavior are explicitly reviewed.
 
-## 5) A3 test-data cleanup — not prepared
+## 5) S2 pre-cleanup snapshot verification
 
-There is no reviewed A3 backup/cleanup SQL package in this repository. Older references to `010_backup_to_schema.sql` and `011_clean_test_data.sql` are placeholders and those files do not exist here. Do not construct or run cleanup SQL until the retained-account/data keep-list is confirmed, a fresh recovery snapshot is verified, and forward/rollback/smoke-test scripts have been reviewed.
+The original S1 snapshot is dated 2026-11-07. Two S2 snapshot schemas already exist; do not rerun their capture scripts, drop either schema, or overwrite either snapshot. The retry snapshot is `backup_s2_20261111_2213`.
 
-## 6) Smoke test after cleanup
+The old `verify_snapshot()` smoke check compares current live row counts with counts from capture. That equality can fail on an active database when new rows are added after capture. For the retry snapshot, the owner reported `audit_logs` counts of 7,104 at capture, 7,104 copied, and 7,104 in the backup now, versus 7,108 live. This establishes count consistency for that table only.
+
+Before any S2 cleanup:
+
+1. Confirm the Dashboard project selector is the intended project.
+2. In the SQL Editor, confirm the active database role has `BYPASSRLS`. Do not continue if it does not.
+3. Run the complete `../004_s2_snapshot_backup_only_verify.sql` as a read-only verification of all recorded backup-table counts, RLS/ACL isolation, and table coverage. It deliberately does not compare current live row counts. Read the one-row result grid column `s2_backup_verification`; require `complete: true`, a positive `tables_checked`, and `checks: []`.
+4. Return only that one-row verification result; never paste backup table contents or customer data.
+
+Do not treat the snapshot as fully verified unless this backup-only check passes. The owner has chosen to preserve all current data, so skip destructive S2 cleanup and continue without deleting test data.
+
+## 6) A3 test-data cleanup — skipped by owner choice
+
+There is no reviewed A3 cleanup SQL package in this repository. Older references to `010_backup_to_schema.sql` and `011_clean_test_data.sql` are placeholders and those files do not exist here. The owner explicitly chose no cleanup; preserve all current data and do not construct or run cleanup SQL.
+
+## 7) Smoke test after cleanup
 - Run `SMOKE_TEST.md` again after A3.
+
+## 8) S3 additive tenant preflight
+
+The S2 backup-only check passed for 26 tables. The owner chose no cleanup. S3 preflight results have been reviewed. The first S3 attempt failed while adding a foreign key after updating rows in the same transaction. The owner ran the read-only failure-state check and confirmed the transaction left no S3 objects behind. Do not retry the old editor contents.
+
+1. Confirm the Dashboard project selector is the intended project.
+2. The failed-attempt state check passed: no shop table/schema/columns remain. Do not run it again unless the editor reports an ambiguous failure.
+3. Schema preparation and the Shop 1 backfill have both succeeded by owner report.
+4. The owner reports the consolidated smoke passed: 24 tables fully assigned, one active Pharma Care shop, 24 foreign keys and indexes, no Super Admin shop assignment, and all privacy checks true.
+5. In Integrations > Data API > Settings, confirm `tenant_private` is not selected under Exposed schemas. Smoke-test existing app flows before S4.
+
+Before step 4, confirm in Supabase Dashboard > Integrations > Data API > Settings that `tenant_private` is not exposed; it does not exist until step 4. Run steps 4–6 during a quiet maintenance window. The backfill transaction may block writes while it holds locks. S3 preserves existing authenticated reads by granting the previous columns individually while withholding `shop_id`, and changes only the `request_print` RPC's row JSON to omit that key. It does not add tenant-row RLS; cross-shop isolation remains blocked until S4. The S1/S2 snapshot is not a full database backup.
 
 ## Important SQL Editor notes
 - The Row Level Security popup appears only when creating tables or enabling RLS. Choose `Run and enable RLS` when prompted.

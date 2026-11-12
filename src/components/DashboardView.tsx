@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { BatchStatus, CompletedSale, Product, Customer, UserRole } from '../types/pharmacy';
 import { salesForPeriod } from '../utils/salesReport';
+import type { NavItemKey } from './Sidebar';
 
 interface DashboardViewProps {
   sales: CompletedSale[];
@@ -22,7 +23,7 @@ interface DashboardViewProps {
   customers: Customer[];
   currentRole: UserRole;
   currentUserName: string;
-  onNavigate: (tab: any) => void;
+  onNavigate: (tab: NavItemKey) => void;
   onOpenCloseDay: () => void;
 }
 
@@ -96,10 +97,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* ── Greeting Banner ──────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-black text-text tracking-tight flex items-center gap-2">
             Assalam-o-Alaikum, {currentUserName.split(' ')[0]}!
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">Today's Summary</p>
+          <p className="text-xs text-muted font-medium mt-0.5">Today's Summary</p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -118,7 +119,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* ── Dashboard metrics ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4 xl:grid-cols-7">
         {/* 1. Today's Sales */}
-        <div className="flex flex-col justify-between rounded-card border border-border bg-white p-4 shadow-xs">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
               <ShoppingBag className="w-4 h-4" />
@@ -128,15 +129,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-[11px] font-medium text-slate-500 block">Today's Sales (Rs)</span>
-            <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
+            <span className="text-[11px] font-medium text-muted block">Today's Sales (Rs)</span>
+            <span className="text-xl font-black text-text font-mono tracking-tight">
               Rs. {todaySalesPKR.toFixed(0)}
             </span>
           </div>
         </div>
 
         {/* 2. Today's Profit (Gross) */}
-        <div className="flex flex-col justify-between rounded-card border border-border bg-white p-4 shadow-xs">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
@@ -146,15 +147,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-[11px] font-medium text-slate-500 block">
+            <span className="text-[11px] font-medium text-muted block">
               {canViewProfit ? "Today's Profit (Rs)" : "Today's Invoices"}
             </span>
             {canViewProfit ? (
-              <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
+              <span className="text-xl font-black text-text font-mono tracking-tight">
                 {todayProfitPKR === null ? 'Unavailable' : `Rs. ${todayProfitPKR.toFixed(0)}`}
               </span>
             ) : (
-              <span className="text-sm font-bold text-slate-700 flex items-center gap-1">
+              <span className="text-sm font-bold text-text flex items-center gap-1">
                 <Activity className="w-3.5 h-3.5" /> {todaySales.length} invoices
               </span>
             )}
@@ -162,25 +163,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* 3. Monthly Sales */}
-        <div className="flex flex-col justify-between rounded-card border border-border bg-white p-4 shadow-xs">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
               <Calendar className="w-4 h-4" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
               This Month
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-[11px] font-medium text-slate-500 block">Monthly Sales (Rs)</span>
-            <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
-              Rs. {monthlySales.reduce((sum, sale) => sum + sale.totalPaisa, 0) / 100}
+            <span className="text-[11px] font-medium text-muted block">Monthly Sales (Rs)</span>
+            <span className="text-xl font-black text-text font-mono tracking-tight">
+              Rs. {(monthlySales.reduce((sum, sale) => sum + sale.totalPaisa, 0) / 100).toFixed(0)}
             </span>
           </div>
         </div>
 
         {/* Near-expiry and expired stock alerts */}
-        <div className="bg-white p-4 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 rounded-xl bg-warning/10 text-warning flex items-center justify-center">
               <BadgeAlert className="w-4 h-4" />
@@ -195,7 +196,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-border shadow-xs flex flex-col justify-between">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="w-8 h-8 rounded-xl bg-danger/10 text-danger flex items-center justify-center">
               <AlertTriangle className="w-4 h-4" />
@@ -211,7 +212,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* 4. Total Receivables */}
-        <div className="flex flex-col justify-between rounded-card border border-border bg-white p-4 shadow-xs">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex h-8 w-8 items-center justify-center rounded-control bg-warning/10 text-warning">
               <Wallet className="w-4 h-4" />
@@ -231,7 +232,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* 5. Low Stock Products */}
-        <div className="flex flex-col justify-between rounded-card border border-border bg-white p-4 shadow-xs">
+        <div className="flex flex-col justify-between rounded-card border border-border bg-surface p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex h-8 w-8 items-center justify-center rounded-control bg-danger/10 text-danger">
               <AlertTriangle className="w-4 h-4" />
@@ -255,11 +256,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* ── Quick Actions Grid (Matching Screenshot 2) ─────────────────────── */}
       <div className="space-y-3">
-        <h3 className="text-xs font-black text-slate-500 tracking-wider uppercase">
+        <h3 className="text-xs font-black text-muted tracking-wider uppercase">
           Quick Actions
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-          {/* New Sale Button (Vibrant Blue) */}
+          {/* New Sale Button */}
           <button
             type="button"
             onClick={() => onNavigate('pos')}
@@ -273,7 +274,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('products')}
-            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-white p-5 text-text shadow-xs transition hover:bg-surface"
+            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-surface p-5 text-text shadow-xs transition hover:bg-surface"
           >
             <PackagePlus className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold">Add Medicine</span>
@@ -283,9 +284,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('sales-history')}
-            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-white p-5 text-text shadow-xs transition hover:bg-surface"
+            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-surface p-5 text-text shadow-xs transition hover:bg-surface"
           >
-            <History className="w-6 h-6 text-slate-600 group-hover:scale-110 transition-transform" />
+            <History className="w-6 h-6 text-muted group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold">Sales History</span>
           </button>
 
@@ -293,7 +294,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('stock-inventory')}
-            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-white p-5 text-text shadow-xs transition hover:bg-surface"
+            className="group flex flex-col items-center justify-center gap-2 rounded-card border border-border bg-surface p-5 text-text shadow-xs transition hover:bg-surface"
           >
             <Boxes className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold">Inventory</span>

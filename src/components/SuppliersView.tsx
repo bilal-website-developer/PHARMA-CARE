@@ -24,6 +24,14 @@ interface LedgerEntry {
   balance: number; // running balance (paisa) — positive = we owe them
 }
 
+interface SupplierLedgerRow {
+  id: string;
+  supplier_id: string;
+  amount_paisa: number;
+  description: string;
+  created_at: string;
+}
+
 type SupplierForm = Pick<
   Supplier,
   'name' | 'contact' | 'address' | 'licence_or_tax_number' | 'payment_terms'
@@ -83,14 +91,29 @@ function SupplierLedger({ supplier }: { supplier: Supplier }) {
       // Try to load from supplier_ledger table if it exists
       const { data, error: qErr } = await supabase
         .from('supplier_ledger')
-        .select('*')
+        .select('id, supplier_id, amount_paisa, description, created_at')
         .eq('supplier_id', supplier.id)
-        .order('date', { ascending: true });
+        .order('created_at', { ascending: true });
       if (qErr) {
         // table may not exist yet — show empty state gracefully
         setEntries([]);
       } else {
-        setEntries((data as LedgerEntry[]) ?? []);
+        let balance = 0;
+        const rows = (data as SupplierLedgerRow[] | null) ?? [];
+        setEntries(rows.map((row) => {
+          const debit = Math.max(row.amount_paisa, 0);
+          const credit = Math.max(-row.amount_paisa, 0);
+          balance += debit - credit;
+          return {
+            id: row.id,
+            supplier_id: row.supplier_id,
+            date: row.created_at.slice(0, 10),
+            description: row.description,
+            debit,
+            credit,
+            balance,
+          };
+        }));
       }
     } catch {
       setEntries([]);

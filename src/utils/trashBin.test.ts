@@ -15,6 +15,7 @@ const events: TrashBinEvent[] = [
     reason: null,
     created_at: '2026-10-12T12:00:00Z',
     can_restore: true,
+    can_permanently_delete: true,
   },
   {
     id: '2',
@@ -28,6 +29,7 @@ const events: TrashBinEvent[] = [
     reason: 'Duplicate',
     created_at: '2026-10-12T11:00:00Z',
     can_restore: false,
+    can_permanently_delete: false,
   },
 ];
 
@@ -50,5 +52,7 @@ test('searches Trash Bin activity by item, action, actor, entity, and reason', (
 test('parses events and applies safe display fallbacks', () => {
   assert.equal(parseTrashBinEvent({ ...events[0], actor_name: '  ', display_name: '' }).actor_name, 'Unknown user');
   assert.equal(parseTrashBinEvent({ ...events[0], actor_name: 'Admin', display_name: '' }).display_name, 'Unknown item');
+  assert.equal(parseTrashBinEvent(events[0]).can_permanently_delete, true);
   assert.throws(() => parseTrashBinEvent({ ...events[0], action: 'removed' }), /invalid fields/);
+  assert.throws(() => parseTrashBinEvent({ ...events[0], can_permanently_delete: undefined }), /invalid fields/);
 });

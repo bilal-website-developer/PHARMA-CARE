@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   DollarSign,
@@ -9,7 +9,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import { CompletedSale, PaymentMethod, UserRole } from '../types/pharmacy';
-import { parseSaleDate } from '../utils/salesReport';
+import {
+  filterSalesBetween,
+  formatLocalDateInput,
+  localStartOfNextDay,
+  parseLocalDateInput,
+  parseSaleDate,
+} from '../utils/salesReport';
 
 interface ReportsScreenProps {
   sales: CompletedSale[];
@@ -19,16 +25,27 @@ interface ReportsScreenProps {
   phone?: string;
   generatedBy?: string;
   loading?: boolean;
+  onLoadCustomSales: (from: Date, toExclusive: Date) => Promise<CompletedSale[]>;
 }
 
-type AnalyticsPeriod = 'today' | '7days' | '30days' | 'all';
+type AnalyticsPeriod = 'today' | '7days' | '30days' | 'all' | 'custom';
 
 export const ReportsScreen: React.FC<ReportsScreenProps> = ({
   sales,
   currentRole,
   loading = false,
+  onLoadCustomSales,
 }) => {
   const [period, setPeriod] = useState<AnalyticsPeriod>('all');
+  const [customFrom, setCustomFrom] = useState(() => formatLocalDateInput(new Date()));
+  const [customTo, setCustomTo] = useState(() => formatLocalDateInput(new Date()));
+  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+  const [customRangeError, setCustomRangeError] = useState('');
+  const [customRangeSales, setCustomRangeSales] = useState<CompletedSale[] | null>(null);
+  const [customRangeLoading, setCustomRangeLoading] = useState(false);
+  const [customRangeLoadError, setCustomRangeLoadError] = useState('');
+  const customRangeRequest = useRef(0);
+  const todayInput = formatLocalDateInput(new Date());
   const canSeeProfit =
     currentRole === UserRole.ADMIN ||
     currentRole === UserRole.SUPER_ADMIN ||
@@ -40,22 +57,66 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+    if (period === 'custom') {
+      return appliedCustomRange && customRangeSales ? customRangeSales : [];
+    }
+
     if (period === 'today') {
-      return sales.filter((s) => {
-        const d = parseSaleDate(s.timestamp);
-        return d !== null && d >= todayStart && d <= now;
-      });
+      return filterSalesBetween(sales, todayStart, now);
     }
 
     const cutoff = new Date(todayStart);
     if (period === '7days') cutoff.setDate(cutoff.getDate() - 7);
     if (period === '30days') cutoff.setDate(cutoff.getDate() - 30);
 
-    return sales.filter((s) => {
-      const d = parseSaleDate(s.timestamp);
-      return d !== null && d >= cutoff && d <= now;
-    });
-  }, [period, sales]);
+    return filterSalesBetween(sales, cutoff, now);
+  }, [appliedCustomRange, customRangeSales, period, sales]);
+
+  const applyCustomRange = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const start = parseLocalDateInput(customFrom);
+    const end = parseLocalDateInput(customTo);
+    const today = parseLocalDateInput(todayInput);
+
+    if (!start || !end) {
+      setCustomRangeError('Choose both a From date and a To date.');
+      return;
+    }
+    if (start > end) {
+      setCustomRangeError('From date must be on or before To date.');
+      return;
+    }
+    if (!today || end > today) {
+      setCustomRangeError('Dates cannot be in the future.');
+      return;
+    }
+
+    setAppliedCustomRange({ start, end });
+    setCustomRangeError('');
+    setCustomRangeLoadError('');
+    setCustomRangeSales(null);
+    setCustomRangeLoading(true);
+    const requestId = ++customRangeRequest.current;
+    void onLoadCustomSales(start, localStartOfNextDay(end))
+      .then((rangedSales) => {
+        if (requestId === customRangeRequest.current) setCustomRangeSales(rangedSales);
+      })
+      .catch((error: unknown) => {
+        if (requestId === customRangeRequest.current) {
+          setCustomRangeLoadError(error instanceof Error
+            ? error.message
+            : 'Could not load sales for the selected date range.');
+        }
+      })
+      .finally(() => {
+        if (requestId === customRangeRequest.current) setCustomRangeLoading(false);
+      });
+  };
+
+  const reportsLoading = loading || (period === 'custom' && customRangeLoading);
+  const customRangeLabel = appliedCustomRange
+    ? `${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(appliedCustomRange.start)} – ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(appliedCustomRange.end)}`
+    : '';
 
   // Aggregate Metrics
   const totalRevenuePaisa = useMemo(
@@ -192,33 +253,100 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
           <p className="text-[11px] text-muted">Sales trends, velocity, and profit margins.</p>
         </div>
 
-        {/* Period Chips: Today / 7 Days / 30 Days / All Time */}
-        <div className="flex rounded-control border border-border bg-surface-muted/40 p-0.5 text-xs font-semibold">
-          {[
-            { id: 'all', label: 'All Time' },
-            { id: 'today', label: 'Today' },
-            { id: '7days', label: '7 Days' },
-            { id: '30days', label: '30 Days' },
-          ].map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPeriod(id as AnalyticsPeriod)}
-              className={`rounded px-2.5 py-1 text-[11px] transition ${
-                period === id
-                  ? 'bg-primary text-white font-bold shadow-2xs'
-                  : 'text-muted hover:text-text'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex flex-wrap justify-end rounded-control border border-border bg-surface-muted/40 p-0.5 text-xs font-semibold">
+            {[
+              { id: 'today', label: 'Today' },
+              { id: '7days', label: '7 Days' },
+              { id: '30days', label: '30 Days' },
+              { id: 'all', label: 'All Time' },
+              { id: 'custom', label: 'Custom' },
+            ].map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setPeriod(id as AnalyticsPeriod);
+                  setCustomRangeError('');
+                }}
+                aria-pressed={period === id}
+                className={`rounded px-2.5 py-1 text-[11px] transition ${
+                  period === id
+                    ? 'bg-primary text-white font-bold shadow-2xs'
+                    : 'text-muted hover:text-text'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {period === 'custom' && (
+            <form onSubmit={applyCustomRange} className="flex flex-wrap items-end justify-end gap-1.5">
+              <label className="grid gap-0.5 text-[10px] font-semibold text-muted">
+                From date
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={todayInput}
+                  onChange={(event) => {
+                    customRangeRequest.current += 1;
+                    setCustomFrom(event.target.value);
+                    setAppliedCustomRange(null);
+                    setCustomRangeSales(null);
+                    setCustomRangeLoading(false);
+                    setCustomRangeLoadError('');
+                    setCustomRangeError('');
+                  }}
+                  className="rounded-control border border-border bg-surface px-2 py-1 text-xs text-text"
+                />
+              </label>
+              <label className="grid gap-0.5 text-[10px] font-semibold text-muted">
+                To date
+                <input
+                  type="date"
+                  value={customTo}
+                  max={todayInput}
+                  onChange={(event) => {
+                    customRangeRequest.current += 1;
+                    setCustomTo(event.target.value);
+                    setAppliedCustomRange(null);
+                    setCustomRangeSales(null);
+                    setCustomRangeLoading(false);
+                    setCustomRangeLoadError('');
+                    setCustomRangeError('');
+                  }}
+                  className="rounded-control border border-border bg-surface px-2 py-1 text-xs text-text"
+                />
+              </label>
+              <button
+                type="submit"
+                className="rounded-control bg-primary px-3 py-1.5 text-xs font-bold text-white hover:opacity-90"
+              >
+                Apply
+              </button>
+              {customRangeError && (
+                <p role="alert" className="w-full text-right text-[10px] font-semibold text-danger">
+                  {customRangeError}
+                </p>
+              )}
+              {customRangeLoadError && (
+                <p role="alert" className="w-full text-right text-[10px] font-semibold text-danger">
+                  {customRangeLoadError}
+                </p>
+              )}
+              {customRangeLabel && !customRangeError && (
+                <p aria-live="polite" className="w-full text-right text-[10px] text-muted">
+                  {customRangeLabel}
+                </p>
+              )}
+            </form>
+          )}
         </div>
       </section>
 
       {/* ── 2. One Row of 4 Compact KPI Tiles ── */}
       <section aria-label="Analytics KPI strip" className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-        {loading ? (
+        {reportsLoading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-10 rounded-lg bg-surface border border-border animate-pulse" />
           ))
@@ -271,7 +399,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
           </span>
         </div>
 
-        {loading ? (
+        {reportsLoading ? (
           <div className="h-28 w-full bg-surface-muted/50 rounded-lg animate-pulse" />
         ) : trendData.length === 0 ? (
           <div className="py-8 text-center text-xs text-muted">
@@ -338,7 +466,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
             <span className="text-[10px] text-muted font-mono">{filteredSales.length} txns</span>
           </div>
 
-          {loading ? (
+          {reportsLoading ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-5 bg-surface-muted/50 rounded animate-pulse" />
@@ -393,7 +521,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
             <span className="text-[10px] text-muted">By units</span>
           </div>
 
-          {loading ? (
+          {reportsLoading ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-5 bg-surface-muted/50 rounded animate-pulse" />
@@ -452,7 +580,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
             <span className="text-[10px] text-muted">Performance</span>
           </div>
 
-          {loading ? (
+          {reportsLoading ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-5 bg-surface-muted/50 rounded animate-pulse" />

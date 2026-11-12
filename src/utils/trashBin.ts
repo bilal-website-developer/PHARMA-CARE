@@ -14,6 +14,7 @@ export interface TrashBinEvent {
   reason: string | null;
   created_at: string;
   can_restore: boolean;
+  can_permanently_delete: boolean;
 }
 
 const ENTITY_SEARCH_LABELS: Record<TrashEntityType, string> = {
@@ -39,7 +40,8 @@ export function parseTrashBinEvent(value: unknown): TrashBinEvent {
     || typeof value.display_name !== 'string'
     || (value.reason !== null && typeof value.reason !== 'string')
     || typeof value.created_at !== 'string'
-    || typeof value.can_restore !== 'boolean') {
+    || typeof value.can_restore !== 'boolean'
+    || typeof value.can_permanently_delete !== 'boolean') {
     throw new Error('Received a Trash Bin event with invalid fields.');
   }
 
@@ -55,6 +57,7 @@ export function parseTrashBinEvent(value: unknown): TrashBinEvent {
     reason: value.reason,
     created_at: value.created_at,
     can_restore: value.can_restore,
+    can_permanently_delete: value.can_permanently_delete,
   };
 }
 

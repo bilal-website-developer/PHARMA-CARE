@@ -20,6 +20,7 @@ interface TopNavProps {
   onLogout: () => void;
   onOpenStockInventory: (medicineId: string | null) => void;
   onOpenProducts: (searchText: string | null) => void;
+  compact?: boolean;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -31,6 +32,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onLogout,
   onOpenStockInventory,
   onOpenProducts,
+  compact = false,
 }) => {
   const [shopLogo, setShopLogo] = useState(() => readShopLogo());
   const [animationsEnabled, setAnimationsEnabled] = useState(() =>
@@ -103,16 +105,18 @@ export const TopNav: React.FC<TopNavProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border bg-white/90 px-4 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6">
+    <header className={`sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border bg-white/90 shadow-xs backdrop-blur-md sm:gap-3 ${
+      compact ? 'px-3 py-1.5 sm:px-4' : 'px-4 py-2.5 sm:px-6'
+    }`}>
       <div className="flex min-w-0 items-center">
         {shopLogo ? (
           <img
             src={shopLogo}
             alt="Shop Logo"
-            className="h-8 max-w-[130px] rounded object-contain shrink-0"
+            className={`${compact ? 'h-7' : 'h-8'} max-w-[130px] rounded object-contain shrink-0`}
           />
         ) : (
-          <PharmaLogo size={2.6} layout="inline" className="pharma-brand header-pharma-logo" />
+          <PharmaLogo size={compact ? 2.2 : 2.6} layout="inline" className="pharma-brand header-pharma-logo" />
         )}
       </div>
 
@@ -136,9 +140,13 @@ export const TopNav: React.FC<TopNavProps> = ({
             aria-expanded={profileOpen}
             aria-controls="profile-actions-menu"
             onClick={() => setProfileOpen((open) => !open)}
-            className="flex max-w-48 items-center gap-2 rounded-control p-1.5 text-left hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className={`flex max-w-48 items-center gap-2 rounded-control text-left hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              compact ? 'p-1' : 'p-1.5'
+            }`}
           >
-            <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+            <span aria-hidden="true" className={`flex shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white ${
+              compact ? 'h-7 w-7' : 'h-8 w-8'
+            }`}>
               {username.charAt(0).toUpperCase()}
             </span>
             <span className="hidden min-w-0 md:block">
@@ -160,7 +168,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 <div className="truncate text-xs font-bold text-text">{username}</div>
                 <div className="text-[10px] font-semibold uppercase text-muted">{ROLE_LABELS[currentRole]}</div>
               </div>
-              {currentRole !== UserRole.ADMIN && <button
+              <button
                 type="button"
                 role="menuitem"
                 onClick={() => runProfileAction(onChangePassword)}
@@ -168,7 +176,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               >
                 <KeyRound aria-hidden="true" className="h-4 w-4 text-muted" />
                 Change Password
-              </button>}
+              </button>
               <button
                 type="button"
                 role="menuitem"

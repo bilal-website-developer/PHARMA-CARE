@@ -19,6 +19,7 @@ import {
   loadCustomerAccountsSummary,
   loadPosCustomers,
   loadSalesHistory,
+  loadSalesHistoryRange,
   recordCustomerPayment,
   saveCustomer,
 } from './data/sales';
@@ -30,6 +31,7 @@ import { InstallAppPrompt } from './components/InstallAppPrompt';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { canAccessCustomerDisplay } from './utils/customerDisplay';
+import { filterSalesBetween } from './utils/salesReport';
 import type { ProductFilter } from './components/InventoryScreen';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
@@ -942,6 +944,7 @@ function PharmacyWorkspace({
           username={currentUserName}
           userId={session.userId}
           activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
+          compact={activeItem === 'pos'}
           onChangePassword={() => setShowPasswordDialog(true)}
           onLogout={onLogout}
           onOpenStockInventory={(medicineId) => viewProductBatches(medicineId, 'low-stock')}
@@ -949,7 +952,11 @@ function PharmacyWorkspace({
         />
 
         {/* Dynamic Screen View */}
-        <main className="pharmacy-page p-4 sm:p-6 flex-1 overflow-y-auto">
+        <main className={`pharmacy-page flex-1 ${
+          activeItem === 'pos'
+            ? 'min-h-0 overflow-y-auto p-2 lg:overflow-hidden'
+            : 'overflow-y-auto p-4 sm:p-6'
+        }`}>
           {accessMessage && <p role="status" className="visual-toast mb-4 rounded-control border border-warning bg-warning/15 px-4 py-3 text-sm font-semibold text-text">{accessMessage}</p>}
           {isPageNotFound ? (
             <section className="mx-auto flex min-h-[50vh] max-w-xl flex-col items-center justify-center gap-4 text-center">
@@ -1084,6 +1091,16 @@ function PharmacyWorkspace({
               address={readShopProfile().city}
               phone={readShopProfile().phone}
               generatedBy={currentUserName}
+              onLoadCustomSales={(from, toExclusive) => {
+                if (!supabase && isDemoDataLoadedLocally()) {
+                  return Promise.resolve(filterSalesBetween(
+                    completedSales,
+                    from,
+                    new Date(toExclusive.getTime() - 1),
+                  ));
+                }
+                return loadSalesHistoryRange(from, toExclusive);
+              }}
             />
           )}
 
