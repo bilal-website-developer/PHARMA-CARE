@@ -5,7 +5,7 @@
 - **HEAD:** `a10e6ee462ee163e6bb359b71f4c2e148aba8042`
 - **Scope:** Sale-return UI/data helpers, `20261013160000_persist_sales_and_returns.sql`, its rollback, sales reporting, and related tests.
 - **Method:** Static inspection, the current full test suite, and review of owner-supplied live catalog/ACL output dated 2026-10-14. The assistant ran no SQL and performed no live sale or return.
-- **Limitations:** No migration-history/version result or end-to-end return result was supplied. Live metadata is owner-provided, not independently queried.
+- **Limitations at audit time:** No migration-history/version result or end-to-end return result was supplied. Live metadata was owner-provided, not independently queried. Later owner-reported smoke evidence is recorded below and does not change the original source-audit date/scope.
 
 ## Verdict
 
@@ -44,7 +44,7 @@ The aggregate difference (**+2 DONE, -1 PARTIAL, unchanged MISSING, and one addi
 | 13 | Cash refund payout and cashbook settlement | MISSING | Return processing records a CASH method/amount but creates no durable cash disbursement or payout confirmation. |
 | 14 | Interaction with sale-void workflow | MISSING | The return migration has no sale-void operation or demonstrated reconciliation behavior. |
 | 15 | Return reporting and receipt workflow | PARTIAL | Reports omit returns; a RETURN memo renderer exists but successful return processing does not invoke it. |
-| 16 | Return-specific automated and live end-to-end validation | PARTIAL | Pure helper tests exist but are outside `npm test`; no RPC/database integration tests or live workflow were run. |
+| 16 | Return-specific automated and live end-to-end validation | PARTIAL | The owner later reported the rollback-only RPC smoke test passed, covering a test sale, partial quarantine return, rejection, and cross-shop denial. Full cash/credit settlement, multi-return/over-return behavior, and application UI workflows remain unverified. |
 
 ## What works in the source
 
@@ -71,9 +71,9 @@ The server prevents inappropriate classes/cold-chain and requires the requested 
 ### Tests and live proof
 
 - Pure tests cover refund proration and restock helper rules in `src/data/returnLogic.test.ts`, but that file is not included in the `npm test` script chain.
-- No return RPC/database integration test was found.
+- The owner reports `supabase/fresh/029_s5_shop_scoped_returns.smoke_test.sql` passed. It runs under a database-owner role, creates fixtures in a transaction, and rolls them back; it exercises same-shop lookup/request/quarantine/rejection, per-shop settings, and foreign-shop denial. This is not a full accounting or application UI test.
 - The owner's current query output reports `SECURITY DEFINER`, anon EXECUTE false, and authenticated EXECUTE true for the listed sales/return RPCs. Earlier selected metadata showed `search_path=public`; the current full ACL output does not include settings for every function. The same current output shows anon EXECUTE true for other SECURITY DEFINER functions; see [SECURITY_AUDIT.md](./SECURITY_AUDIT.md).
-- Real sale → partial return → additional return → duplicate/over-return → cash/credit accounting has not been exercised against a live or staging database.
+- The smoke test exercises a disposable test sale and partial quarantine return, but additional partial returns, duplicate/over-return cases, actual cash settlement, and credit accounting have not been verified against a live or staging database.
 
 ## Staging manual test plan
 
