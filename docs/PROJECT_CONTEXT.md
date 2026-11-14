@@ -166,7 +166,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - 2026-11-14 — The owner no longer had the earlier 050D output, so prepared 050G as one read-only JSON query for remaining public SECURITY DEFINER candidates. Reviewed the owner-provided result: four authenticated business RPCs were unscoped, and `save_customer` relied on the shop-assignment trigger. The owner chose scoped fixes; prepared 050H migration, disable-only rollback, and rollback-only two-shop smoke test. SQL parsed locally only; no live SQL was run.
 - 2026-11-14 — The owner-reported 050H smoke test failed sale-item unit-price validation; its foreign unit fixture was 1,000 paisa while the sale item used 9,000,000 paisa. Corrected both synthetic unit fixtures to set explicit matching sale prices, and added a fixture-price assertion. Rerun the smoke test only; migration is not to be rerun. No live SQL was run by the assistant.
 - 2026-11-14 — The owner reported the corrected 050H smoke test returned “successful, no rows.” Moved its PASS result query after the final fixture-cleanup `ROLLBACK` so SQL Editor displays the result; owner must rerun the updated smoke test. The assistant has not run live SQL.
-- 2026-11-14 — The owner explicitly authorized saving and pushing the pending S5 preparation files to the current branch; this does not authorize running SQL or deploying. No live database changes were made by the assistant.
+- 2026-11-14 — At the owner's explicit request, pushed the prepared S5 SQL package and related documentation to `feature/team-view-manage-users` in commit `ac76eb8`. No live SQL or deployment was performed by the assistant.
 - 2026-11-12 — Added POS customer-type/details capture and compact POS-only layout, plus inclusive local-date Custom Analytics backed by a shop-scoped date-range RPC. TypeScript, tests, and build pass; database migration is owner-run and unapplied here.
 - 2026-11-11 — S2 backup-only verification passed: 26 tables, complete, and no checks. The owner chose no cleanup; preserve all current data.
 - 2026-11-11 — S3 preflight found 26 RLS-enabled tables, no shop objects, and 66 policies. Owner chose Shop 1 `Pharma Care`; privilege/RPC checks found table-wide SELECT and a `request_print` response exposing whole-row data. S3 therefore uses safe column grants/projections and removes `shop_id` from that response; no Admin UUID is needed, and client-supplied shop IDs are not trusted.
@@ -189,15 +189,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-14T00:08:43.886Z
+Generated at (UTC): 2026-11-14T00:14:25.895Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- Prepare S5 tenant-scope SQL stages
 - Complete POS, analytics, and tenant rollout work
 - Fix Vercel customer display deep links
 - Persist customer display link per account
 - Complete POS settings and access-control updates
-- Update published branch status
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
