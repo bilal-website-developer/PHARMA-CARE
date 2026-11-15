@@ -8,13 +8,10 @@ export interface AuthSession {
   email: string;
   role: UserRole;
   permissions: string[];
-  accountNotice: string | null;
   shopProfile: { name: string; phone: string; address: string; logoPath: string } | null;
 }
 
-const legacyPasswordCleanupStatus = new Map<string, string | null>();
-const legacyPasswordCleanupWarning =
-  'Old password setup metadata could not be cleared. You can continue using the app; contact your administrator if this warning persists.';
+const legacyPasswordCleanupAttempted = new Set<string>();
 
 export async function loadAuthSession(userId: string, authEmail?: string): Promise<AuthSession> {
   if (!supabase) throw new Error('Supabase is not configured.');
@@ -42,22 +39,18 @@ export async function loadAuthSession(userId: string, authEmail?: string): Promi
   if (!authUserData.user || authUserData.user.id !== userId) {
     throw new Error('Your session is no longer valid. Sign in again.');
   }
-  let accountNotice: string | null = null;
-  if (authUserData.user.app_metadata?.must_change_password === true) {
-    if (legacyPasswordCleanupStatus.has(userId)) {
-      accountNotice = legacyPasswordCleanupStatus.get(userId) ?? null;
-    } else {
-      try {
-        const { error: cleanupError } = await supabase.functions.invoke('manage-users', {
-          body: { action: 'clear_legacy_password_change' },
-        });
-        if (cleanupError) throw cleanupError;
-        legacyPasswordCleanupStatus.set(userId, null);
-      } catch (cleanupError) {
-        console.error('Could not clear obsolete password setup metadata:', cleanupError);
-        accountNotice = legacyPasswordCleanupWarning;
-        legacyPasswordCleanupStatus.set(userId, accountNotice);
-      }
+  if (
+    authUserData.user.app_metadata?.must_change_password === true
+    && !legacyPasswordCleanupAttempted.has(userId)
+  ) {
+    legacyPasswordCleanupAttempted.add(userId);
+    try {
+      const { error: cleanupError } = await supabase.functions.invoke('manage-users', {
+        body: { action: 'clear_legacy_password_change' },
+      });
+      if (cleanupError) throw cleanupError;
+    } catch (cleanupError) {
+      console.error('Could not clear obsolete password setup metadata:', cleanupError);
     }
   }
   const { data: shopAccess, error: shopAccessError } = await supabase.rpc('current_shop_access');
@@ -91,7 +84,6 @@ export async function loadAuthSession(userId: string, authEmail?: string): Promi
     email: data.email || authEmail || '',
     role: data.role as UserRole,
     permissions: Array.isArray(data.permissions) ? data.permissions.filter(isPermissionKey) : [],
-    accountNotice,
     shopProfile,
   };
 }

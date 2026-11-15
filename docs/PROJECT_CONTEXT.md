@@ -108,7 +108,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. Verify the deployed `can_view_cost()` definition and table grants before release.
 - **In progress:** Products compact filter toolbar: debounced search, wrapping filter pills, removable active-filter chips, and a tested clear-all/reset helper. No RPC or database behavior changed.
 - **Done:** Manage Users list handling now falls back safely when response fields are absent and reports a likely stale `manage-users` deployment instead of crashing.
-- **Implemented locally:** The website no longer presents a forced first-login or self-service password-change flow. Provisioning no longer writes the legacy force-change flag, existing flagged accounts clear it through a self-scoped server action on login, and provisioning retries preserve the user's password. Authorized Admin/Super Admin password resets remain. Supabase Auth itself still exposes password updates to authenticated users, so hiding the UI does not prevent deliberate direct Auth API calls. TypeScript, full tests, and production build pass; deploy the frontend and matching `manage-users` Edge Function together. Hosted behavior is unverified.
+- **Implemented locally:** The website no longer presents a forced first-login or self-service password-change flow. Provisioning no longer writes the legacy force-change flag, existing flagged accounts attempt to clear it through a self-scoped server action on login (failure is logged, not shown as a banner), and provisioning retries preserve the user's password. Authorized Admin/Super Admin password resets remain. Supabase Auth itself still exposes password updates to authenticated users, so hiding the UI does not prevent deliberate direct Auth API calls. TypeScript, full tests, and production build pass; deploy the frontend and matching `manage-users` Edge Function together. Hosted behavior is unverified.
 - **Owner-reported applied; source verified:** POS checkout posts sales through `post_sale`, supports server-recorded cash/online/credit/split payments, and updates customer credit state. Owner reports `20261013160000_persist_sales_and_returns.sql` applied successfully after fixing two SQL syntax errors, and shared query results verify selected RPC ACL/security metadata. Runtime sale/return behavior has not yet been verified.
 - **Implemented in source; migration pending:** POS now captures customer type and optional contact details, and Custom Business Analytics fetches the selected local-date interval through a shop-scoped RPC. Apply `supabase/migrations/20261112190000_pos_customer_details.sql` and run `supabase/fresh/021_pos_customer_details_smoke_test.sql` before deploying the updated frontend. The rollback removes the new RPCs but intentionally retains the additive columns and existing values.
 - **Done in source; migration pending:** Sidebar favorites use a central page registry, role-visible Favorites group, keyboard/touch context menu, oldest-first selection order, an eight-page limit, and per-auth-user Supabase preferences. The Favorites heading appears only when the user has at least one visible favorite. The Dashboard Cash Sales/Credit and Daily Sales Target rows and target modal were removed. The owner confirmed the current database has no shop isolation/helper; `user_favorites` therefore has user-only RLS (no `shop_id`). Apply `20261018230000_sidebar_pins.sql` before enabling persistence.
@@ -172,7 +172,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - 2026-11-15 — Reworked Demo into a full-screen isolated session with role-specific sample navigation/data. The Super Admin Auth session stays active; **Sign out demo** clears in-memory state and returns to the Super Admin dashboard. Role grants are representative templates, not a particular user's saved grants. Demo pages are mock UI, not the live feature screens or an authorization test; no demo business APIs, SQL, or deployment are involved.
 - 2026-11-14 — S6 062/064/068 checks PASS by owner; added grants, platform-only routing, shared settings, guarded account paths, POS refinements, and Held bills. The 068 staff-granted write case was unavailable.
 - 2026-11-03–14 — Added POS customer details/analytics and completed owner-reported S1–S4/S5 work; deployment and hosted validation remain owner work.
-- 2026-11-15 — Owner confirms saving the Admin `Settings` grant with success and signing out/in, but the Admin still returns to Dashboard. The screenshot shows the grant selected; the exact profile permissions returned to the fresh session and matching account/project remain unverified. Shared browser remains at Login. Console showed Supabase Auth/API errors; project URL omitted. Implemented the requested password policy change locally: no forced first-login or user self-change; administrator resets remain. Existing legacy flags clear on login, and provisioning retries no longer re-add them. Frontend and Edge Function deployment/runtime verification remain pending.
+- 2026-11-15 — Owner confirms saving the Admin `Settings` grant with success and signing out/in, but the Admin still returns to Dashboard. The screenshot shows the grant selected; the exact profile permissions returned to the fresh session and matching account/project remain unverified. Shared browser remains at Login. Console showed Supabase Auth/API errors; project URL omitted. Implemented the requested password policy change locally: no forced first-login or user self-change; administrator resets remain. Existing legacy flags are cleared on login when the server action succeeds; failures are logged without showing a banner. Provisioning retries no longer re-add the flag. Frontend and Edge Function deployment/runtime verification remain pending.
 
 ## Legacy barcode migrations
 
@@ -188,15 +188,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-15T08:54:13.346Z
+Generated at (UTC): 2026-11-15T08:57:37.364Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- fix: remove user password change flow
 - feat: add POS, tenant admin, and role demo workflows
 - docs: record S5 package push
 - Prepare S5 tenant-scope SQL stages
 - Complete POS, analytics, and tenant rollout work
-- Fix Vercel customer display deep links
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

@@ -162,10 +162,7 @@ export default function App() {
         if (userError) throw userError;
         if (!userData.user) throw new Error('Your session is no longer valid. Sign in again.');
         const profile = await loadWorkspaceSession(userData.user.id, userData.user.email);
-        if (!disposed) {
-          setSession(profile);
-          setAuthMessage(profile.accountNotice ?? '');
-        }
+        if (!disposed) setSession(profile);
       } catch (error) {
         if (!disposed) {
           setSession(null);
@@ -200,7 +197,7 @@ export default function App() {
         setSession((current) => current
           ? { ...updated, sidebarPreferences: current.sidebarPreferences }
           : null);
-        setAuthMessage(updated.accountNotice ?? '');
+        setAuthMessage('');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Could not verify your account.';
         setAuthMessage(message);
@@ -255,7 +252,6 @@ export default function App() {
     try {
       const authenticatedSession = await loadWorkspaceSession(userId, email);
       setSession(authenticatedSession);
-      setAuthMessage(authenticatedSession.accountNotice ?? '');
       window.history.replaceState({}, '', '/');
     } catch (error) {
       await supabase?.auth.signOut();
