@@ -73,6 +73,7 @@ interface SettingsViewProps {
   canEditShopProfile: boolean;
   isShopAdmin: boolean;
   canManageDemoData: boolean;
+  canLoadDemoData: boolean;
   canEditOperationalSettings: boolean;
   operationalSettingsError: string;
   onTemplateChange: (template: BillingTemplate) => void;
@@ -92,6 +93,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   canEditShopProfile,
   isShopAdmin,
   canManageDemoData,
+  canLoadDemoData,
   canEditOperationalSettings,
   operationalSettingsError,
   onTemplateChange,
@@ -174,6 +176,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [canManageDemoData, isShopAdmin]);
 
   const handleLoadDemoData = async () => {
+    if (!canManageDemoData || !canLoadDemoData) return;
     setDemoBusy(true);
     setDemoNotice(null);
     try {
@@ -810,6 +813,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Grant this Admin the Products, Suppliers, and Purchases pages to load or remove shared demo data.
           </p>
         )}
+        {canManageDemoData && !canLoadDemoData && (
+          <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+            Grant this Admin the Categories page to load demo data. Loading creates or activates the required shop categories and manufacturers.
+          </p>
+        )}
 
         {demoNotice && (
           <div
@@ -827,7 +835,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
           <button
             type="button"
-            disabled={demoBusy || !canManageDemoData}
+            disabled={demoBusy || !canManageDemoData || !canLoadDemoData}
             onClick={handleLoadDemoData}
             className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:opacity-90 disabled:opacity-50"
           >
@@ -854,7 +862,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Are you sure you want to remove all demo medicines and suppliers?
             </p>
             <p className="text-[11px] text-red-700">
-              Demo medicines will be deactivated so they disappear from Products and POS. Related purchase and sales history is preserved; real products are not changed.
+              Demo medicines will be deactivated so they disappear from Products and POS. Related purchase and sales history is preserved; real products are not changed. Any categories and manufacturers added for the demo remain as reusable shop master data.
             </p>
             <div className="flex items-center gap-2">
               <button

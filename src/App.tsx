@@ -1301,6 +1301,11 @@ function PharmacyWorkspace({
                     && canPage('products')
                     && canPage('suppliers')
                     && canPage('purchases')}
+                  canLoadDemoData={currentRole === UserRole.ADMIN
+                    && canPage('products')
+                    && canPage('suppliers')
+                    && canPage('purchases')
+                    && (!supabase || canPage('categories'))}
                   canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
                   operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>

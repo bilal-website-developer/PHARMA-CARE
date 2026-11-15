@@ -47,7 +47,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - Supabase CLI is available as a local development dependency (`npx supabase`); hosted deployment still requires an authenticated CLI session and the correct project ref.
 - Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, cached receipt/memo settings, WhatsApp templates, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters. Shared billing template, receipt format, supported Pharmacy Memo settings, and shop identity/logo now load from server-backed shop records/RPCs.
 - S1 owner-run SQL recovery package is under `supabase/fresh/`: it snapshots `public` table data, selected catalog metadata, and sequence state into an isolated forced-RLS schema. Owner reports successful snapshot execution and smoke test `complete: true` with all 26 table counts matching. Catalog metadata is not a complete schema restore. It is not a full database backup and does not include Auth users, Storage objects, or platform configuration.
-- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. WhatsApp templates remain browser-local; Shop Admins with the Settings grant can edit their own shop profile/logo after package 073 is applied, while Super Admin shop identity/logo controls remain in the platform Shops page. Shop Admin demo data is written to shared tenant data, remains until manually removed, and is deactivated rather than physically deleted so business history is preserved.
+- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. WhatsApp templates remain browser-local; Shop Admins with the Settings grant can edit their own shop profile/logo after package 073 is applied, while Super Admin shop identity/logo controls remain in the platform Shops page. Shop Admin demo data is written to shared tenant data, remains until manually removed, and is deactivated rather than physically deleted so business history is preserved. Loading seeds missing shop categories/manufacturers through scoped RPCs and requires Categories plus Products, Suppliers, and Purchases grants.
 - Mixed persistence: the active POS catalog uses `pos_catalog()`; the client calls `post_sale_with_customer_details()` (which delegates to `post_sale()`). Historical S5 preflight findings identified unscoped purchase/print/Trash/alert routines and the missing `restore_trash_medicine(uuid)`; the owner reports the 051 dry run, 052 apply, all six 053 smoke checks, and 054 final catalog check passed. The S5 package is complete by owner report; broader two-shop verification remains open. Dashboard stock/expiry KPIs still use `INITIAL_PRODUCTS` sample data, and Cash Book transactions/expenses remain React in-memory state.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
 - Shared production data behavior depends on Supabase deployment and the live schema, which may differ from checked-in migrations.
@@ -139,7 +139,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - Part B SQL remains unexecuted and incomplete. Existing `pos_catalog()` still returns inactive/unpriced units using legacy `price_paisa`; database triggers may reject checkout after such a unit is shown. Zero versus unpriced semantics, fallback pricing from batch MRP, strict default-unit behavior, live RPC compatibility, and ACL restoration on rollback need owner review. See `supabase/fresh/features/README_pack_size_pricing.md`.
 - Production browser code is delivered as hashed JavaScript and remains inspectable by design; source maps are absent from current production assets. The named `version` import removed local test-file path strings, but cannot hide shipped app code. The frontend reads only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; the owner-reported Vercel names do not include these, and `NEXT_PUBLIC_*` names are not read by this Vite app. Verify the Production build environment before redeploying. Historical-only `supabase/.temp/pooler-url` has no embedded password; no credential-shaped values were found by the limited repository/history scan. The earlier source-sighting URL remains unverified.
 - Historical readiness baseline (2026-10-21, intended development/test project; superseded by later S3/S4 owner reports): 26 public tables had RLS enabled/not forced and no shop columns; no views, Storage buckets/policies, Realtime publication tables, or migration ledger were listed. The inventory found 57 functions, 55 SECURITY DEFINER, 16 anon-executable and 11 PUBLIC-executable. No runtime anon RPC call was run at that time. The owner later reported completing the S3/S4 tenant foundation and ACL stages. Do not use this historical baseline as current schema evidence.
-- A previous sign-in error was reported, but current authentication/runtime status was not tested in this audit. POS source requires active medicine, configured units, and positive eligible stock; the stock alert function requires `min_stock_alert > 0` for both low and out alerts.
+- The 2026-11-15 browser screenshot showed `/auth/v1/token?grant_type=refresh_token` returning 400; this is separate from application RPC errors and indicates the saved Supabase session is no longer refreshable. Sign out and sign in again; if needed, clear only this site's stored Supabase auth session, never share refresh tokens. POS requires an active medicine, configured units, and positive eligible stock; stock alerts require `min_stock_alert > 0` for both low and out alerts.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - The Manage Users UI expects `api_version: 5`; the matching Edge Function remains local and deployment is unverified. Owner reports package 069 smoke and 071 final checks PASS. Deploy the matching function and frontend together only after remaining release checks are ready. If a PowerShell/VS Code terminal cannot resolve Node, restart VS Code to inherit the persisted user PATH or append `C:\Program Files\nodejs` to that terminal's `$env:Path`. Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` remain local until their separate migration/function deployment.
 - Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Product label printing supports linear formats only; QR-code generation is not implemented. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
@@ -174,7 +174,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - 2026-11-15 — Reworked Demo into a full-screen isolated session with role-specific sample navigation/data. The Super Admin Auth session stays active; **Sign out demo** clears in-memory state and returns to the Super Admin dashboard. Role grants are representative templates, not a particular user's saved grants. Demo pages are mock UI, not the live feature screens or an authorization test; no demo business APIs, SQL, or deployment are involved.
 - 2026-11-14 — S6 062/064/068 checks PASS by owner; added grants, platform-only routing, shared settings, guarded account paths, POS refinements, and Held bills. The 068 staff-granted write case was unavailable.
 - 2026-11-03–14 — Added POS customer details/analytics and completed owner-reported S1–S4/S5 work; deployment and hosted validation remain owner work.
-- 2026-11-15 — Fixed the POS/Products mismatch by removing the Supabase-session mock catalog fallback; restored Shop Admin demo-data load/remove controls (requires Products, Suppliers, Purchases grants) and tenant-scoped profile/logo editing. Demo records use live shop-scoped workflows and removal deactivates them while preserving history. Owner reports applying package 073; its smoke test currently lacks eligible Admin/staff test accounts. The first post-073 071 result was 28/27; a later missing-guard query returned no rows, but the latest reported count was 29/28, so same-project/order must be confirmed. Added a targeted repair SQL file and updated the 073 package/final check to guard its tenant table. Production `manage-users` Edge Function deployment is confirmed by two successful owner CLI outputs, including `--remote`; the second run downloaded Docker's edge-runtime image and deployed successfully. Frontend deployment remains pending. Earlier local TypeScript, full `npm test`, and production build passed; SQL is owner-run. Latest user payment diagnostic reports all four payment RPCs and `sale_payment_details` present, contrary to earlier 404/status output; reconcile project/schema-cache/client version before retrying and do not rerun/drop migration objects based only on the earlier duplicate-table error. Latest local-browser screenshot reports manage-users HTTP 409 and Supabase `ERR_NAME_NOT_RESOLVED` for `pending_print_count`/manage-users retries; the owner later confirmed the configured URL matches the project and DNS/TCP 443 checks succeed, so the earlier DNS failure may have been transient. The exact 409 response body and frontend deployment/runtime status remain unknown. The `beforeinstallprompt` console warning is separate.
+- 2026-11-15 — Fixed the POS/Products mismatch by removing the Supabase-session mock catalog fallback; restored Shop Admin demo-data load/remove controls and tenant-scoped profile/logo editing. Demo records use live shop-scoped workflows; removal deactivates demo medicines/supplier while preserving history. The Settings screenshot later exposed demo load failure because `save_medicine` requires an active shop category/manufacturer. The client now creates/reactivates the demo's missing master data using scoped RPCs; loading requires Categories in addition to Products, Suppliers, and Purchases (remove still needs only the latter three). TypeScript, demo-data tests, full tests, and build pass. Categories/manufacturers added for demo remain reusable master data. Owner reports applying package 073; its smoke test still lacks eligible Admin/staff test accounts, and reported 071 guard counts conflict (28/27 then 29/28); confirm same project/order before repair. The targeted repair SQL and 073 final check guard the tenant table. Production `manage-users` Edge Function deployment is confirmed; frontend deployment remains owner-run. Payment RPC/table status is now reported present; reconcile project/schema cache before retrying. The screenshot's refresh-token 400 is a stale/revoked browser session; sign out/in. The `beforeinstallprompt` banner warning is informational.
 - 2026-11-15 — Removed the Supabase POS catalog's direct `medicines` fallback, which bypassed the authorized `pos_catalog()` RPC and caused the browser's 403. Empty RPC results now remain empty rather than triggering unauthorized reads or synthesized products. Lint, POS catalog tests, and production build pass; redeploy/reload the frontend. No database change is needed.
 
 ## Legacy barcode migrations
@@ -191,15 +191,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-15T12:25:10.767Z
+Generated at (UTC): 2026-11-15T13:51:17.021Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- fix: complete POS catalog and tenant admin workflows
 - fix: hide legacy password cleanup warning
 - fix: remove user password change flow
 - feat: add POS, tenant admin, and role demo workflows
 - docs: record S5 package push
-- Prepare S5 tenant-scope SQL stages
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -224,7 +224,7 @@ npm scripts:
 - - `test:store-settings`: `tsx --test src/utils/storeSettings.test.ts`
 - - `test:shop-settings`: `tsx --test src/data/shopSettings.test.ts`
 - - `test:shop-logo`: `tsx --test src/utils/shopLogo.test.ts`
-- - `test:demo-data`: `tsx --test src/data/demoStockPurchase.test.ts`
+- - `test:demo-data`: `tsx --test src/data/demoStockPurchase.test.ts src/data/demoMasterData.test.ts`
 - - `test:demo-preview`: `tsx --test src/utils/demoPreview.test.ts`
 - - `test:install-prompt`: `tsx --test src/utils/installPrompt.test.ts`
 - - `test:pos-customer`: `tsx --test src/utils/posCustomer.test.ts`
@@ -322,6 +322,8 @@ src/
     src/constants/brand.ts
   src/data/
     src/data/demoDataManager.ts
+    src/data/demoMasterData.test.ts
+    src/data/demoMasterData.ts
     src/data/demoStockPurchase.test.ts
     src/data/demoStockPurchase.ts
     src/data/mockPharmacyData.ts
@@ -403,6 +405,7 @@ Test files:
 - src/components/inventory/stockInventoryLogic.test.ts
 - src/components/masterDataSimilarity.test.ts
 - src/components/sidebarPinLogic.test.ts
+- src/data/demoMasterData.test.ts
 - src/data/demoStockPurchase.test.ts
 - src/data/posCatalogLogic.test.ts
 - src/data/returnLogic.test.ts

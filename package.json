@@ -26,7 +26,7 @@
     "test:store-settings": "tsx --test src/utils/storeSettings.test.ts",
     "test:shop-settings": "tsx --test src/data/shopSettings.test.ts",
     "test:shop-logo": "tsx --test src/utils/shopLogo.test.ts",
-    "test:demo-data": "tsx --test src/data/demoStockPurchase.test.ts",
+    "test:demo-data": "tsx --test src/data/demoStockPurchase.test.ts src/data/demoMasterData.test.ts",
     "test:demo-preview": "tsx --test src/utils/demoPreview.test.ts",
     "test:install-prompt": "tsx --test src/utils/installPrompt.test.ts",
     "test:pos-customer": "tsx --test src/utils/posCustomer.test.ts",

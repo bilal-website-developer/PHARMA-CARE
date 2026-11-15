@@ -12,6 +12,7 @@ import {
 } from '../types/pharmacy';
 import type { PosCatalogProduct } from './posCatalogLogic';
 import { buildDemoStockPurchaseItems } from './demoStockPurchase';
+import { planDemoMasterDataChanges, type DemoMasterDataRow } from './demoMasterData';
 
 export const DEMO_DATA_CHANGED_EVENT = 'pharma-care.demoDataChanged';
 
@@ -360,6 +361,60 @@ export const DEMO_MEDICINES: DemoMedicineDefinition[] = [
     },
   },
 ];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isDemoMasterDataRow(value: unknown): value is DemoMasterDataRow {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.is_active === 'boolean';
+}
+
+async function ensureDemoMasterData(client: NonNullable<typeof supabase>): Promise<void> {
+  const { data, error } = await client.rpc('master_data_overview');
+  if (error) throw new Error(`Could not check demo categories and manufacturers: ${error.message}`);
+  if (
+    !isRecord(data)
+    || !Array.isArray(data.categories)
+    || !data.categories.every(isDemoMasterDataRow)
+    || !Array.isArray(data.manufacturers)
+    || !data.manufacturers.every(isDemoMasterDataRow)
+  ) {
+    throw new Error('The master-data overview returned an invalid response.');
+  }
+
+  const seed = async (
+    kind: 'category' | 'manufacturer',
+    records: DemoMasterDataRow[],
+    requiredNames: string[],
+  ) => {
+    const plan = planDemoMasterDataChanges(requiredNames, records);
+    const save = async (id: string | null, name: string) => {
+      const { data: savedId, error: saveError } = await client.rpc(
+        kind === 'category' ? 'save_category' : 'save_brand',
+        kind === 'category'
+          ? { p_category_id: id, p_name: name, p_is_active: true }
+          : { p_brand_id: id, p_name: name, p_is_active: true },
+      );
+      if (saveError) {
+        const action = id ? 'activate' : 'create';
+        throw new Error(`Could not ${action} demo ${kind} "${name}": ${saveError.message}`);
+      }
+      if (typeof savedId !== 'string' || !savedId) {
+        throw new Error(`The database did not return an ID for demo ${kind} "${name}".`);
+      }
+    };
+
+    for (const row of plan.activateRows) await save(row.id, row.name);
+    for (const name of plan.createNames) await save(null, name);
+  };
+
+  await seed('category', data.categories, DEMO_MEDICINES.map((medicine) => medicine.category));
+  await seed('manufacturer', data.manufacturers, DEMO_MEDICINES.map((medicine) => medicine.company));
+}
 
 export const DEMO_CUSTOMERS: Customer[] = [
   {
@@ -787,6 +842,8 @@ export async function checkDemoDataStatus(): Promise<{ loaded: boolean; count: n
 export async function loadDemoData(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     if (supabase) {
+      await ensureDemoMasterData(supabase);
+
       const { data: existingSuppliers, error: supplierQueryError } = await supabase
         .from('suppliers')
         .select('id, is_active')
