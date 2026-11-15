@@ -71,10 +71,11 @@ BEGIN
     AND profile.is_active
     AND profile.deleted_at IS NULL
     AND profile.shop_id IS NOT NULL
+    AND coalesce(profile.permissions, '{}'::text[]) @> ARRAY['customers']::text[]
   ORDER BY profile.id
   LIMIT 1;
   IF v_actor IS NULL OR v_shop_id IS NULL THEN
-    RAISE EXCEPTION 'An active Shop Admin profile is required for this smoke test.';
+    RAISE EXCEPTION 'An active Shop Admin with customers permission is required for this smoke test.';
   END IF;
 
   SELECT profile.id

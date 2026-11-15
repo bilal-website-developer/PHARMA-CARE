@@ -5,14 +5,18 @@ import {
   type CartItem,
   type CompletedSale,
   type Customer,
+  type SalePaymentDetail,
   type SaleCustomerType,
 } from '../types/pharmacy';
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
+import { isPaymentProviderId } from './paymentProviders';
 
 export interface SalePaymentInput {
   paymentMethod: Exclude<PaymentMethod, PaymentMethod.SPLIT>;
   amountPaisa: number;
+  providerId?: string;
+  reference?: string;
 }
 
 export interface PostSaleInput {
@@ -74,6 +78,15 @@ function isDrugClass(value: unknown): value is DrugClass {
 
 function isPaymentMethod(value: unknown): value is PaymentMethod {
   return Object.values(PaymentMethod).some((paymentMethod) => paymentMethod === value);
+}
+
+function isSalePaymentDetail(value: unknown): value is SalePaymentDetail {
+  return isRecord(value)
+    && isPaymentMethod(value.paymentMethod)
+    && value.paymentMethod !== PaymentMethod.SPLIT
+    && isPositiveInteger(value.amountPaisa)
+    && (value.providerId === undefined || isPaymentProviderId(value.providerId))
+    && (value.reference === undefined || isString(value.reference));
 }
 
 function isSaleCustomerType(value: unknown): value is SaleCustomerType {
@@ -164,6 +177,8 @@ function isCompletedSale(value: unknown): value is CompletedSale {
     && isNonNegativeInteger(value.totalPaisa)
     && Number.isSafeInteger(value.roundingPaisa)
     && isPaymentMethod(value.paymentMethod)
+    && (value.paymentDetails === undefined
+      || (Array.isArray(value.paymentDetails) && value.paymentDetails.every(isSalePaymentDetail)))
     && isNonNegativeInteger(value.amountTenderedPaisa)
     && isNonNegativeInteger(value.changePaisa);
 }
@@ -211,6 +226,12 @@ function parseSaleHistory(value: unknown): CompletedSale | null {
   const parsedItems = items.filter((item): item is CartItem => item !== null);
   if (parsedItems.length !== value.items.length) return null;
 
+  let paymentDetails: SalePaymentDetail[] | undefined;
+  if (value.paymentDetails !== undefined) {
+    if (!Array.isArray(value.paymentDetails) || !value.paymentDetails.every(isSalePaymentDetail)) return null;
+    paymentDetails = value.paymentDetails;
+  }
+
   const sale = {
     id: value.id,
     invoiceNumber: value.invoiceNumber,
@@ -229,6 +250,7 @@ function parseSaleHistory(value: unknown): CompletedSale | null {
     totalPaisa: value.totalPaisa,
     roundingPaisa: value.roundingPaisa,
     paymentMethod: value.paymentMethod,
+    ...(paymentDetails ? { paymentDetails } : {}),
     amountTenderedPaisa: value.amountTenderedPaisa,
     changePaisa: value.changePaisa,
   };
@@ -300,7 +322,7 @@ export async function recordCustomerPayment(
 }
 
 export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
-  const raw = await callSupabaseRpc('post_sale_with_customer_details', {
+  const raw = await callSupabaseRpc('post_sale_with_payment_details', {
     p_customer_id: input.customerId,
     p_customer_name: input.customerName,
     p_customer_type: input.customerType,
@@ -319,6 +341,8 @@ export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
     p_payments: input.payments.map((payment) => ({
       payment_method: payment.paymentMethod,
       amount_paisa: payment.amountPaisa,
+      provider_id: payment.providerId ?? null,
+      reference: payment.reference ?? null,
     })),
   }, 'Could not complete the sale.', isCompletedSale);
   return raw;
@@ -337,7 +361,7 @@ function parseSalesHistoryRows(raw: unknown[], fallbackMessage = 'Could not load
 
 export async function loadSalesHistory(limit = 100): Promise<CompletedSale[]> {
   const raw = await callSupabaseRpc(
-    'sales_history',
+    'sales_history_with_payment_details',
     { p_limit: limit },
     'Could not load sales history.',
     (value): value is unknown[] => Array.isArray(value),
@@ -358,7 +382,7 @@ export async function loadSalesHistoryRange(
   }
 
   const raw = await callSupabaseRpc(
-    'sales_history_range',
+    'sales_history_range_with_payment_details',
     {
       p_from: from.toISOString(),
       p_to_exclusive: toExclusive.toISOString(),

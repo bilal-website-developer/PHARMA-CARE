@@ -10,26 +10,51 @@ export function normalizePermissions(permissions: readonly string[]): string[] {
 }
 
 export function canUseManageUsers(callerRole: Role, callerPermissions: readonly string[]): boolean {
-  return callerRole === 'admin' || callerRole === 'super_admin'
-    || callerPermissions.includes('manage_users');
+  return callerRole === 'super_admin'
+    || (callerRole === 'admin' && callerPermissions.includes('manage_users'));
 }
 
-const ROLE_LEVEL: Record<Role, number> = {
-  cashier: 0,
-  manager: 1,
-  accountant: 1,
-  admin: 2,
-  super_admin: 3,
-};
+export function canManagePlatformShops(callerRole: Role): boolean {
+  return callerRole === 'super_admin';
+}
+
+export function isShopRoleLimitReached(
+  role: Role,
+  adminCount: number,
+  staffCount: number,
+  adminLimit: number,
+  staffLimit: number,
+): boolean {
+  if (role === 'super_admin') return false;
+  return role === 'admin' ? adminCount >= adminLimit : staffCount >= staffLimit;
+}
+
+export function canUseManagementActionDuringPasswordChange(
+  action: unknown,
+  mustChangePassword: boolean,
+): boolean {
+  return !mustChangePassword || action === 'complete_first_login_password';
+}
+
+export function canAccessShopProfile(
+  callerRole: Role,
+  callerShopId: string | null,
+  targetShopId: string | null,
+): boolean {
+  if (callerRole === 'super_admin') return callerShopId === null;
+  return callerRole === 'admin' && callerShopId !== null && targetShopId === callerShopId;
+}
+
+export function hasValidShopAssignment(role: string, shopId: string | null): boolean {
+  return ROLES.includes(role as Role) && (role === 'super_admin' ? shopId === null : shopId !== null);
+}
 
 export function assignableRolesFor(callerRole: Role, callerPermissions: readonly string[] = []): Role[] {
   return callerRole === 'super_admin'
-    ? [...ROLES]
+    ? ['admin']
     : callerRole === 'admin'
-      ? ['cashier', 'manager', 'accountant']
-      : callerPermissions.includes('manage_users')
-        ? ['cashier', 'manager', 'accountant']
-        : [];
+      ? ['cashier', 'manager']
+      : [];
 }
 
 export function canAssignRole(
@@ -47,7 +72,11 @@ export function canViewManagedUser(
   targetCreatedBy: string | null,
 ): boolean {
   if (callerRole === 'super_admin' || callerId === targetId) return true;
-  return callerRole !== 'admin' || targetCreatedBy === callerId;
+  return callerRole === 'admin' && targetCreatedBy === callerId;
+}
+
+export function canEditManagedUser(callerRole: Role, targetRole: Role, isSelf: boolean): boolean {
+  return callerRole !== 'super_admin' || targetRole === 'admin' || isSelf;
 }
 
 export function canViewAdminTeam(callerRole: Role, targetRole: Role): boolean {
@@ -59,8 +88,8 @@ export function grantablePermissionsFor(
   callerPermissions: readonly string[],
   permissionKeys: readonly string[]
 ): string[] {
-  if (callerRole === 'admin' || callerRole === 'super_admin') return [...permissionKeys];
-  if (!callerPermissions.includes('manage_users')) return [];
+  if (callerRole === 'super_admin') return [...permissionKeys];
+  if (callerRole !== 'admin') return [];
   return callerPermissions.filter((permission) => permission !== 'manage_users');
 }
 
@@ -70,11 +99,9 @@ export function permissionGrantDenial(
   requestedPermissions: readonly string[],
   currentPermissions: readonly string[] = []
 ): string | null {
-  if (callerRole === 'admin' || callerRole === 'super_admin') return null;
-  if (!callerPermissions.includes('manage_users')) return 'You do not have permission to manage users.';
-  if (requestedPermissions.includes('manage_users') && !currentPermissions.includes('manage_users')) {
-    return 'Only admin or super_admin may grant Manage Users.';
-  }
+  if (callerRole === 'super_admin') return null;
+  if (callerRole !== 'admin') return 'Only admin or super_admin may manage users.';
+  if (requestedPermissions.includes('manage_users')) return 'Only super_admin may grant Manage Users.';
   if (requestedPermissions.some((permission) =>
     !callerPermissions.includes(permission) && !currentPermissions.includes(permission)
   )) {
@@ -88,18 +115,16 @@ export function canManageTarget(
   callerId: string,
   targetId: string,
   targetRole: Role,
-  targetPermissions: readonly string[] = [],
-  callerPermissions: readonly string[] = [],
+  _targetPermissions: readonly string[] = [],
+  _callerPermissions: readonly string[] = [],
   targetCreatedBy: string | null = null,
 ): boolean {
   if (callerId === targetId) return true;
   if (callerRole === 'super_admin') return true;
   if (callerRole === 'admin') {
-    return targetCreatedBy === callerId && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin;
+    return targetCreatedBy === callerId && ['cashier', 'manager'].includes(targetRole);
   }
-  return callerPermissions.includes('manage_users')
-    && ROLE_LEVEL[targetRole] < ROLE_LEVEL.admin
-    && !targetPermissions.includes('manage_users');
+  return false;
 }
 
 export interface TeamProfile {

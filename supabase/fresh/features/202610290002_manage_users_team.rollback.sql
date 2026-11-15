@@ -1,3 +1,4 @@
+-- SUPERSEDED S6 DRAFT: DO NOT RUN. This rollback may undo current S5 protections.
 begin;
 
 do $$

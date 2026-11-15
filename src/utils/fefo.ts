@@ -16,16 +16,8 @@ export function localIsoDate(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-export function allocateFefo(
-  batches: readonly FefoBatch[],
-  requiredSmallestUnits: number,
-  today = localIsoDate()
-): BatchAllocation[] {
-  if (!Number.isSafeInteger(requiredSmallestUnits) || requiredSmallestUnits <= 0) {
-    throw new RangeError('Sale quantity must be a positive whole number of smallest units.');
-  }
-
-  const eligible = batches
+function getEligibleBatches(batches: readonly FefoBatch[], today: string): FefoBatch[] {
+  return batches
     .filter(
       (batch) =>
         Number.isSafeInteger(batch.quantitySmallestUnit) &&
@@ -39,6 +31,28 @@ export function allocateFefo(
         a.receivedDate.localeCompare(b.receivedDate) ||
         a.id.localeCompare(b.id)
     );
+}
+
+export function availableSmallestUnits(
+  batches: readonly FefoBatch[],
+  today = localIsoDate()
+): number {
+  return getEligibleBatches(batches, today).reduce(
+    (available, batch) => Math.min(Number.MAX_SAFE_INTEGER, available + batch.quantitySmallestUnit),
+    0
+  );
+}
+
+export function allocateFefo(
+  batches: readonly FefoBatch[],
+  requiredSmallestUnits: number,
+  today = localIsoDate()
+): BatchAllocation[] {
+  if (!Number.isSafeInteger(requiredSmallestUnits) || requiredSmallestUnits <= 0) {
+    throw new RangeError('Sale quantity must be a positive whole number of smallest units.');
+  }
+
+  const eligible = getEligibleBatches(batches, today);
 
   let remaining = requiredSmallestUnits;
   const allocations: BatchAllocation[] = [];

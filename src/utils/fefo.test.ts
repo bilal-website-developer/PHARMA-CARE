@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Batch, BatchStatus } from '../types/pharmacy';
-import { allocateFefo, restoreBatchAllocations } from './fefo';
+import { allocateFefo, availableSmallestUnits, restoreBatchAllocations } from './fefo';
 
 const batch = (
   id: string,
@@ -57,19 +57,17 @@ test('splits a sale across batches', () => {
 });
 
 test('includes stock expiring today and skips expired or unsellable batches', () => {
-  const result = allocateFefo(
-    [
-      batch('expired', '2026-10-06', 10, '2026-01-01'),
-      batch('today', '2026-10-07', 10, '2026-01-02'),
-      batch('quarantine', '2026-10-08', 10, '2026-01-03', BatchStatus.QUARANTINE),
-      batch('damaged', '2026-10-09', 10, '2026-01-04', BatchStatus.DAMAGED),
-      batch('returned', '2026-10-10', 10, '2026-01-05', BatchStatus.RETURNED),
-      batch('valid', '2026-10-11', 1, '2026-01-06', BatchStatus.NEAR_EXPIRY),
-    ],
-    10,
-    '2026-10-07'
-  );
+  const batches = [
+    batch('expired', '2026-10-06', 10, '2026-01-01'),
+    batch('today', '2026-10-07', 10, '2026-01-02'),
+    batch('quarantine', '2026-10-08', 10, '2026-01-03', BatchStatus.QUARANTINE),
+    batch('damaged', '2026-10-09', 10, '2026-01-04', BatchStatus.DAMAGED),
+    batch('returned', '2026-10-10', 10, '2026-01-05', BatchStatus.RETURNED),
+    batch('valid', '2026-10-11', 1, '2026-01-06', BatchStatus.NEAR_EXPIRY),
+  ];
+  const result = allocateFefo(batches, 10, '2026-10-07');
   assert.deepEqual(result.map(({ batchId }) => batchId), ['today']);
+  assert.equal(availableSmallestUnits(batches, '2026-10-07'), 11);
 });
 
 test('rejects insufficient eligible stock without returning partial allocations', () => {

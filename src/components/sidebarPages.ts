@@ -1,5 +1,5 @@
 import {
-  BarChart3, BellRing, FileText, HelpCircle, History, Layers, LayoutDashboard,
+  BarChart3, BellRing, FileText, FlaskConical, HelpCircle, History, Layers, LayoutDashboard, Store,
   MessageSquare, Package, Printer, Receipt, Settings, ShoppingBag, ShoppingCart,
   Trash2, Truck, UserCheck, Wallet,
 } from 'lucide-react';
@@ -11,7 +11,8 @@ export type SidebarPageKey =
   | 'dashboard' | 'pos' | 'products' | 'master-data' | 'stock-inventory'
   | 'customers' | 'customer-ledger' | 'whatsapp-reminders' | 'sales-history'
   | 'suppliers' | 'purchases' | 'purchase-history' | 'expenses' | 'reports'
-  | 'manage-users' | 'my-print-requests' | 'print-requests' | 'settings' | 'trash-bin' | 'help-support';
+  | 'manage-users' | 'my-print-requests' | 'print-requests' | 'settings' | 'trash-bin'
+  | 'help-support' | 'shops' | 'demo';
 
 export interface SidebarPage {
   key: SidebarPageKey;
@@ -32,7 +33,8 @@ const ALL_ROLES = [
   UserRole.CASHIER,
   UserRole.ACCOUNTANT,
 ] as const;
-const ADMIN_ROLES = [UserRole.ADMIN, UserRole.SUPER_ADMIN] as const;
+const ADMIN_ROLES = [UserRole.ADMIN] as const;
+const PLATFORM_ROLES = [UserRole.SUPER_ADMIN] as const;
 
 export const SIDEBAR_CATEGORIES = [
   'Main',
@@ -59,8 +61,10 @@ export const SIDEBAR_PAGES: readonly SidebarPage[] = [
   { key: 'expenses', label: 'Expenses', icon: Wallet, route: '/expenses', category: 'Accounts & Admin', allowedRoles: ALL_ROLES, module: 'expenses' },
   { key: 'reports', label: 'Business Analytics', icon: BarChart3, route: '/reports', category: 'Accounts & Admin', allowedRoles: ALL_ROLES, module: 'reports' },
   { key: 'manage-users', label: 'Manage Users', icon: UserCheck, route: '/users', category: 'Accounts & Admin', allowedRoles: ALL_ROLES, module: 'manage_users' },
+  { key: 'shops', label: 'Shops', icon: Store, route: '/shops', category: 'Accounts & Admin', allowedRoles: PLATFORM_ROLES, sidebar: true },
+  { key: 'demo', label: 'Demo', icon: FlaskConical, route: '/demo', category: 'Accounts & Admin', allowedRoles: PLATFORM_ROLES, sidebar: true },
   { key: 'print-requests', label: 'Print Requests', icon: Printer, route: '/print-requests', category: 'Accounts & Admin', allowedRoles: ADMIN_ROLES, adminOnly: true },
-  { key: 'settings', label: 'Settings', icon: Settings, route: '/settings', category: 'Settings & System', allowedRoles: ALL_ROLES },
+  { key: 'settings', label: 'Settings', icon: Settings, route: '/settings', category: 'Settings & System', allowedRoles: ALL_ROLES, module: 'settings' },
   { key: 'trash-bin', label: 'Trash Bin', icon: Trash2, route: '/trash-bin', category: 'Settings & System', allowedRoles: ADMIN_ROLES, adminOnly: true },
   { key: 'help-support', label: 'Help & Support', icon: HelpCircle, route: '/help', category: 'Settings & System', allowedRoles: ALL_ROLES },
   { key: 'customers', label: 'Customers', icon: FileText, route: '/customers', category: 'Sales & Customers', allowedRoles: ALL_ROLES, module: 'customers', sidebar: false },

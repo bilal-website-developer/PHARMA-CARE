@@ -1,22 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Pencil, Plus, Store, Trash2, Upload, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import {
   MODULES,
   hasPosPrintToggles,
   PermissionKey,
-  ROLE_DEFAULT_PERMISSIONS,
   setModulePermission,
   setPosPrintPermission,
 } from '../permissions';
 import { supabase } from '../utils/supabase';
-import {
-  AdminShopProfile,
-  readAdminShopProfile,
-  saveAdminShopProfile,
-} from '../utils/storeSettings';
 
-const MAX_USERS = 99;
+interface ShopOption {
+  id: string;
+  name: string;
+  status: string;
+}
 
 interface TeamMember {
   username: string;
@@ -38,16 +36,11 @@ interface ManagedUser {
   role: UserRole | null;
   is_active: boolean | null;
   permissions: PermissionKey[] | null;
+  shop_id?: string | null;
   can_manage: boolean;
+  can_edit?: boolean;
   created_by_username?: string;
 }
-
-const EMPTY_SHOP_PROFILE: AdminShopProfile = {
-  shopName: '',
-  logoUrl: '',
-  phone: '',
-  city: '',
-};
 
 interface UserForm {
   full_name: string;
@@ -57,7 +50,7 @@ interface UserForm {
   role: UserRole;
   permissions: PermissionKey[];
   is_active: boolean;
-  shopProfile: AdminShopProfile;
+  shop_id: string;
 }
 
 const EMPTY_FORM: UserForm = {
@@ -66,9 +59,9 @@ const EMPTY_FORM: UserForm = {
   email: '',
   password: '',
   role: UserRole.CASHIER,
-  permissions: [...ROLE_DEFAULT_PERMISSIONS[UserRole.CASHIER]],
+  permissions: [],
   is_active: true,
-  shopProfile: { ...EMPTY_SHOP_PROFILE },
+  shop_id: '',
 };
 
 export async function invokeManageUsers<T>(body: Record<string, unknown>): Promise<T> {
@@ -118,10 +111,13 @@ export function ManageUsersView({
   const [adminTeamMembers, setAdminTeamMembers] = useState<AdminTeamMember[]>([]);
   const [adminTeamCount, setAdminTeamCount] = useState(0);
   const [adminTeamLoading, setAdminTeamLoading] = useState(false);
+  const [adminPrivateNote, setAdminPrivateNote] = useState('');
+  const [privateNoteSaving, setPrivateNoteSaving] = useState(false);
   const [teamCount, setTeamCount] = useState(0);
   const [currentCount, setCurrentCount] = useState(0);
   const [assignableRoles, setAssignableRoles] = useState<UserRole[]>([]);
   const [grantablePermissions, setGrantablePermissions] = useState<PermissionKey[]>([]);
+  const [shops, setShops] = useState<ShopOption[]>([]);
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -144,10 +140,11 @@ export function ManageUsersView({
         team_members?: TeamMember[];
         assignable_roles?: UserRole[];
         grantable_permissions?: PermissionKey[];
+        shops?: ShopOption[];
       } | null>(
         { action: 'list' }
       );
-      const hasRoleData = result?.api_version === 2
+      const hasRoleData = result?.api_version === 5
         && Array.isArray(result?.users)
         && Array.isArray(result?.assignable_roles)
         && Array.isArray(result?.grantable_permissions)
@@ -161,6 +158,7 @@ export function ManageUsersView({
         setCurrentCount(0);
         setAssignableRoles([]);
         setGrantablePermissions([]);
+        setShops([]);
         setIsFormOpen(false);
         setEditingId(null);
         setNotice({
@@ -177,6 +175,7 @@ export function ManageUsersView({
       setTeamMembers(Array.isArray(result?.team_members) ? result.team_members : []);
       setAssignableRoles(Array.isArray(result?.assignable_roles) ? result.assignable_roles : []);
       setGrantablePermissions(Array.isArray(result?.grantable_permissions) ? result.grantable_permissions : []);
+      setShops(Array.isArray(result?.shops) ? result.shops : []);
     } catch (error) {
       setServiceReady(false);
       setUsers([]);
@@ -185,6 +184,7 @@ export function ManageUsersView({
       setCurrentCount(0);
       setAssignableRoles([]);
       setGrantablePermissions([]);
+      setShops([]);
       setIsFormOpen(false);
       setEditingId(null);
       setNotice({ text: error instanceof Error ? error.message : 'Could not load users.', error: true });
@@ -200,24 +200,48 @@ export function ManageUsersView({
     setAdminTeamLoading(true);
     setAdminTeamMembers([]);
     setAdminTeamCount(0);
+    setAdminPrivateNote('');
     try {
-      const result = await invokeManageUsers<{
-        team_count: number;
-        team_members: AdminTeamMember[];
-      }>({ action: 'get_team', admin_id: adminId });
+      const [result, noteResult] = await Promise.all([
+        invokeManageUsers<{
+          team_count: number;
+          team_members: AdminTeamMember[];
+        }>({ action: 'get_team', admin_id: adminId }),
+        invokeManageUsers<{ note: { note?: string } }>({ action: 'get_admin_note', admin_id: adminId }),
+      ]);
       if (requestVersion !== teamRequestVersion.current) return;
       setAdminTeamCount(result.team_count);
       setAdminTeamMembers(result.team_members);
+      setAdminPrivateNote(noteResult.note.note ?? '');
     } catch (error) {
       if (requestVersion === teamRequestVersion.current) {
         setAdminTeamMembers([]);
         setAdminTeamCount(0);
+        setAdminPrivateNote('');
         setNotice({ text: error instanceof Error ? error.message : 'Could not load this Admin team.', error: true });
       }
     } finally {
       if (requestVersion === teamRequestVersion.current) setAdminTeamLoading(false);
     }
   }, []);
+
+  const saveAdminPrivateNote = async () => {
+    if (!isSuperAdmin || !editingId || form.role !== UserRole.ADMIN || privateNoteSaving) return;
+    setPrivateNoteSaving(true);
+    setNotice(null);
+    try {
+      await invokeManageUsers<{ note: unknown }>({
+        action: 'save_admin_note',
+        admin_id: editingId,
+        note: adminPrivateNote,
+      });
+      setNotice({ text: 'Private Admin note saved.', error: false });
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : 'Could not save private note.', error: true });
+    } finally {
+      setPrivateNoteSaving(false);
+    }
+  };
 
   const startAdd = () => {
     if (!serviceReady) return;
@@ -228,23 +252,21 @@ export function ManageUsersView({
     setForm({
       ...EMPTY_FORM,
       role,
-      permissions: setModulePermission(
-        ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
-        'pos',
-        ROLE_DEFAULT_PERMISSIONS[role].includes('pos'),
-        true,
-      ).filter((permission) => grantablePermissions.includes(permission)),
-      shopProfile: role === UserRole.ADMIN ? readAdminShopProfile() : { ...EMPTY_SHOP_PROFILE },
+      permissions: [],
+      shop_id: role === UserRole.ADMIN
+        ? shops.find((shop) => shop.status === 'active')?.id ?? ''
+        : '',
     });
     setNotice(null);
   };
 
   const startEdit = (user: ManagedUser) => {
-    if (!serviceReady || !user.can_manage) return;
+    if (!serviceReady || !user.can_edit) return;
     teamRequestVersion.current += 1;
     setAdminTeamLoading(false);
     setAdminTeamMembers([]);
     setAdminTeamCount(0);
+    setAdminPrivateNote('');
     const email = String(user.email ?? '');
     setEditingId(user.id);
     setShowFormPassword(false);
@@ -260,7 +282,7 @@ export function ManageUsersView({
       role: userRole,
       permissions: Array.isArray(user.permissions) ? [...user.permissions] : [],
       is_active: user.is_active === true,
-      shopProfile: userRole === UserRole.ADMIN ? readAdminShopProfile(user.id) : { ...EMPTY_SHOP_PROFILE },
+      shop_id: user.shop_id ?? '',
     });
     setNotice(null);
     if (isSuperAdmin && userRole === UserRole.ADMIN) void loadAdminTeam(user.id);
@@ -277,38 +299,7 @@ export function ManageUsersView({
     setForm({
       ...EMPTY_FORM,
       permissions: [...EMPTY_FORM.permissions],
-      shopProfile: { ...EMPTY_SHOP_PROFILE },
     });
-  };
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.match(/^image\/(png|jpeg|svg\+xml|webp)$/)) {
-      window.alert('Supported formats are PNG, JPG, SVG, and WebP.');
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      window.alert('Image size exceeds 2MB limit.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setForm((prev) => ({
-          ...prev,
-          shopProfile: { ...prev.shopProfile, logoUrl: reader.result as string },
-        }));
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemoveLogo = () => {
-    setForm((prev) => ({
-      ...prev,
-      shopProfile: { ...prev.shopProfile, logoUrl: '' },
-    }));
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -328,10 +319,8 @@ export function ManageUsersView({
     if (editingId && form.password && form.password.length < 8) {
       return setNotice({ text: 'Password must be at least 8 characters.', error: true });
     }
-    if (isSuperAdmin && form.role === UserRole.ADMIN) {
-      if (!form.shopProfile.shopName.trim()) {
-        return setNotice({ text: 'Store / Shop Name is required when adding an Admin.', error: true });
-      }
+    if (isSuperAdmin && form.role === UserRole.ADMIN && !form.shop_id) {
+      return setNotice({ text: 'Select a shop for this Admin account.', error: true });
     }
 
     setSaving(true);
@@ -345,17 +334,10 @@ export function ManageUsersView({
         email,
         ...(!editingId ? { password: form.password } : {}),
         role: form.role,
-        permissions: form.role === UserRole.SUPER_ADMIN
-          ? MODULES.map(({ key }) => key)
-          : form.permissions,
+        permissions: form.role === UserRole.SUPER_ADMIN ? [] : form.permissions,
         is_active: form.is_active,
-        shop_profile: form.role === UserRole.ADMIN ? form.shopProfile : undefined,
+        shop_id: form.role === UserRole.ADMIN ? form.shop_id : undefined,
       });
-
-      if (isSuperAdmin && form.role === UserRole.ADMIN) {
-        const targetId = editingId || result.id || username;
-        saveAdminShopProfile(targetId, form.shopProfile);
-      }
 
       if (editingId && form.password) {
         try {
@@ -456,15 +438,15 @@ export function ManageUsersView({
         <div>
           <h2 className="text-xl font-black text-text">Users</h2>
           {currentRole === UserRole.ADMIN
-            ? <p className="mt-1 text-sm text-muted">Your team: {teamCount} accounts, including removed accounts. There is no per-Admin cap; the global limit is {currentCount} / {MAX_USERS} accounts, including removed accounts.</p>
-            : <p className="mt-1 text-sm text-muted">Global user limit: {currentCount} / {MAX_USERS} accounts, including removed accounts.</p>}
+            ? <p className="mt-1 text-sm text-muted">Your team: {teamCount} accounts, including removed accounts. This shop has {currentCount} profiles; per-shop Admin and staff limits are enforced when saving.</p>
+            : <p className="mt-1 text-sm text-muted">{currentCount} profiles across the platform. Per-shop Admin and staff limits are enforced when saving.</p>}
         </div>
         <div className="flex flex-wrap gap-2">
-          {currentRole !== UserRole.ADMIN && <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
+          <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
             <KeyRound size={16} /> Change My Password
-          </button>}
+          </button>
           {!isFormOpen && (
-            <button type="button" disabled={!serviceReady || currentCount >= MAX_USERS} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={!serviceReady} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
               <Plus size={17} /> Add User
             </button>
           )}
@@ -513,12 +495,7 @@ export function ManageUsersView({
                 setForm({
                   ...form,
                   role,
-                  permissions: setModulePermission(
-                    ROLE_DEFAULT_PERMISSIONS[role].filter((permission) => grantablePermissions.includes(permission)),
-                    'pos',
-                    ROLE_DEFAULT_PERMISSIONS[role].includes('pos'),
-                    true,
-                  ).filter((permission) => grantablePermissions.includes(permission)),
+                  permissions: [],
                 });
               }} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
                 {editingId === currentUserId && !assignableRoles.includes(form.role) && (
@@ -533,14 +510,14 @@ export function ManageUsersView({
 
           <fieldset disabled={editingId === currentUserId} className="rounded-control border border-border p-4 disabled:opacity-70">
             <legend className="px-2 text-sm font-bold text-text">Allowed Modules (Custom Permissions)</legend>
-            {form.role === UserRole.SUPER_ADMIN && <p className="mb-3 text-xs font-semibold text-muted">This role can access every module.</p>}
+            {form.role === UserRole.SUPER_ADMIN &&             <p className="mb-3 text-xs font-semibold text-muted">Platform access only; no shop modules are assigned.</p>}
             {form.role === UserRole.ADMIN && <p className="mb-3 text-xs font-semibold text-muted">Select the modules this admin is allowed to access.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
               {MODULES.filter(({ key }) => grantablePermissions.includes(key)).map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 text-sm text-text">
                   <input
                     type="checkbox"
-                    checked={form.role === UserRole.SUPER_ADMIN || form.permissions.includes(key)}
+                    checked={form.permissions.includes(key)}
                     disabled={form.role === UserRole.SUPER_ADMIN || (form.role === UserRole.ADMIN && !isSuperAdmin)}
                     onChange={(event) => setForm({
                       ...form,
@@ -548,7 +525,6 @@ export function ManageUsersView({
                         form.permissions,
                         key,
                         event.target.checked,
-                        key === 'pos' && !editingId,
                       ),
                     })}
                     className="h-4 w-4 accent-green-700"
@@ -586,7 +562,7 @@ export function ManageUsersView({
                     </label>
                   );
                 })}
-                <p className="text-xs text-muted">New users can print sale receipts by default. Receiving-money receipts require separate approval.</p>
+                <p className="text-xs text-muted">Sale and receiving-money receipt printing require explicit approval.</p>
               </div>
             )}
           </fieldset>
@@ -596,83 +572,24 @@ export function ManageUsersView({
             Active (can log in)
           </label>
 
-          {/* ── Shop Profile (Super Admin adding / editing an Admin) ── */}
           {isSuperAdmin && form.role === UserRole.ADMIN && (
-            <fieldset className="space-y-4 rounded-card border border-purple-200 bg-purple-50 p-4">
-              <legend className="px-2 text-sm font-bold text-purple-700 flex items-center gap-1.5">
-                <Store size={16} />
-                <span>Shop Profile</span>
-                <span className="text-xs font-normal text-purple-500">(shown on receipts &amp; reports)</span>
-              </legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* Store Name */}
-                <label className="space-y-1.5 text-sm font-semibold text-text sm:col-span-2">
-                  Store / Shop Name *
-                  <input
-                    required={isSuperAdmin && form.role === UserRole.ADMIN}
-                    value={form.shopProfile.shopName}
-                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, shopName: e.target.value } }))}
-                    placeholder="e.g. Al-Shifa Pharmacy"
-                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
-                  />
-                </label>
-
-                {/* Contact Phone */}
-                <label className="space-y-1.5 text-sm font-semibold text-text">
-                  Contact Phone
-                  <input
-                    type="tel"
-                    value={form.shopProfile.phone}
-                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, phone: e.target.value } }))}
-                    placeholder="+92-XXX-XXXXXXX"
-                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
-                  />
-                </label>
-
-                {/* City / Location */}
-                <label className="space-y-1.5 text-sm font-semibold text-text">
-                  City / Location
-                  <input
-                    value={form.shopProfile.city}
-                    onChange={(e) => setForm((prev) => ({ ...prev, shopProfile: { ...prev.shopProfile, city: e.target.value } }))}
-                    placeholder="e.g. Lahore"
-                    className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
-                  />
-                </label>
-
-                {/* Logo Upload */}
-                <div className="space-y-2 sm:col-span-2">
-                  <span className="block text-sm font-semibold text-text">Shop Logo <span className="text-xs font-normal text-muted">(PNG / JPG / SVG / WebP · max 2 MB)</span></span>
-                  {form.shopProfile.logoUrl ? (
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={form.shopProfile.logoUrl}
-                        alt="Shop logo preview"
-                        className="h-16 w-16 rounded-control border border-border object-contain bg-white p-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleRemoveLogo}
-                        className="rounded-control border border-red-200 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-red-50"
-                      >
-                        Remove Logo
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="flex cursor-pointer items-center gap-2 rounded-control border border-dashed border-purple-300 bg-white px-4 py-3 text-sm text-purple-600 hover:bg-purple-50">
-                      <Upload size={16} />
-                      <span>Choose logo image…</span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                        className="sr-only"
-                        onChange={handleLogoUpload}
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-            </fieldset>
+            <label className="space-y-1.5 text-sm font-semibold text-text">
+              Assign Admin to shop *
+              <select
+                required
+                value={form.shop_id}
+                onChange={(event) => setForm({ ...form, shop_id: event.target.value })}
+                className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal"
+              >
+                <option value="">Select an active shop</option>
+                {shops.filter((shop) => shop.status === 'active').map((shop) => (
+                  <option key={shop.id} value={shop.id}>{shop.name}</option>
+                ))}
+              </select>
+              {shops.length === 0 && (
+                <span className="block text-xs font-normal text-muted">Create an active shop before adding an Admin.</span>
+              )}
+            </label>
           )}
 
           {isSuperAdmin && editingId && form.role === UserRole.ADMIN && (
@@ -682,6 +599,21 @@ export function ManageUsersView({
                 <p className="mt-1 text-sm text-muted">
                   {adminTeamCount} accounts created by this Admin, including removed accounts. No per-Admin limit.
                 </p>
+              </div>
+              <div className="space-y-2 border-y border-border py-3">
+                <label htmlFor="private-admin-note" className="block text-sm font-bold text-text">Platform-only private note</label>
+                <textarea
+                  id="private-admin-note"
+                  maxLength={2000}
+                  rows={3}
+                  value={adminPrivateNote}
+                  onChange={(event) => setAdminPrivateNote(event.target.value)}
+                  className="w-full rounded-control border border-border px-3 py-2 text-sm"
+                  placeholder="Visible only to platform Super Admins"
+                />
+                <button type="button" disabled={privateNoteSaving} onClick={() => void saveAdminPrivateNote()} className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-text disabled:opacity-50">
+                  {privateNoteSaving ? 'Saving…' : 'Save private note'}
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[980px] text-left text-sm">
@@ -805,7 +737,7 @@ export function ManageUsersView({
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${user.is_active === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{user.is_active === true ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
-                        {user.can_manage && <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>}
+                        {user.can_edit && <button type="button" onClick={() => startEdit(user)} title={`Edit ${user.username}`} aria-label={`Edit ${user.username}`} className="rounded-control border border-border p-2 text-muted hover:bg-surface"><Pencil size={15} /></button>}
                         {isSuperAdmin && user.can_manage && user.id !== currentUserId && <>
                           <button type="button" onClick={() => void handleStatusChange(user, user.is_active === true ? 'deactivate' : 'reactivate')} className="rounded-control border border-border px-2 py-1 text-xs font-semibold text-text hover:bg-surface">{user.is_active === true ? 'Deactivate' : 'Reactivate'}</button>
                           <button type="button" onClick={() => void handleDelete(user)} title={`Remove access for ${user.username}`} aria-label={`Remove access for ${user.username}`} className="rounded-control border border-red-200 p-2 text-danger hover:bg-red-50"><Trash2 size={15} /></button>
@@ -817,17 +749,20 @@ export function ManageUsersView({
           </tbody>
         </table>
       </div>
-      {currentCount >= MAX_USERS && !editingId && <p role="status" className="text-sm text-warning">The user limit has been reached.</p>}
     </section>
   );
 }
 
 export function ChangePasswordModal({
   email,
+  mustChangePassword,
   onClose,
+  onComplete,
 }: {
   email: string;
+  mustChangePassword: boolean;
   onClose: () => void;
+  onComplete: () => void;
 }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -856,10 +791,28 @@ export function ChangePasswordModal({
     setSaving(true);
     setMessage('');
     try {
-      const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
-      if (verifyError) throw new Error('Current password is incorrect.');
-      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-      if (updateError) throw updateError;
+      if (mustChangePassword) {
+        const { data, error: functionError } = await supabase.functions.invoke('manage-users', {
+          body: { action: 'complete_first_login_password', new_password: newPassword },
+        });
+        if (functionError) {
+          const context = 'context' in functionError ? functionError.context : undefined;
+          if (context instanceof Response) {
+            const responseBody: unknown = await context.json().catch(() => null);
+            if (typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody) {
+              throw new Error(String(responseBody.message));
+            }
+          }
+          throw new Error(functionError.message);
+        }
+        if (!data) throw new Error('The password service returned no confirmation.');
+        onComplete();
+      } else {
+        const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+        if (verifyError) throw new Error('Current password is incorrect.');
+        const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+        if (updateError) throw updateError;
+      }
       setError(false);
       setMessage('Password changed successfully.');
       setCurrentPassword('');
@@ -876,14 +829,15 @@ export function ChangePasswordModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" className="visual-modal-panel w-full max-w-md space-y-4 rounded-card bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between"><h2 id="password-dialog-title" className="text-lg font-bold text-text">Change My Password</h2><button type="button" onClick={onClose} aria-label="Close" className="text-muted">×</button></div>
+        <div className="flex items-center justify-between"><h2 id="password-dialog-title" className="text-lg font-bold text-text">{mustChangePassword ? 'Set a New Password' : 'Change My Password'}</h2>{!mustChangePassword && <button type="button" onClick={onClose} aria-label="Close" className="text-muted">×</button>}</div>
+        {mustChangePassword && <p className="text-sm text-muted">Change the temporary password to continue.</p>}
         <form onSubmit={(event) => void submit(event)} className="space-y-3">
-          <label className="block text-sm font-semibold">Current password<input type="password" required autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
+          {!mustChangePassword && <label className="block text-sm font-semibold">Current password<input type="password" required autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>}
           <label className="block text-sm font-semibold">New password<input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
           <label className="block text-sm font-semibold">Confirm new password<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
           {message && <p role={error ? 'alert' : 'status'} className={`visual-toast text-sm ${error ? 'text-danger' : 'text-primary'}`}>{message}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="rounded-control border border-border px-4 py-2 text-sm font-semibold">Cancel</button>
+            {!mustChangePassword && <button type="button" onClick={onClose} className="rounded-control border border-border px-4 py-2 text-sm font-semibold">Cancel</button>}
             <button type="submit" disabled={saving} className="rounded-control bg-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{saving ? 'Saving…' : 'Update Password'}</button>
           </div>
         </form>

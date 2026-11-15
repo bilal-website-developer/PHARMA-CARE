@@ -166,6 +166,13 @@ export interface CashTransaction {
   handledBy: string;
 }
 
+export interface SalePaymentDetail {
+  paymentMethod: Exclude<PaymentMethod, PaymentMethod.SPLIT>;
+  providerId?: string;
+  amountPaisa: number;
+  reference?: string;
+}
+
 export type SaleCustomerType =
   | 'WALK_IN'
   | 'REGISTERED'
@@ -191,6 +198,7 @@ export interface CompletedSale {
   totalPaisa: number;
   roundingPaisa?: number;
   paymentMethod: PaymentMethod;
+  paymentDetails?: SalePaymentDetail[];
   amountTenderedPaisa: number;
   changePaisa: number;
 }

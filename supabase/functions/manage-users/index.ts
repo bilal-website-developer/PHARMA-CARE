@@ -2,6 +2,12 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   assignableRolesFor,
   canAssignRole,
+  canAccessShopProfile,
+  canUseManagementActionDuringPasswordChange,
+  canManagePlatformShops,
+  canEditManagedUser,
+  hasValidShopAssignment,
+  isShopRoleLimitReached,
   canManageTarget,
   canViewAdminTeam,
   canViewManagedUser,
@@ -15,10 +21,9 @@ import {
 } from './policy.ts';
 import type { Role } from './policy.ts';
 
-const MAX_USERS = 99;
 const MODULE_KEYS = [
   'pos', 'products', 'categories', 'suppliers', 'customers', 'sales_history',
-  'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports', 'manage_users',
+  'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports', 'manage_users', 'settings',
 ] as const;
 const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
 const PERMISSION_KEYS = [...MODULE_KEYS, ...POS_PRINT_PERMISSION_KEYS] as const;
@@ -41,6 +46,46 @@ function messageOf(error: unknown) {
 
 function validEmail(value: unknown): value is string {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validUuid(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function findProvisioningAuthUser(
+  client: ReturnType<typeof createClient>,
+  operationId: string,
+) {
+  const perPage = 1000;
+  for (let page = 1; page <= 10000; page += 1) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const user = data.users.find((candidate) =>
+      candidate.app_metadata?.provisioning_operation_id === operationId
+    );
+    if (user) return user;
+    if (data.users.length < perPage) return null;
+  }
+  throw new Error('Auth user recovery exceeded the supported page limit.');
+}
+
+async function clearProvisioningMetadata(
+  client: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await client.auth.admin.getUserById(userId);
+  if (error) return `Could not reload the first Admin Auth account: ${error.message}`;
+  const { provisioning_operation_id: _operationId, ...appMetadata } = data.user.app_metadata ?? {};
+  const { error: updateError } = await client.auth.admin.updateUserById(userId, {
+    app_metadata: { ...appMetadata, must_change_password: true },
+  });
+  return updateError ? `Could not clear temporary provisioning metadata: ${updateError.message}` : null;
 }
 
 function validRole(value: unknown): value is Role {
@@ -84,6 +129,24 @@ async function writeTrashEvent(
   if (error) throw new Error(`User change succeeded but Trash Bin history could not be saved: ${error.message}`);
 }
 
+async function restoreAuthStatusFromProfile(
+  client: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string | null> {
+  const { data: profile, error: profileError } = await client
+    .from('profiles')
+    .select('is_active,deleted_at')
+    .eq('id', userId)
+    .maybeSingle();
+  if (profileError) return `Could not reload profile status: ${profileError.message}`;
+
+  const isActive = profile?.is_active === true && profile.deleted_at === null;
+  const { error: authError } = await client.auth.admin.updateUserById(userId, {
+    ban_duration: isActive ? 'none' : '876000h',
+  });
+  return authError ? `Could not synchronize Auth status: ${authError.message}` : null;
+}
+
 function validPermissions(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(
     (permission) => typeof permission === 'string' && PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])
@@ -99,6 +162,7 @@ function safeProfile(
     role: string | null;
     is_active: boolean | null;
     permissions: string[] | null;
+    shop_id?: string | null;
     created_by?: string | null;
     deleted_at?: string | null;
   },
@@ -106,6 +170,7 @@ function safeProfile(
 ) {
   const publicFields = { ...profile };
   delete publicFields.created_by;
+  delete publicFields.shop_id;
   const email = String(profile.email ?? authEmail ?? '');
   const username = String(profile.username ?? email.split('@')[0] ?? '');
   const roleValue = String(profile.role ?? '').toLowerCase();
@@ -117,7 +182,7 @@ function safeProfile(
     role: validRole(roleValue) ? roleValue : 'cashier',
     is_active: profile.is_active === true,
     permissions: roleValue === 'super_admin'
-      ? [...MODULE_KEYS]
+      ? []
       : Array.isArray(profile.permissions)
         ? normalizePermissions(profile.permissions.filter((permission) => PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])))
         : [],
@@ -149,20 +214,20 @@ Deno.serve(async (request) => {
 
     const { data: callerProfile, error: callerError } = await adminClient
       .from('profiles')
-      .select('role,is_active,deleted_at,permissions')
+      .select('role,is_active,deleted_at,permissions,shop_id')
       .eq('id', authData.user.id)
       .maybeSingle();
     if (callerError) throw callerError;
-    const callerPermissionsFromProfile = Array.isArray(callerProfile?.permissions)
-      ? callerProfile.permissions
-      : [];
+    const callerShopId = typeof callerProfile?.shop_id === 'string' ? callerProfile.shop_id : null;
     if (
       !callerProfile ||
-      (!validRole(callerProfile.role) || !canUseManageUsers(callerProfile.role, callerPermissionsFromProfile)) ||
+      !validRole(callerProfile.role) ||
       callerProfile.is_active !== true ||
-      callerProfile.deleted_at !== null
+      callerProfile.deleted_at !== null ||
+      (callerProfile.role === 'admin' && callerShopId === null) ||
+      (callerProfile.role === 'super_admin' && callerShopId !== null)
     ) {
-      return response(403, { message: 'An active admin or a user with Manage Users permission is required.' });
+      return response(403, { message: 'An active admin or super_admin account is required.' });
     }
     const isSuperAdmin = callerProfile.role === 'super_admin';
     const callerRole = callerProfile.role as Role;
@@ -171,6 +236,12 @@ Deno.serve(async (request) => {
         typeof permission === 'string' && PERMISSION_KEYS.includes(permission as typeof PERMISSION_KEYS[number])
       )
       : [];
+    const targetInScope = (target: { role?: string | null; shop_id?: string | null }) => {
+      const targetShopId = target.shop_id ?? null;
+      return typeof target.role === 'string'
+        && hasValidShopAssignment(target.role, targetShopId)
+        && canAccessShopProfile(callerRole, callerShopId, targetShopId);
+    };
 
     let payload: Record<string, unknown>;
     try {
@@ -184,6 +255,469 @@ Deno.serve(async (request) => {
     }
 
     const action = payload.action;
+    if (callerRole === 'admin' && callerShopId !== null) {
+      const { data: ownShop, error: ownShopError } = await adminClient
+        .from('shops')
+        .select('status')
+        .eq('id', callerShopId)
+        .maybeSingle();
+      if (ownShopError) throw ownShopError;
+      if (ownShop?.status !== 'active') {
+        return response(403, { message: 'Your shop is not active. Contact the platform administrator.' });
+      }
+    }
+
+    if (!canUseManagementActionDuringPasswordChange(
+      action,
+      authData.user.app_metadata?.must_change_password === true,
+    )) {
+      return response(403, { message: 'Change the temporary password before using account-management actions.' });
+    }
+
+    if (action === 'complete_first_login_password') {
+      if (authData.user.app_metadata?.must_change_password !== true) {
+        return response(409, { message: 'A forced first-login password change is not pending.' });
+      }
+      const newPassword = typeof payload.new_password === 'string' ? payload.new_password : '';
+      if (newPassword.length < 8) {
+        return response(400, { message: 'Password must be at least 8 characters.' });
+      }
+      const { provisioning_operation_id: _operationId, must_change_password: _mustChange, ...appMetadata } =
+        authData.user.app_metadata ?? {};
+      const { error: passwordChangeError } = await adminClient.auth.admin.updateUserById(authData.user.id, {
+        password: newPassword,
+        app_metadata: appMetadata,
+      });
+      if (passwordChangeError) {
+        return response(400, { message: `Could not change the password: ${passwordChangeError.message}` });
+      }
+      return response(200, { message: 'Password changed successfully.' });
+    }
+    if (!canUseManageUsers(callerRole, callerPermissions)) {
+      return response(403, { message: 'An active admin or super_admin account is required.' });
+    }
+    if (action === 'shops_list') {
+      if (!canManagePlatformShops(callerRole)) {
+        return response(403, { message: 'Only the platform Super Admin may manage shops.' });
+      }
+      const { data: shops, error: shopsError } = await adminClient
+        .from('shops')
+        .select('id,name,phone,address,logo_path,status,admin_limit,staff_limit')
+        .order('name', { ascending: true });
+      if (shopsError) throw shopsError;
+      return response(200, { shops: shops ?? [] });
+    }
+
+    if (action === 'update_shop') {
+      if (!canManagePlatformShops(callerRole)) {
+        return response(403, { message: 'Only the platform Super Admin may manage shops.' });
+      }
+      const id = typeof payload.id === 'string' ? payload.id : '';
+      const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+      const phone = typeof payload.phone === 'string' ? payload.phone : '';
+      const address = typeof payload.address === 'string' ? payload.address : '';
+      const logoPath = typeof payload.logo_path === 'string' ? payload.logo_path : '';
+      const status = typeof payload.status === 'string' ? payload.status : '';
+      const adminLimit = Number(payload.admin_limit);
+      const staffLimit = Number(payload.staff_limit);
+      if (!validUuid(id) || !name || name.length > 120 || phone.length > 40 || address.length > 240
+        || logoPath.length > 4096
+        || !['active', 'suspended', 'deleted'].includes(status)
+        || !Number.isInteger(adminLimit) || adminLimit < 1 || adminLimit > 50
+        || !Number.isInteger(staffLimit) || staffLimit < 1 || staffLimit > 500) {
+        return response(400, { message: 'Shop details are invalid.' });
+      }
+      const { error: updateError } = await adminClient.rpc('platform_manage_shop', {
+        p_actor_id: authData.user.id,
+        p_shop_id: id,
+        p_name: name,
+        p_phone: phone,
+        p_address: address,
+        p_logo_path: logoPath,
+        p_status: status,
+        p_admin_limit: adminLimit,
+        p_staff_limit: staffLimit,
+      });
+      if (updateError) {
+        const statusCode = updateError.code === 'P0001' ? 409
+          : updateError.code === '42501' ? 403 : 400;
+        return response(statusCode, { message: `Could not update shop: ${updateError.message}` });
+      }
+      return response(200, { message: 'Shop updated successfully.' });
+    }
+
+    if (action === 'get_admin_note' || action === 'save_admin_note') {
+      if (!canManagePlatformShops(callerRole)) {
+        return response(403, { message: 'Only the platform Super Admin may access private Admin notes.' });
+      }
+      const adminId = typeof payload.admin_id === 'string' ? payload.admin_id : '';
+      if (!validUuid(adminId)) return response(400, { message: 'A valid Admin profile id is required.' });
+      const note = action === 'save_admin_note'
+        ? typeof payload.note === 'string' ? payload.note : null
+        : null;
+      if (note === null && action === 'save_admin_note') {
+        return response(400, { message: 'The private note must be text.' });
+      }
+      if (note !== null && note.length > 2000) {
+        return response(400, { message: 'The private note must be 2000 characters or fewer.' });
+      }
+      const { data, error: noteError } = await adminClient.rpc('platform_admin_private_note', {
+        p_actor_id: authData.user.id,
+        p_admin_profile_id: adminId,
+        p_note: note,
+      });
+      if (noteError) {
+        const statusCode = noteError.code === 'P0001' ? 404
+          : noteError.code === '42501' ? 403 : 400;
+        return response(statusCode, { message: `Could not access private note: ${noteError.message}` });
+      }
+      return response(200, { note: data });
+    }
+
+    if (action === 'provision_shop') {
+      if (!canManagePlatformShops(callerRole)) {
+        return response(403, { message: 'Only the platform Super Admin may provision shops.' });
+      }
+      const operationId = typeof payload.operation_id === 'string' ? payload.operation_id : '';
+      const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+      const phone = typeof payload.phone === 'string' ? payload.phone : '';
+      const address = typeof payload.address === 'string' ? payload.address : '';
+      const adminFullName = typeof payload.admin_full_name === 'string' ? payload.admin_full_name.trim() : '';
+      const adminUsername = typeof payload.admin_username === 'string' ? payload.admin_username.trim() : '';
+      const adminEmail = typeof payload.admin_email === 'string' ? payload.admin_email.trim().toLowerCase() : '';
+      const adminPassword = typeof payload.admin_password === 'string' ? payload.admin_password : '';
+      const adminPermissions = normalizePermissions(
+        validPermissions(payload.admin_permissions) ? payload.admin_permissions : [],
+      );
+      if (!validUuid(operationId) || !name || name.length > 120 || phone.length > 40 || address.length > 240
+        || !adminFullName || adminFullName.length > 120
+        || !adminUsername || adminUsername.length > 80 || !validEmail(adminEmail)
+        || adminPassword.length < 8 || !validPermissions(payload.admin_permissions)) {
+        return response(400, { message: 'Shop and first Admin details are invalid.' });
+      }
+      const fingerprint = await sha256Hex(JSON.stringify({
+        requested_by: authData.user.id,
+        name,
+        phone,
+        address,
+        admin_full_name: adminFullName,
+        admin_username: adminUsername,
+        admin_email: adminEmail,
+        admin_permissions: adminPermissions,
+      }));
+      let { data: operation, error: operationError } = await adminClient
+        .from('shop_provisioning_operations')
+        .select('operation_id,requested_by,request_fingerprint,status,auth_user_id,shop_id,auth_email,attempt_count,updated_at')
+        .eq('operation_id', operationId)
+        .maybeSingle();
+      if (operationError) throw operationError;
+      if (!operation) {
+        const { data: insertedOperation, error: insertOperationError } = await adminClient
+          .from('shop_provisioning_operations')
+          .insert({
+            operation_id: operationId,
+            requested_by: authData.user.id,
+            request_fingerprint: fingerprint,
+            auth_email: adminEmail,
+            status: 'pending_auth',
+          })
+          .select('operation_id,requested_by,request_fingerprint,status,auth_user_id,shop_id,auth_email,attempt_count,updated_at')
+          .single();
+        if (insertOperationError?.code === '23505') {
+          const retry = await adminClient
+            .from('shop_provisioning_operations')
+            .select('operation_id,requested_by,request_fingerprint,status,auth_user_id,shop_id,auth_email,attempt_count,updated_at')
+            .eq('operation_id', operationId)
+            .maybeSingle();
+          if (retry.error) throw retry.error;
+          operation = retry.data;
+        } else if (insertOperationError) {
+          throw insertOperationError;
+        } else {
+          operation = insertedOperation;
+        }
+      }
+      if (!operation || operation.requested_by !== authData.user.id
+        || operation.request_fingerprint !== fingerprint || operation.auth_email !== adminEmail) {
+        return response(409, { message: 'This provisioning operation id is already bound to different request data.' });
+      }
+      if (operation.status === 'completed' && operation.shop_id) {
+        if (operation.auth_user_id) {
+          const { data: completedAuthUser, error: completedAuthLookupError } =
+            await adminClient.auth.admin.getUserById(operation.auth_user_id);
+          if (completedAuthLookupError) throw completedAuthLookupError;
+          const { provisioning_operation_id: _completedOperationId, ...completedMetadata } =
+            completedAuthUser.user.app_metadata ?? {};
+          const { error: completedMetadataError } = await adminClient.auth.admin.updateUserById(
+            operation.auth_user_id,
+            { app_metadata: { ...completedMetadata, must_change_password: true } },
+          );
+          if (completedMetadataError) {
+            return response(500, {
+              message: `Shop exists, but first-login Auth metadata cleanup needs owner review. Ref: ${operationId}`,
+            });
+          }
+        }
+        return response(200, { message: 'Shop and first Admin were already provisioned.', shop_id: operation.shop_id });
+      }
+      if (['compensated', 'failed'].includes(operation.status)) {
+        return response(409, { message: 'This provisioning operation was already closed. Start a new operation.' });
+      }
+      if (operation.status === 'pending_auth' || operation.status === 'auth_creating') {
+        const { data: duplicateUsername, error: usernameError } = await adminClient
+          .from('profiles').select('id').ilike('username', adminUsername).limit(1);
+        if (usernameError) throw usernameError;
+        if (duplicateUsername?.length) {
+          const { error: closeError } = await adminClient
+            .from('shop_provisioning_operations')
+            .update({
+              status: 'failed',
+              last_error_code: 'username_conflict',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('operation_id', operationId)
+            .eq('status', operation.status);
+          if (closeError) throw closeError;
+          return response(409, { message: 'Username already taken.' });
+        }
+      }
+      const staleBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      if (['compensation_pending', 'compensation_failed', 'compensating'].includes(operation.status)) {
+        let recoveryClaim = adminClient.from('shop_provisioning_operations')
+          .update({
+            status: 'compensating',
+            attempt_count: (operation.attempt_count ?? 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', operation.status);
+        if (operation.status === 'compensating') recoveryClaim = recoveryClaim.lt('updated_at', staleBefore);
+        const { data: claimedRecovery, error: recoveryClaimError } = await recoveryClaim
+          .select('auth_user_id')
+          .maybeSingle();
+        if (recoveryClaimError) throw recoveryClaimError;
+        if (!claimedRecovery) {
+          return response(409, { message: `Provisioning recovery is already in progress. Ref: ${operationId}` });
+        }
+        let recoveryUserId = claimedRecovery.auth_user_id;
+        if (!recoveryUserId) {
+          const recoveryUser = await findProvisioningAuthUser(adminClient, operationId);
+          recoveryUserId = recoveryUser?.id ?? null;
+        }
+        const { error: recoveryDeleteError } = recoveryUserId
+          ? await adminClient.auth.admin.deleteUser(recoveryUserId)
+          : { error: null };
+        const nextStatus = recoveryDeleteError ? 'compensation_failed' : 'compensated';
+        const { error: recoveryUpdateError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({
+            status: nextStatus,
+            last_error_code: recoveryDeleteError ? 'auth_compensation_failed' : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', 'compensating');
+        if (recoveryUpdateError) throw recoveryUpdateError;
+        if (recoveryDeleteError) {
+          return response(500, { message: `Could not complete provisioning recovery. Operation: ${operationId}` });
+        }
+        return response(409, { message: `Provisioning compensation completed. Start a new operation. Ref: ${operationId}` });
+      }
+
+      let authUserId = operation.auth_user_id;
+      if (operation.status === 'pending_auth' || operation.status === 'auth_creating') {
+        let authClaim = adminClient.from('shop_provisioning_operations')
+          .update({
+            status: 'auth_creating',
+            attempt_count: (operation.attempt_count ?? 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', operation.status);
+        if (operation.status === 'auth_creating') authClaim = authClaim.lt('updated_at', staleBefore);
+        const { data: claimedAuth, error: authClaimError } = await authClaim
+          .select('attempt_count')
+          .maybeSingle();
+        if (authClaimError) throw authClaimError;
+        if (!claimedAuth) {
+          return response(409, { message: `Provisioning Auth setup is already in progress. Retry after 10 minutes. Ref: ${operationId}` });
+        }
+        const recoveredAuthUser = await findProvisioningAuthUser(adminClient, operationId);
+        if (recoveredAuthUser && recoveredAuthUser.email?.toLowerCase() !== adminEmail) {
+          return response(409, { message: `The recovered Auth account email does not match the operation. Ref: ${operationId}` });
+        }
+        if (recoveredAuthUser) {
+          authUserId = recoveredAuthUser.id;
+        } else {
+          const { data: createdAuth, error: createAuthError } = await adminClient.auth.admin.createUser({
+            email: adminEmail,
+            password: adminPassword,
+            email_confirm: true,
+            app_metadata: {
+              must_change_password: true,
+              provisioning_operation_id: operationId,
+            },
+          });
+          if (createAuthError || !createdAuth.user) {
+            const { error: failedOperationError } = await adminClient
+              .from('shop_provisioning_operations')
+              .update({
+                status: 'failed',
+                last_error_code: 'auth_create_failed',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('operation_id', operationId)
+              .eq('status', 'auth_creating');
+            if (failedOperationError) throw failedOperationError;
+            return response(400, { message: createAuthError?.message ?? 'Could not create the first Admin Auth account.' });
+          }
+          authUserId = createdAuth.user.id;
+        }
+        const { data: recordedAuth, error: authRecordError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({
+            auth_user_id: authUserId,
+            status: 'auth_created',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', 'auth_creating')
+          .select('operation_id')
+          .maybeSingle();
+        if (authRecordError) throw authRecordError;
+        if (!recordedAuth) {
+          return response(409, { message: `Auth account recovery is required before finalization. Ref: ${operationId}` });
+        }
+        operation = { ...operation, status: 'auth_created', auth_user_id: authUserId };
+      }
+
+      if (operation.status !== 'auth_created' && operation.status !== 'finalizing') {
+        return response(409, { message: `Provisioning cannot continue from status ${operation.status}. Ref: ${operationId}` });
+      }
+      if (!authUserId) {
+        const recoveredAuthUser = await findProvisioningAuthUser(adminClient, operationId);
+        if (!recoveredAuthUser || recoveredAuthUser.email?.toLowerCase() !== adminEmail) {
+          return response(409, { message: `Provisioning has no matching Auth account. Ref: ${operationId}` });
+        }
+        authUserId = recoveredAuthUser.id;
+        const { data: relinkedAuth, error: relinkError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({ auth_user_id: authUserId, updated_at: new Date().toISOString() })
+          .eq('operation_id', operationId)
+          .eq('status', operation.status)
+          .select('operation_id')
+          .maybeSingle();
+        if (relinkError) throw relinkError;
+        if (!relinkedAuth) {
+          return response(409, { message: `Provisioning status changed while relinking Auth. Ref: ${operationId}` });
+        }
+      }
+      let finalizeClaim = adminClient.from('shop_provisioning_operations')
+        .update({
+          status: 'finalizing',
+          attempt_count: (operation.attempt_count ?? 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('operation_id', operationId)
+        .eq('status', operation.status);
+      if (operation.status === 'finalizing') finalizeClaim = finalizeClaim.lt('updated_at', staleBefore);
+      const { data: claimedFinalization, error: finalizeClaimError } = await finalizeClaim
+        .select('operation_id')
+        .maybeSingle();
+      if (finalizeClaimError) throw finalizeClaimError;
+      if (!claimedFinalization) {
+        return response(409, { message: `Shop finalization is already in progress. Retry after 10 minutes. Ref: ${operationId}` });
+      }
+
+      const { data: finalized, error: finalizeError } = await adminClient.rpc('finalize_shop_provisioning', {
+        p_operation_id: operationId,
+        p_actor_id: authData.user.id,
+        p_auth_user_id: authUserId,
+        p_request_fingerprint: fingerprint,
+        p_shop_name: name,
+        p_phone: phone,
+        p_address: address,
+        p_admin_full_name: adminFullName,
+        p_admin_username: adminUsername,
+        p_admin_email: adminEmail,
+        p_admin_permissions: adminPermissions,
+        p_admin_limit: 10,
+        p_staff_limit: 100,
+      });
+      if (finalizeError) {
+        const { data: pendingOperation, error: pendingError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({
+            status: 'compensation_pending',
+            last_error_code: finalizeError.code ?? 'finalize_failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', 'finalizing')
+          .select('operation_id')
+          .maybeSingle();
+        if (pendingError) throw pendingError;
+        if (!pendingOperation) {
+          const { data: latestOperation, error: latestError } = await adminClient
+            .from('shop_provisioning_operations')
+            .select('status,shop_id')
+            .eq('operation_id', operationId)
+            .maybeSingle();
+          if (latestError) throw latestError;
+          if (latestOperation?.status === 'completed' && latestOperation.shop_id) {
+            const metadataError = await clearProvisioningMetadata(adminClient, authUserId);
+            return metadataError
+              ? response(500, { message: `Shop was provisioned, but Auth metadata cleanup needs owner review. Ref: ${operationId}. ${metadataError}` })
+              : response(201, { message: 'Shop and first Admin provisioned.', shop_id: latestOperation.shop_id });
+          }
+          return response(409, { message: `Provisioning status changed during finalization. Ref: ${operationId}` });
+        }
+        const { data: recoveryClaim, error: recoveryClaimError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({
+            status: 'compensating',
+            attempt_count: (operation.attempt_count ?? 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', 'compensation_pending')
+          .select('operation_id')
+          .maybeSingle();
+        if (recoveryClaimError) throw recoveryClaimError;
+        if (!recoveryClaim) {
+          return response(409, { message: `Provisioning compensation is already in progress. Ref: ${operationId}` });
+        }
+        const { error: authCompensationError } = await adminClient.auth.admin.deleteUser(authUserId);
+        const { error: compensationRecordError } = await adminClient
+          .from('shop_provisioning_operations')
+          .update({
+            status: authCompensationError ? 'compensation_failed' : 'compensated',
+            last_error_code: authCompensationError ? 'auth_compensation_failed' : 'finalize_failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('operation_id', operationId)
+          .eq('status', 'compensating');
+        if (compensationRecordError) throw compensationRecordError;
+        return response(500, {
+          message: authCompensationError
+            ? `Shop finalization failed and Auth cleanup also failed. Owner recovery is required. Ref: ${operationId}`
+            : `Shop finalization failed; Auth cleanup completed. Start a new operation. Ref: ${operationId}`,
+        });
+      }
+
+      const metadataError = await clearProvisioningMetadata(adminClient, authUserId);
+      if (metadataError) {
+        console.error('Provisioning completed but temporary Auth operation metadata cleanup failed.', metadataError);
+        return response(500, {
+          message: `Shop was provisioned, but Auth metadata cleanup needs owner review. Ref: ${operationId}. ${metadataError}`,
+        });
+      }
+      return response(201, {
+        message: 'Shop and first Admin provisioned. The Admin must change the temporary password at first login.',
+        shop_id: (finalized as { shop_id?: string } | null)?.shop_id ?? null,
+      });
+    }
+
     if (action === 'permanently_delete') {
       if (callerRole !== 'admin' && callerRole !== 'super_admin') {
         return response(403, { message: 'Only admin or super_admin may permanently delete Trash Bin items.' });
@@ -217,7 +751,7 @@ Deno.serve(async (request) => {
 
       const { data: target, error: targetError } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,permissions,deleted_at,created_by')
+        .select('id,full_name,username,email,role,permissions,deleted_at,created_by,shop_id')
         .eq('id', trashEvent.entity_id)
         .maybeSingle();
       if (targetError) throw targetError;
@@ -225,7 +759,7 @@ Deno.serve(async (request) => {
         if (target.deleted_at === null || !validRole(target.role)) {
           return response(404, { message: 'The deleted user profile is no longer available.' });
         }
-        if (target.id === authData.user.id || !canManageTarget(
+        if (!targetInScope(target) || target.id === authData.user.id || !canManageTarget(
           callerRole,
           authData.user.id,
           target.id,
@@ -267,11 +801,11 @@ Deno.serve(async (request) => {
       }
       const { data: targetAdmin, error: targetAdminError } = await adminClient
         .from('profiles')
-        .select('id,role')
+        .select('id,role,shop_id')
         .eq('id', payload.admin_id)
         .maybeSingle();
       if (targetAdminError) throw targetAdminError;
-      if (!targetAdmin || !validRole(targetAdmin.role)
+      if (!targetAdmin || !validRole(targetAdmin.role) || targetAdmin.shop_id === null
         || !canViewAdminTeam(callerRole, targetAdmin.role)) {
         return response(404, { message: 'Admin team not found.' });
       }
@@ -279,6 +813,7 @@ Deno.serve(async (request) => {
         .from('profiles')
         .select('id,username,role,is_active,deleted_at,created_at')
         .eq('created_by', targetAdmin.id)
+        .eq('shop_id', targetAdmin.shop_id)
         .order('created_at', { ascending: true });
       if (teamError) throw teamError;
       const { data: authUsers, error: authUsersError } = await adminClient.auth.admin.listUsers({
@@ -301,14 +836,20 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'list') {
-      const { data: users, error } = await adminClient
+      const usersQuery = adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions,created_by')
+        .select('id,full_name,username,email,role,is_active,permissions,created_by,shop_id')
         .is('deleted_at', null);
+      const { data: users, error } = callerShopId === null
+        ? await usersQuery
+        : await usersQuery.eq('shop_id', callerShopId);
       if (error) throw error;
-      const { count: globalCount, error: countError } = await adminClient
+      const countQuery = adminClient
         .from('profiles')
         .select('id', { count: 'exact', head: true });
+      const { count: globalCount, error: countError } = callerShopId === null
+        ? await countQuery
+        : await countQuery.eq('shop_id', callerShopId);
       if (countError) throw countError;
       const { data: authUsers, error: authUsersError } = await adminClient.auth.admin.listUsers({
         page: 1,
@@ -337,12 +878,14 @@ Deno.serve(async (request) => {
       }
       const visibleUsers = (users ?? []).filter((user) =>
         (isSuperAdmin || user.role !== 'super_admin')
+        && targetInScope(user)
         && canViewManagedUser(callerRole, authData.user.id, user.id, user.created_by)
       );
       const orderedUsers = visibleUsers
         .map((user) => {
           const { created_by: createdBy, ...profile } = user;
           const safeUser = safeProfile(profile, authEmailById.get(user.id));
+          if (isSuperAdmin) safeUser.shop_id = user.shop_id;
           return isSuperAdmin
             ? {
               ...safeUser,
@@ -364,6 +907,7 @@ Deno.serve(async (request) => {
             callerPermissions,
             (users ?? []).find((profile) => profile.id === user.id)?.created_by ?? null,
           ),
+          can_edit: canEditManagedUser(callerRole, user.role, user.id === authData.user.id),
         }));
       let teamCount = 0;
       let teamMembers: ReturnType<typeof publicTeamMember>[] = [];
@@ -372,6 +916,7 @@ Deno.serve(async (request) => {
           .from('profiles')
           .select('id,username,role,is_active,deleted_at,created_at')
           .eq('created_by', authData.user.id)
+          .eq('shop_id', callerShopId)
           .order('created_at', { ascending: true });
         if (teamError) throw teamError;
         teamCount = (teamProfiles ?? []).length;
@@ -380,13 +925,22 @@ Deno.serve(async (request) => {
           authMetadataById.get(profile.id),
         ));
       }
+      let shops: { id: string; name: string; status: string }[] = [];
+      if (isSuperAdmin) {
+        const { data: shopRows, error: shopsError } = await adminClient
+          .from('shops')
+          .select('id,name,status')
+          .order('name', { ascending: true });
+        if (shopsError) throw shopsError;
+        shops = shopRows ?? [];
+      }
       return response(200, {
-        api_version: 2,
+        api_version: 5,
         users: orderedUsers,
-        userLimit: MAX_USERS,
         currentCount: globalCount ?? 0,
         team_count: teamCount,
         team_members: teamMembers,
+        shops,
         assignable_roles: assignableRolesFor(callerRole, callerPermissions),
         grantable_permissions: grantablePermissionsFor(callerRole, callerPermissions, PERMISSION_KEYS),
       });
@@ -398,7 +952,7 @@ Deno.serve(async (request) => {
       }
       const { data: users, error } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by')
+        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by,shop_id')
         .not('deleted_at', 'is', null)
         .order('deleted_at', { ascending: false });
       if (error) throw error;
@@ -412,6 +966,7 @@ Deno.serve(async (request) => {
         users: (users ?? [])
           .filter((user) =>
             (isSuperAdmin || user.role !== 'super_admin')
+            && targetInScope(user)
             && canViewManagedUser(callerRole, authData.user.id, user.id, user.created_by)
           )
           .map((user) => safeProfile(user, authEmailById.get(user.id))),
@@ -425,11 +980,11 @@ Deno.serve(async (request) => {
       if (password.length < 8) return response(400, { message: 'Password must be at least 8 characters.' });
       const { data: target, error: targetError } = await adminClient
         .from('profiles')
-        .select('id,role,permissions,deleted_at,created_by')
+        .select('id,role,permissions,deleted_at,created_by,shop_id')
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
-      if (!target || !validRole(target.role) || !canManageTarget(
+      if (!target || !targetInScope(target) || !validRole(target.role) || !canManageTarget(
         callerRole,
         authData.user.id,
         id,
@@ -438,6 +993,9 @@ Deno.serve(async (request) => {
         callerPermissions,
         target.created_by,
       )) {
+        return response(404, { message: 'User not found.' });
+      }
+      if (!canEditManagedUser(callerRole, target.role, target.id === authData.user.id)) {
         return response(404, { message: 'User not found.' });
       }
       if (target.deleted_at !== null) return response(400, { message: 'Restore this user before changing its password.' });
@@ -471,6 +1029,26 @@ Deno.serve(async (request) => {
       if (!canAssignRole(callerRole, role, callerPermissions)) {
         return response(403, { message: 'You are not allowed to assign this role.' });
       }
+      let targetShopId = callerShopId;
+      if (role === 'admin') {
+        const requestedShopId = typeof payload.shop_id === 'string' ? payload.shop_id : '';
+        if (callerRole !== 'super_admin' || !requestedShopId) {
+          return response(400, { message: 'Select an active shop for this Admin account.' });
+        }
+        const { data: shop, error: shopError } = await adminClient
+          .from('shops')
+          .select('id')
+          .eq('id', requestedShopId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (shopError) throw shopError;
+        if (!shop) return response(400, { message: 'The selected shop is not active.' });
+        targetShopId = shop.id;
+      } else if (role !== 'super_admin' && (callerRole !== 'admin' || callerShopId === null)) {
+        return response(403, { message: 'Only a Shop Admin may create staff accounts.' });
+      } else if (role !== 'super_admin' && payload.shop_id !== undefined) {
+        return response(400, { message: 'Shop assignment is managed by the server.' });
+      }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
       const normalizedPermissions = normalizePermissions(payload.permissions);
       const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, normalizedPermissions);
@@ -486,6 +1064,40 @@ Deno.serve(async (request) => {
         .from('profiles')
         .select('username,email');
       if (usersError) throw usersError;
+      if (role !== 'super_admin' && targetShopId) {
+        const { data: shopLimits, error: shopLimitsError } = await adminClient
+          .from('shops')
+          .select('status,admin_limit,staff_limit')
+          .eq('id', targetShopId)
+          .maybeSingle();
+        if (shopLimitsError) throw shopLimitsError;
+        if (!shopLimits || shopLimits.status !== 'active') {
+          return response(409, { message: 'The selected shop is not active.' });
+        }
+        let roleCountQuery = adminClient
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('shop_id', targetShopId);
+        roleCountQuery = role === 'admin'
+          ? roleCountQuery.eq('role', 'admin')
+          : roleCountQuery.in('role', ['manager', 'cashier', 'accountant']);
+        const { count: roleCount, error: roleCountError } = await roleCountQuery;
+        if (roleCountError) throw roleCountError;
+        const roleLimitReached = isShopRoleLimitReached(
+          role,
+          role === 'admin' ? roleCount ?? 0 : 0,
+          role === 'admin' ? 0 : roleCount ?? 0,
+          shopLimits.admin_limit,
+          shopLimits.staff_limit,
+        );
+        if (roleLimitReached) {
+          return response(409, {
+            message: role === 'admin'
+              ? 'The shop Admin limit has been reached.'
+              : 'The shop staff limit has been reached.',
+          });
+        }
+      }
       if ((currentUsers ?? []).some((user) =>
         user.username !== null &&
         String(user.username ?? '').toLowerCase() === String(username ?? '').toLowerCase()
@@ -498,13 +1110,12 @@ Deno.serve(async (request) => {
       )) {
         return response(409, { message: 'Email already taken.' });
       }
-      if ((currentUsers?.length ?? 0) >= MAX_USERS) return response(409, { message: 'The user limit has been reached.' });
-
-      const permissions = role === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions;
+      const permissions = role === 'super_admin' ? [] : normalizedPermissions;
       const { data: createdAuth, error: createAuthError } = await adminClient.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
+        app_metadata: { must_change_password: true },
       });
       if (createAuthError || !createdAuth.user) {
         const detail = createAuthError?.message ?? 'No auth user was returned.';
@@ -532,6 +1143,7 @@ Deno.serve(async (request) => {
         is_active: payload.is_active !== false,
         deleted_at: null,
         created_by: authData.user.id,
+        shop_id: role === 'super_admin' ? null : targetShopId,
       });
       if (profileError) {
         const { error: rollbackError } = await adminClient.auth.admin.deleteUser(createdAuth.user.id);
@@ -553,6 +1165,7 @@ Deno.serve(async (request) => {
         full_name: fullName,
         username,
         email,
+        shop_id: targetShopId,
       });
       return response(201, { message: 'User created successfully.', id: createdAuth.user.id });
     }
@@ -568,19 +1181,22 @@ Deno.serve(async (request) => {
       }
       const { data: target, error: targetError } = await adminClient
         .from('profiles')
-        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by')
+        .select('id,full_name,username,email,role,is_active,permissions,deleted_at,created_by,shop_id')
         .eq('id', id)
         .maybeSingle();
       if (targetError) throw targetError;
-      if (!target || !validRole(target.role)) {
+      if (!target || !targetInScope(target) || !validRole(target.role)) {
         return response(404, { message: 'User not found.' });
       }
-      const { count: activeAdminCount, error: adminCountError } = await adminClient
+      const adminCountQuery = adminClient
         .from('profiles')
         .select('id', { count: 'exact', head: true })
         .eq('role', 'admin')
         .eq('is_active', true)
         .is('deleted_at', null);
+      const { count: activeAdminCount, error: adminCountError } = target.shop_id === null
+        ? await adminCountQuery
+        : await adminCountQuery.eq('shop_id', target.shop_id);
       if (adminCountError) throw adminCountError;
       const { count: activeSuperAdminCount, error: superAdminCountError } = await adminClient
         .from('profiles')
@@ -613,8 +1229,8 @@ Deno.serve(async (request) => {
           targetRole: target.role,
           targetCreatedBy: target.created_by,
           nextRole: target.role,
-          targetPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
-          nextPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
+          targetPermissions: target.role === 'super_admin' ? [] : target.permissions ?? [],
+          nextPermissions: target.role === 'super_admin' ? [] : target.permissions ?? [],
           targetActive: target.is_active === true,
           nextActive,
           activeAdminCount: activeAdminCount ?? 0,
@@ -636,12 +1252,10 @@ Deno.serve(async (request) => {
           p_action: statusAction,
         });
         if (statusError) {
-          const { error: authRollbackError } = await adminClient.auth.admin.updateUserById(id, {
-            ban_duration: target.is_active === true ? 'none' : '876000h',
-          });
+          const authRollbackError = await restoreAuthStatusFromProfile(adminClient, id);
           if (authRollbackError) {
             return response(500, {
-              message: `Could not update profile status: ${statusError.message}. Auth rollback also failed: ${authRollbackError.message}`,
+              message: `Could not update profile status: ${statusError.message}. ${authRollbackError}`,
             });
           }
           return response(statusError.code === 'P0001' ? 409 : 500, {
@@ -679,12 +1293,10 @@ Deno.serve(async (request) => {
           p_action: 'remove_access',
         });
         if (removalError) {
-          const { error: authRollbackError } = await adminClient.auth.admin.updateUserById(id, {
-            ban_duration: target.is_active === true ? 'none' : '876000h',
-          });
+          const authRollbackError = await restoreAuthStatusFromProfile(adminClient, id);
           if (authRollbackError) {
             return response(500, {
-              message: `Could not remove user access: ${removalError.message}. Auth rollback also failed: ${authRollbackError.message}`,
+              message: `Could not remove user access: ${removalError.message}. ${authRollbackError}`,
             });
           }
           return response(removalError.code === 'P0001' ? 409 : 500, {
@@ -710,11 +1322,6 @@ Deno.serve(async (request) => {
           return response(403, { message: 'You are not allowed to manage this user.' });
         }
         if (target.deleted_at === null) return response(400, { message: 'User is not deleted.' });
-        const { count, error: countError } = await adminClient.from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .is('deleted_at', null);
-        if (countError) throw countError;
-        if ((count ?? 0) >= MAX_USERS) return response(409, { message: 'The user limit has been reached.' });
         const { error: updateError } = await adminClient.from('profiles')
           .update({ deleted_at: null, is_active: true })
           .eq('id', id);
@@ -777,6 +1384,9 @@ Deno.serve(async (request) => {
       )) {
         return response(403, { message: 'You are not allowed to manage this user.' });
       }
+      if (!canEditManagedUser(callerRole, target.role, target.id === authData.user.id)) {
+        return response(403, { message: 'Super Admins may edit Admin accounts; use the Admin team controls for staff access.' });
+      }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
       const normalizedPermissions = normalizePermissions(payload.permissions);
       if (typeof payload.is_active !== 'boolean') return response(400, { message: 'Active status is required.' });
@@ -815,8 +1425,8 @@ Deno.serve(async (request) => {
         targetRole: target.role,
         targetCreatedBy: target.created_by,
         nextRole,
-        targetPermissions: target.role === 'super_admin' ? [...MODULE_KEYS] : target.permissions ?? [],
-        nextPermissions: nextRole === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions,
+        targetPermissions: target.role === 'super_admin' ? [] : target.permissions ?? [],
+        nextPermissions: nextRole === 'super_admin' ? [] : normalizedPermissions,
         targetActive: target.is_active === true,
         nextActive,
         activeAdminCount: activeAdminCount ?? 0,
@@ -825,16 +1435,27 @@ Deno.serve(async (request) => {
         callerPermissions,
       });
       if (denial) return response(403, { message: denial });
-      const permissions = nextRole === 'super_admin' ? [...MODULE_KEYS] : normalizedPermissions;
-      const before = {
-        role: target.role,
-        permissions: target.permissions,
-        is_active: target.is_active,
-        full_name: target.full_name,
-        username: target.username,
-        email: target.email,
-      };
-
+      const permissions = nextRole === 'super_admin' ? [] : normalizedPermissions;
+      let nextShopId = target.shop_id;
+      if (callerRole === 'super_admin' && nextRole === 'admin') {
+        const requestedShopId = typeof payload.shop_id === 'string' ? payload.shop_id : '';
+        if (!requestedShopId) return response(400, { message: 'Select an active shop for this Admin account.' });
+        const { data: shop, error: shopError } = await adminClient
+          .from('shops')
+          .select('id')
+          .eq('id', requestedShopId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (shopError) throw shopError;
+        if (!shop) return response(400, { message: 'The selected shop is not active.' });
+        nextShopId = shop.id;
+        if (target.role === 'admin' && target.is_active === true
+          && target.shop_id !== nextShopId && (activeAdminCount ?? 0) <= 1) {
+          return response(409, { message: 'Cannot move the last active Admin out of a shop.' });
+        }
+      } else if (payload.shop_id !== undefined) {
+        return response(400, { message: 'Shop assignment is managed by the platform Super Admin.' });
+      }
       const authChanges: { email?: string; ban_duration?: string } = {};
       if (String(email ?? '').toLowerCase() !== String(target.email ?? '').toLowerCase()) authChanges.email = email;
       if (nextActive !== target.is_active) authChanges.ban_duration = nextActive ? 'none' : '876000h';
@@ -845,27 +1466,36 @@ Deno.serve(async (request) => {
           return response(400, { message: `Could not update auth user: ${authUpdateError.message}` });
         }
       }
-      const { error: profileUpdateError } = await adminClient.from('profiles')
-        .update({ full_name: fullName, username, email, role: nextRole, permissions, is_active: nextActive })
-        .eq('id', id);
+      const { error: profileUpdateError } = await adminClient.rpc('manage_users_profile_update', {
+        p_actor_id: authData.user.id,
+        p_target_id: id,
+        p_full_name: fullName,
+        p_username: username,
+        p_email: email,
+        p_role: nextRole,
+        p_permissions: permissions,
+        p_is_active: nextActive,
+        p_shop_id: nextRole === 'super_admin' ? null : nextShopId,
+      });
       if (profileUpdateError) {
         if (authChanges.email || authChanges.ban_duration) {
           const rollback: { email?: string; ban_duration?: string } = {};
           if (authChanges.email) rollback.email = target.email;
           if (authChanges.ban_duration) rollback.ban_duration = target.is_active ? 'none' : '876000h';
           const { error: rollbackError } = await adminClient.auth.admin.updateUserById(id, rollback);
-          if (rollbackError) console.error('Could not roll back auth changes after profile update failure:', rollbackError.message);
+          if (rollbackError) {
+            return response(500, {
+              message: `Could not update profile: ${profileUpdateError.message}. Auth rollback also failed: ${rollbackError.message}`,
+            });
+          }
         }
-        return response(400, { message: `Could not update profile: ${profileUpdateError.message}` });
+        const statusCode = profileUpdateError.code === 'P0001' || profileUpdateError.code === '23505'
+          ? 409
+          : profileUpdateError.code === '42501'
+            ? 403
+            : 400;
+        return response(statusCode, { message: `Could not update profile: ${profileUpdateError.message}` });
       }
-      await writeAuditLog(adminClient, authData.user.id, 'update', id, before, {
-        role: nextRole,
-        permissions,
-        is_active: nextActive,
-        full_name: fullName,
-        username,
-        email,
-      });
       return response(200, { message: 'User updated successfully.' });
     }
 

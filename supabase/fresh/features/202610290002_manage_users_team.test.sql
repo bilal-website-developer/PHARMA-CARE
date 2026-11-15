@@ -1,3 +1,4 @@
+-- SUPERSEDED S6 DRAFT: DO NOT RUN. Its assertions target an unsafe pre-S5 migration.
 select jsonb_build_object(
   'created_by_column_exists',
     exists (

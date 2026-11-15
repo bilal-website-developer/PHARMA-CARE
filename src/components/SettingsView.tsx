@@ -73,11 +73,13 @@ interface SettingsViewProps {
   companyName: string;
   onSaveCompanyName: (companyName: string) => boolean;
   activeTemplate: BillingTemplate;
-  canEditBilling: boolean;
+  canEditShopProfile: boolean;
+  canEditOperationalSettings: boolean;
+  operationalSettingsError: string;
   onTemplateChange: (template: BillingTemplate) => void;
   onOpenTemplatePreview: (template: BillingTemplate) => void;
   memoSettings: PharmacyMemoSettings;
-  onMemoSettingsChange: (settings: PharmacyMemoSettings) => boolean;
+  onMemoSettingsChange: (settings: PharmacyMemoSettings) => Promise<boolean>;
   memoFormat: ReceiptFormat;
   onMemoFormatChange: (format: ReceiptFormat) => void;
   onPrintReceipt: PrintReceiptHandler;
@@ -87,7 +89,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   companyName,
   onSaveCompanyName,
   activeTemplate,
-  canEditBilling,
+  canEditShopProfile,
+  canEditOperationalSettings,
+  operationalSettingsError,
   onTemplateChange,
   onOpenTemplatePreview,
   memoSettings: savedMemoSettings,
@@ -107,12 +111,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [saveNotice, setSaveNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   // Demo Data State
   const [demoStatus, setDemoStatus] = useState<{ loaded: boolean; count: number }>({ loaded: false, count: 0 });
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoNotice, setDemoNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+
+  useEffect(() => {
+    setMemoSettings(savedMemoSettings);
+  }, [savedMemoSettings]);
 
   useEffect(() => {
     void checkDemoDataStatus().then(setDemoStatus);
@@ -235,67 +244,109 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     [memoFormat, memoSettings, shopName, logoUrl]
   );
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedShopName = shopName.trim();
     const nextMemoSettings: PharmacyMemoSettings = {
       ...memoSettings,
-      storeName: canEditBilling ? normalizedShopName : memoSettings.storeName.trim(),
-      logoUrl: canEditBilling ? logoUrl : memoSettings.logoUrl,
+      storeName: canEditShopProfile ? normalizedShopName : memoSettings.storeName.trim(),
+      logoUrl: canEditShopProfile ? logoUrl : memoSettings.logoUrl,
       printLogo: memoSettings.printLogo !== false,
     };
-    if (canEditBilling && !normalizedShopName) {
+    if (canEditShopProfile && !normalizedShopName) {
       setSavedSuccess(false);
       setSaveNotice({ text: 'Enter a shop name before updating the profile.', error: true });
       return;
     }
-    const memoValidationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
+    const memoValidationMessage = canEditOperationalSettings
+      ? getPharmacyMemoSettingsValidationMessage(nextMemoSettings)
+      : null;
     if (memoValidationMessage) {
       setSavedSuccess(false);
       setSaveNotice({ text: memoValidationMessage, error: true });
       return;
     }
 
+    setSettingsSaving(true);
     try {
-      globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
-        phone,
-        city,
-        urduFooter,
-        debtTemplate,
-        logoUrl: canEditBilling ? logoUrl : savedShopProfile.logoUrl,
-      }));
-    } catch {
-      setSavedSuccess(false);
-      setSaveNotice({
-        text: 'Profile details could not be saved in this browser. Check browser storage and try again.',
-        error: true,
-      });
+      if (canEditShopProfile) {
+        try {
+          globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+            phone,
+            city,
+            urduFooter,
+            debtTemplate,
+            logoUrl,
+          }));
+        } catch {
+          setSavedSuccess(false);
+          setSaveNotice({
+            text: 'Profile details could not be saved in this browser. Check browser storage and try again.',
+            error: true,
+          });
+          return;
+        }
+        if (!onSaveCompanyName(normalizedShopName)) {
+          setSavedSuccess(false);
+          setSaveNotice({
+            text: 'Other profile details were saved, but the shop name could not be saved. Check browser storage.',
+            error: true,
+          });
+          return;
+        }
+      }
+      if (canEditOperationalSettings && !await onMemoSettingsChange(nextMemoSettings)) {
+        setSavedSuccess(false);
+        setSaveNotice({
+          text: 'Profile details were saved, but shared shop settings could not be saved. Review the error and try again.',
+          error: true,
+        });
+        return;
+      }
+      setMemoSettings(nextMemoSettings);
+      setSaveNotice(null);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleSaveMemoSettings = async () => {
+    const nextMemoSettings = {
+      ...memoSettings,
+      storeName: canEditShopProfile ? shopName.trim() : memoSettings.storeName.trim(),
+      logoUrl: canEditShopProfile ? logoUrl : memoSettings.logoUrl,
+      printLogo: memoSettings.printLogo !== false,
+    };
+    const validationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
+    if (validationMessage) {
+      setSaveNotice({ text: validationMessage, error: true });
       return;
     }
-    if (canEditBilling && !onSaveCompanyName(normalizedShopName)) {
-      setSavedSuccess(false);
-      setSaveNotice({
-        text: 'Other profile details were saved, but the shop name could not be saved. Check browser storage.',
-        error: true,
-      });
-      return;
+
+    setSettingsSaving(true);
+    try {
+      if (!await onMemoSettingsChange(nextMemoSettings)) {
+        setSaveNotice({ text: 'Shared shop settings could not be saved. Review the error and try again.', error: true });
+        return;
+      }
+      setMemoSettings(nextMemoSettings);
+      setSaveNotice(null);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } finally {
+      setSettingsSaving(false);
     }
-    if (!onMemoSettingsChange(nextMemoSettings)) {
-      setSavedSuccess(false);
-      setSaveNotice({
-        text: 'Shop details were saved, but Pharmacy Memo settings could not be saved. Check browser storage and try again.',
-        error: true,
-      });
-      return;
-    }
-    setMemoSettings(nextMemoSettings);
-    setSaveNotice(null);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
   };
 
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-4xl mx-auto pb-8">
+      {operationalSettingsError && (
+        <p role="alert" className="rounded-control border border-warning bg-warning/15 px-3 py-2 text-sm font-semibold text-text">
+          {operationalSettingsError}
+        </p>
+      )}
       {/* ── Shop Profile ─────────────────────────────────────────────────── */}
       <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
         <div>
@@ -309,7 +360,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="font-semibold text-text">Store / Shop Name</label>
-              {!canEditBilling && (
+              {!canEditShopProfile && (
                 <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                   Admin Only
                 </span>
@@ -318,14 +369,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <input
               type="text"
               value={shopName}
-              disabled={!canEditBilling}
+              disabled={!canEditShopProfile}
               onChange={(e) => {
                 setShopName(e.target.value);
                 setMemoSettings((current) => ({ ...current, storeName: e.target.value }));
               }}
               className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:opacity-60 disabled:cursor-not-allowed"
             />
-            {!canEditBilling && (
+            {!canEditShopProfile && (
               <p className="mt-1 text-[11px] text-muted">Only Admin and Super Admin can edit the shop name.</p>
             )}
           </div>
@@ -334,7 +385,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="pt-1">
             <div className="flex items-center justify-between mb-1">
               <label className="font-semibold text-text">Shop Logo</label>
-              {!canEditBilling && (
+              {!canEditShopProfile && (
                 <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                   Admin Only
                 </span>
@@ -348,7 +399,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-muted">No custom logo</span>
                 )}
               </div>
-              {canEditBilling ? (
+              {canEditShopProfile ? (
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-control border border-border bg-white px-3 py-1.5 text-xs font-semibold text-text hover:bg-surface">
@@ -389,7 +440,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
+                disabled={!canEditShopProfile}
+                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:cursor-not-allowed disabled:opacity-60"
               />
             </div>
             <div>
@@ -398,7 +450,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text"
+                disabled={!canEditShopProfile}
+                className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:cursor-not-allowed disabled:opacity-60"
               />
             </div>
           </div>
@@ -416,7 +469,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type="text"
             value={urduFooter}
             onChange={(e) => setUrduFooter(e.target.value)}
-            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-right font-serif text-sm text-text"
+            disabled={!canEditShopProfile}
+            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-right font-serif text-sm text-text disabled:cursor-not-allowed disabled:opacity-60"
             dir="rtl"
           />
         </div>
@@ -497,7 +551,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onTemplateChange(tmpl.id)}
-                  disabled={!canEditBilling}
+                  disabled={!canEditOperationalSettings}
                   className={`min-w-20 flex-1 rounded-control px-2 py-2 text-[10px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     activeTemplate === tmpl.id
                       ? 'bg-primary text-white'
@@ -530,8 +584,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Eye className="mr-1 inline h-3.5 w-3.5" /> Open full preview
           </button>
         </div>
-        {!canEditBilling && <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">Only Admin can change these settings. You can still view the preview.</p>}
-        <fieldset disabled={!canEditBilling} className="space-y-4 disabled:opacity-70">
+        {!canEditOperationalSettings && <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">Shared shop settings are unavailable until they load, or your account does not have the Settings permission.</p>}
+        <fieldset disabled={!canEditOperationalSettings || settingsSaving} className="space-y-4 disabled:opacity-70">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-text">Memo store name
               <input className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={memoSettings.storeName} onChange={(event) => setMemoSettings({ ...memoSettings, storeName: event.target.value })} />
@@ -590,34 +644,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </fieldset>
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <label className="text-xs font-semibold text-text">Test print format
-            <select className="ml-2 rounded-control border border-border bg-surface px-2 py-1.5" value={memoFormat} onChange={(event) => onMemoFormatChange(event.target.value as ReceiptFormat)}>
+            <select disabled={!canEditOperationalSettings} className="ml-2 rounded-control border border-border bg-surface px-2 py-1.5 disabled:cursor-not-allowed disabled:opacity-60" value={memoFormat} onChange={(event) => onMemoFormatChange(event.target.value as ReceiptFormat)}>
               <option value="thermal58">Thermal 58mm</option><option value="thermal80">Thermal 80mm</option><option value="a4">A4</option>
             </select>
           </label>
           <button type="button" onClick={() => setMemoPreviewOpen((open) => !open)} className="rounded-control border border-border px-3 py-2 text-xs font-bold text-text hover:bg-surface">
             {memoPreviewOpen ? 'Hide live preview' : 'Show live preview'}
           </button>
-          <button type="button" disabled={!canEditBilling} onClick={() => {
-            const nextMemoSettings = {
-              ...memoSettings,
-              storeName: shopName.trim(),
-              logoUrl,
-              printLogo: memoSettings.printLogo !== false,
-            };
-            const validationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
-            if (validationMessage) {
-              setSaveNotice({ text: validationMessage, error: true });
-              return;
-            }
-            if (!onMemoSettingsChange(nextMemoSettings)) {
-              setSaveNotice({ text: 'Pharmacy Memo settings could not be saved. Check browser storage and try again.', error: true });
-              return;
-            }
-            setMemoSettings(nextMemoSettings);
-            setSaveNotice(null);
-            setSavedSuccess(true);
-            setTimeout(() => setSavedSuccess(false), 2500);
-          }} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" disabled={!canEditOperationalSettings || settingsSaving} onClick={() => { void handleSaveMemoSettings(); }} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
             <Save className="mr-1 inline h-3.5 w-3.5" /> Save memo settings
           </button>
           <button type="button" onClick={() => {
@@ -662,13 +696,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             rows={3}
             value={debtTemplate}
             onChange={(e) => setDebtTemplate(e.target.value)}
-            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-text"
+            disabled={!canEditShopProfile}
+            className="w-full rounded-control border border-border bg-surface px-3 py-2 text-text disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       </div>
 
       {/* ── Demo Data & Client Showcase (Load / Remove) ────────────────────── */}
-      <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
+      {canEditShopProfile && <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-black text-text">
@@ -757,7 +792,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Bottom Save Strip ──────────────────────────────────────────────── */}
       <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-card border border-border bg-white p-4 shadow-sm">
@@ -768,7 +803,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </span>
           ) : savedSuccess ? (
             <span className="flex items-center gap-1 font-bold text-primary">
-              <Check className="w-4 h-4" /> Shop profile and Pharmacy Memo settings saved in this browser.
+              <Check className="w-4 h-4" /> {canEditOperationalSettings ? 'Shared settings saved successfully.' : 'Shop profile saved in this browser.'}
             </span>
           ) : (
             'Make changes and click Update Profile.'
@@ -777,7 +812,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           type="submit"
-          className="flex items-center gap-1.5 rounded-control bg-primary px-6 py-2.5 text-xs font-black text-white shadow-md transition hover:opacity-90"
+          disabled={settingsSaving || (!canEditShopProfile && !canEditOperationalSettings)}
+          className="flex items-center gap-1.5 rounded-control bg-primary px-6 py-2.5 text-xs font-black text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Save className="w-4 h-4" /> Update Profile
         </button>

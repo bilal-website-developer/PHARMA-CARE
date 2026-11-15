@@ -1,0 +1,2 @@
+-- Safe rollback disables Trash APIs. Preserve event capture and the service-only profile purge.
+BEGIN; REVOKE ALL ON FUNCTION public.trash_bin_events_list() FROM PUBLIC,anon,authenticated,service_role; REVOKE ALL ON FUNCTION public.restore_trash_supplier(uuid) FROM PUBLIC,anon,authenticated,service_role; REVOKE ALL ON FUNCTION public.restore_trash_medicine(uuid) FROM PUBLIC,anon,authenticated,service_role; REVOKE ALL ON FUNCTION public.trash_bin_permanently_delete(uuid) FROM PUBLIC,anon,authenticated,service_role; COMMIT;

@@ -1,5 +1,6 @@
 import { CompletedSale, PaymentMethod } from '../types/pharmacy';
 import { APP_NAME } from '../constants/brand';
+import { formatPaymentDetails } from './paymentDetails';
 
 export type BillingTemplate = 'simple' | 'classic' | 'professional' | 'modern' | 'pharmacy-memo';
 export type ReceiptFormat = 'thermal58' | 'thermal80' | 'a4';
@@ -223,7 +224,7 @@ export function buildMemoData(
     discountPaisa: sale.discountPaisa,
     paidPaisa: sale.paymentMethod === PaymentMethod.CREDIT ? 0 : sale.amountTenderedPaisa,
     changePaisa: sale.changePaisa,
-    paymentMode: sale.paymentMethod,
+    paymentMode: formatPaymentDetails(sale.paymentDetails, sale.paymentMethod),
     roundingPaisa: sale.roundingPaisa,
     isCredit: sale.paymentMethod === PaymentMethod.CREDIT
       || sale.amountTenderedPaisa < sale.totalPaisa,
@@ -295,7 +296,7 @@ export function receiptDataFromSale(
     cashierName: sale.cashierName,
     customerName: sale.customerName || 'Walk-in Customer',
     customerPhone: sale.customerPhone,
-    paymentMode: sale.paymentMethod,
+    paymentMode: formatPaymentDetails(sale.paymentDetails, sale.paymentMethod),
     status: isCredit ? 'CREDIT' : balanceDue > 0 ? (paid > 0 ? 'PARTIAL' : 'CREDIT') : 'PAID',
     logoUrl: store.logoUrl,
     items: sale.items.map((item) => ({
@@ -448,9 +449,12 @@ export function renderPharmacyMemo(
     : isPartialPayment
       ? `<div class="row"><span>Paid:</span><span>${amount(data.paidPaisa ?? 0)}</span></div><div class="row"><span>Balance:</span><span>${amount(Math.max(0, netPaisa - (data.paidPaisa ?? 0)))}</span></div>`
       : '';
+  const paymentRow = data.paymentMode
+    ? `<div class="row payment-mode"><span>Payment:</span><span style="max-width:72%;text-align:right;overflow-wrap:anywhere">${escapeHtml(data.paymentMode)}</span></div>`
+    : '';
   const totals = data.kind === 'PAYMENT'
     ? ''
-    : `<section class="totals"><div class="total-items">Total Items: ${data.lines.length}</div><div class="total-details"><div class="row"><span>Gross Amount:</span><span>${amount(grossPaisa)}</span></div><div class="row"><span>Discount:</span><span>${amount(printedDiscount)}</span></div>${settings.printTax && data.salesTaxPaisa !== undefined ? `<div class="row"><span>Sales Tax:</span><span>${amount(taxPaisa)}</span></div>` : ''}<div class="net"><strong>${data.kind === 'RETURN' ? 'Refund Amount:' : 'Net Amount:'}</strong><strong>${amount(netPaisa)}</strong></div>${balanceRows}</div></section>`;
+    : `<section class="totals"><div class="total-items">Total Items: ${data.lines.length}</div><div class="total-details">${paymentRow}<div class="row"><span>Gross Amount:</span><span>${amount(grossPaisa)}</span></div><div class="row"><span>Discount:</span><span>${amount(printedDiscount)}</span></div>${settings.printTax && data.salesTaxPaisa !== undefined ? `<div class="row"><span>Sales Tax:</span><span>${amount(taxPaisa)}</span></div>` : ''}<div class="net"><strong>${data.kind === 'RETURN' ? 'Refund Amount:' : 'Net Amount:'}</strong><strong>${amount(netPaisa)}</strong></div>${balanceRows}</div></section>`;
   const notes = settings.notes.map((note, index) => `<div>${index + 1}. ${escapeHtml(note)}</div>`).join('');
   const footer = `<footer><span>${escapeHtml(data.cashier)}</span><span>${escapeHtml(data.role)}</span><span>${escapeHtml(data.terminal || settings.terminalName)}</span></footer>`;
   const width = format === 'thermal58' ? '48mm' : '72mm';

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ChevronDown, KeyRound, LogOut } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
-import { readShopLogo, SHOP_LOGO_EVENT } from '../utils/storeSettings';
 import PharmaLogo from './PharmaLogo';
 import { StockAlertBell } from './StockAlertBell';
 import {
@@ -13,6 +12,8 @@ import {
 
 interface TopNavProps {
   currentRole: UserRole;
+  workspaceName: string;
+  shopLogo: string;
   username: string;
   userId: string;
   activeTitle: string;
@@ -25,6 +26,8 @@ interface TopNavProps {
 
 export const TopNav: React.FC<TopNavProps> = ({
   currentRole,
+  workspaceName,
+  shopLogo,
   username,
   userId,
   activeTitle,
@@ -34,7 +37,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenProducts,
   compact = false,
 }) => {
-  const [shopLogo, setShopLogo] = useState(() => readShopLogo());
   const [animationsEnabled, setAnimationsEnabled] = useState(() =>
     readUserDisplayPreferences(userId, username).animationsEnabled
   );
@@ -42,15 +44,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleLogoChange = (event: Event) => {
-      const customEvent = event as CustomEvent<{ logoUrl?: string }>;
-      setShopLogo(customEvent.detail?.logoUrl ?? readShopLogo());
-    };
-    window.addEventListener(SHOP_LOGO_EVENT, handleLogoChange);
-    return () => window.removeEventListener(SHOP_LOGO_EVENT, handleLogoChange);
-  }, []);
 
   useEffect(() => {
     const handlePreferencesChange = (event: Event) => {
@@ -108,7 +101,7 @@ export const TopNav: React.FC<TopNavProps> = ({
     <header className={`sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border bg-white/90 shadow-xs backdrop-blur-md sm:gap-3 ${
       compact ? 'px-3 py-1.5 sm:px-4' : 'px-4 py-2.5 sm:px-6'
     }`}>
-      <div className="flex min-w-0 items-center">
+      <div className="flex min-w-0 items-center gap-2">
         {shopLogo ? (
           <img
             src={shopLogo}
@@ -118,6 +111,9 @@ export const TopNav: React.FC<TopNavProps> = ({
         ) : (
           <PharmaLogo size={compact ? 2.2 : 2.6} layout="inline" className="pharma-brand header-pharma-logo" />
         )}
+        <span className="min-w-0 truncate text-xs font-bold text-text sm:text-sm" title={workspaceName}>
+          {workspaceName}
+        </span>
       </div>
 
       <div className="max-w-[35vw] truncate text-center text-[10px] font-semibold uppercase tracking-wider text-muted sm:max-w-[30vw]">

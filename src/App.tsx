@@ -5,6 +5,7 @@ import {
   CompletedSale,
   PaymentMethod,
   LedgerEntry,
+  UserRole,
 } from './types/pharmacy';
 import {
   isDemoDataLoadedLocally,
@@ -23,6 +24,11 @@ import {
   recordCustomerPayment,
   saveCustomer,
 } from './data/sales';
+import {
+  loadCurrentShopSettings,
+  ShopOperationalSettings,
+  updateCurrentShopSettings,
+} from './data/shopSettings';
 import { Sidebar, NavItemKey } from './components/Sidebar';
 import { getSidebarPage, sidebarPageForRoute } from './components/sidebarPages';
 import { toggleSidebarFavorite } from './components/sidebarPinLogic';
@@ -35,7 +41,7 @@ import { filterSalesBetween } from './utils/salesReport';
 import type { ProductFilter } from './components/InventoryScreen';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
-import { isAdminRole, PermissionsProvider, usePermissions } from './permissions';
+import { canAccessPage, isAdminRole, PermissionsProvider, usePermissions } from './permissions';
 import {
   BillingPreferences,
   BillingTemplate,
@@ -45,10 +51,7 @@ import {
   saveBillingPreferences,
 } from './utils/receipt';
 import {
-  readCompanyName,
   readPharmacyMemoSettings,
-  readShopProfile,
-  saveCompanyName,
   savePharmacyMemoSettings,
 } from './utils/storeSettings';
 import PharmaLogo from './components/PharmaLogo';
@@ -82,9 +85,12 @@ const PurchaseHistoryView = lazy(() => import('./components/PurchaseHistoryView'
 const HelpSupportView = lazy(() => import('./components/HelpSupportView').then(({ HelpSupportView: View }) => ({ default: View })));
 const TrashBinView = lazy(() => import('./components/TrashBinView').then(({ TrashBinView: View }) => ({ default: View })));
 const ManageUsersView = lazy(() => import('./components/ManageUsersView').then(({ ManageUsersView: View }) => ({ default: View })));
+const ShopsView = lazy(() => import('./components/ShopsView').then(({ ShopsView: View }) => ({ default: View })));
 const ChangePasswordModal = lazy(() => import('./components/ManageUsersView').then(({ ChangePasswordModal: View }) => ({ default: View })));
 const MyPrintRequestsView = lazy(() => import('./components/MyPrintRequestsView').then(({ MyPrintRequestsView: View }) => ({ default: View })));
 const PrintRequestsAdminView = lazy(() => import('./components/PrintRequestsAdminView').then(({ PrintRequestsAdminView: View }) => ({ default: View })));
+const DemoRolePreview = lazy(() => import('./components/DemoRolePreview').then(({ DemoRolePreview: View }) => ({ default: View })));
+const DemoWorkspace = lazy(() => import('./components/DemoWorkspace').then(({ DemoWorkspace: View }) => ({ default: View })));
 const TemplatePreviewModal = lazy(() => import('./components/TemplatePreviewModal').then(({ TemplatePreviewModal: View }) => ({ default: View })));
 const EndOfDayModal = lazy(() => import('./components/EndOfDayModal').then(({ EndOfDayModal: View }) => ({ default: View })));
 
@@ -201,7 +207,8 @@ export default function App() {
           message.startsWith('Your account is disabled') ||
           message.startsWith('No profile exists') ||
           message.startsWith('Your profile has an invalid role') ||
-          message.startsWith('Your session is no longer valid')
+          message.startsWith('Your session is no longer valid') ||
+          message.startsWith('This shop is no longer accessible')
         ) {
           setSession(null);
           await supabase?.auth.signOut();
@@ -324,9 +331,29 @@ function PharmacyApp({
   onLogout: () => void;
   authMessage: string;
 }) {
+  const [demoRole, setDemoRole] = useState<UserRole | null>(null);
+
+  const exitDemo = () => {
+    setDemoRole(null);
+    window.history.replaceState({}, '', '/');
+  };
+
+  if (demoRole) {
+    return (
+      <Suspense fallback={<ScreenLoading />}>
+        <DemoWorkspace role={demoRole} onSignOut={exitDemo} />
+      </Suspense>
+    );
+  }
+
   return (
     <PermissionsProvider role={session.role} permissions={session.permissions}>
-      <PharmacyWorkspace session={session} onLogout={onLogout} authMessage={authMessage} />
+      <PharmacyWorkspace
+        session={session}
+        onLogout={onLogout}
+        authMessage={authMessage}
+        onOpenDemo={setDemoRole}
+      />
     </PermissionsProvider>
   );
 }
@@ -335,10 +362,12 @@ function PharmacyWorkspace({
   session,
   onLogout,
   authMessage,
+  onOpenDemo,
 }: {
   session: WorkspaceSession;
   onLogout: () => void;
   authMessage: string;
+  onOpenDemo: (role: UserRole) => void;
 }) {
   const { canPage } = usePermissions();
   const visibleSidebarKeys = React.useMemo(
@@ -444,7 +473,8 @@ function PharmacyWorkspace({
     initialPath !== '/' && initialPath !== '/login' && routeToNavItem(initialPath) === null
   );
   const [accessMessage, setAccessMessage] = useState('');
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(session.mustChangePassword);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(session.mustChangePassword);
   const [printNotice, setPrintNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [pendingPrintCount, setPendingPrintCount] = useState(0);
 
@@ -463,7 +493,7 @@ function PharmacyWorkspace({
   );
 
   React.useEffect(() => {
-    if (!isAdminRole(currentRole)) {
+    if (!canAccessPage(currentRole, session.permissions, 'print-requests')) {
       setPendingPrintCount(0);
       return;
     }
@@ -495,7 +525,7 @@ function PharmacyWorkspace({
       disposed = true;
       window.clearInterval(interval);
     };
-  }, [currentRole]);
+  }, [currentRole, session.permissions]);
 
   React.useEffect(() => {
     if (!printNotice) return;
@@ -514,11 +544,78 @@ function PharmacyWorkspace({
   const [previewTemplate, setPreviewTemplate] = useState<BillingTemplate>(
     billingPreferences.template
   );
-  const [companyName, setCompanyName] = useState(readCompanyName);
+  const shopIdentity = session.shopProfile;
+  const [companyName, setCompanyName] = useState(shopIdentity?.name || 'Pharma Care');
+  useEffect(() => {
+    setCompanyName(shopIdentity?.name || 'Pharma Care');
+  }, [shopIdentity?.name]);
+  const withShopIdentity = (settings: PharmacyMemoSettings): PharmacyMemoSettings => shopIdentity
+    ? {
+      ...settings,
+      storeName: shopIdentity.name,
+      address: shopIdentity.address,
+      phone: shopIdentity.phone,
+      logoUrl: shopIdentity.logoPath || settings.logoUrl,
+    }
+    : settings;
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(() =>
-    readPharmacyMemoSettings(companyName)
+    withShopIdentity(readPharmacyMemoSettings(companyName))
   );
+  const [shopSettings, setShopSettings] = useState<ShopOperationalSettings | null>(null);
+  const shopSettingsRef = React.useRef<ShopOperationalSettings | null>(null);
+  const shopSettingsSaveQueue = React.useRef<Promise<void>>(Promise.resolve());
+  const [shopSettingsLoaded, setShopSettingsLoaded] = useState(false);
+  const [shopSettingsError, setShopSettingsError] = useState('');
   const [memoMigrationToast, setMemoMigrationToast] = useState(billingState.migratedClassicDefault);
+
+  useEffect(() => {
+    let active = true;
+    shopSettingsRef.current = null;
+    setShopSettings(null);
+    setShopSettingsError('');
+
+    if (!supabase || session.role === UserRole.SUPER_ADMIN) {
+      setShopSettingsLoaded(true);
+      return () => {
+        active = false;
+      };
+    }
+
+    setShopSettingsLoaded(false);
+    void loadCurrentShopSettings()
+      .then((loadedSettings) => {
+        if (!active) return;
+        shopSettingsRef.current = loadedSettings;
+        setShopSettings(loadedSettings);
+        const nextBillingPreferences: BillingPreferences = {
+          template: loadedSettings.template,
+          format: loadedSettings.format,
+        };
+        setBillingPreferences(nextBillingPreferences);
+        const localBillingSaved = saveBillingPreferences(nextBillingPreferences);
+        const nextMemoSettings = withShopIdentity({
+          ...readPharmacyMemoSettings(),
+          ...loadedSettings.memo,
+        });
+        setMemoSettings(nextMemoSettings);
+        const localMemoSaved = savePharmacyMemoSettings(nextMemoSettings);
+        if (!localBillingSaved || !localMemoSaved) {
+          setShopSettingsError('Shop settings loaded from the server, but this browser could not refresh its local cache.');
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : 'Could not load shared shop settings.';
+        setShopSettingsError(message);
+      })
+      .finally(() => {
+        if (active) setShopSettingsLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session.userId, session.role]);
 
   useEffect(() => {
     try {
@@ -731,22 +828,87 @@ function PharmacyWorkspace({
     return () => window.clearTimeout(timeout);
   }, [memoMigrationToast]);
 
+  const persistShopSettingsPatch = (patch: Partial<ShopOperationalSettings>) => {
+    const operation = shopSettingsSaveQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        const current = shopSettingsRef.current;
+        if (!current) {
+          throw new Error('Shared shop settings are not loaded. Refresh the page before trying again.');
+        }
+        const saved = await updateCurrentShopSettings({ ...current, ...patch });
+        shopSettingsRef.current = saved;
+        setShopSettings(saved);
+        const nextBillingPreferences: BillingPreferences = {
+          template: saved.template,
+          format: saved.format,
+        };
+        const nextMemoSettings = withShopIdentity({
+          ...readPharmacyMemoSettings(),
+          ...saved.memo,
+        });
+        const billingCached = saveBillingPreferences(nextBillingPreferences);
+        const memoCached = savePharmacyMemoSettings(nextMemoSettings);
+        setShopSettingsError(
+          billingCached && memoCached
+            ? ''
+            : 'Shop settings were saved on the server, but this browser could not refresh its local cache.',
+        );
+        return saved;
+      });
+    shopSettingsSaveQueue.current = operation.then(() => undefined, () => undefined);
+    return operation;
+  };
+
   const updateBillingPreferences = (preferences: BillingPreferences) => {
+    if (supabase) {
+      void persistShopSettingsPatch({
+        template: preferences.template,
+        format: preferences.format,
+      }).then((saved) => {
+        setBillingPreferences({ template: saved.template, format: saved.format });
+      }).catch((error: unknown) => {
+        setShopSettingsError(error instanceof Error ? error.message : 'Could not save shared billing settings.');
+      });
+      return;
+    }
+
     setBillingPreferences(preferences);
     if (!saveBillingPreferences(preferences)) {
-      window.alert('Template preference could not be saved in this browser.');
+      setShopSettingsError('Template preference could not be saved in this browser.');
     }
   };
 
-  const updateMemoSettings = (settings: PharmacyMemoSettings): boolean => {
+  const updateMemoSettings = async (settings: PharmacyMemoSettings): Promise<boolean> => {
+    if (supabase) {
+      try {
+        const saved = await persistShopSettingsPatch({
+          memo: {
+            notes: settings.notes,
+            terminalName: settings.terminalName,
+            showBatchExpiry: settings.showBatchExpiry,
+            roundNet: settings.roundNet,
+            printTax: settings.printTax,
+            duplicateLabel: settings.duplicateLabel,
+            autoPrint: settings.autoPrint,
+            numberDigits: settings.numberDigits,
+            printLogo: settings.printLogo !== false,
+          },
+        });
+        const nextSettings = { ...settings, ...saved.memo };
+        setMemoSettings(nextSettings);
+        if (!savePharmacyMemoSettings(nextSettings)) {
+          setShopSettingsError('Shop settings were saved on the server, but this browser could not refresh its local cache.');
+        }
+        return true;
+      } catch (error) {
+        setShopSettingsError(error instanceof Error ? error.message : 'Could not save shared Pharmacy Memo settings.');
+        return false;
+      }
+    }
+
     if (!savePharmacyMemoSettings(settings)) return false;
     setMemoSettings(settings);
-    return true;
-  };
-
-  const updateCompanyName = (name: string): boolean => {
-    if (!saveCompanyName(name)) return false;
-    setCompanyName(name.trim());
     return true;
   };
 
@@ -902,6 +1064,10 @@ function PharmacyWorkspace({
         return 'BUSINESS ANALYTICS';
       case 'manage-users':
         return 'MANAGE USERS';
+      case 'shops':
+        return 'SHOPS';
+      case 'demo':
+        return 'DEMO';
       case 'my-print-requests':
         return 'MY PRINT REQUESTS';
       case 'print-requests':
@@ -918,7 +1084,7 @@ function PharmacyWorkspace({
   };
 
   return (
-    <div className="flex min-h-screen bg-surface font-inter text-text antialiased">
+    <div className={`flex min-h-screen ${activeItem === 'pos' ? 'lg:h-screen' : ''} bg-surface font-inter text-text antialiased`}>
       {/* ── Fixed Pharmacy Green Sidebar ───────────────────────────────────── */}
       <Sidebar
         activeItem={activeItem}
@@ -938,9 +1104,16 @@ function PharmacyWorkspace({
         {memoMigrationToast && <div role="status" className="fixed right-4 top-4 z-[60] rounded-control border border-primary/30 bg-surface px-4 py-3 text-sm font-semibold text-text shadow-lg">Pharmacy Memo is now your default receipt template. You can change it in Settings.</div>}
         {printNotice && <div role={printNotice.error ? 'alert' : 'status'} className={`visual-toast fixed bottom-4 right-4 z-[60] max-w-md rounded-control border px-4 py-3 text-sm shadow-lg ${printNotice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-primary/30 bg-white text-text'}`}>{printNotice.text}</div>}
         {authMessage && <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{authMessage}</p>}
+        {shopSettingsError && activeItem !== 'settings' && (
+          <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">
+            Shared shop settings: {shopSettingsError}
+          </p>
+        )}
         {/* Top Header Strip */}
         <TopNav
           currentRole={currentRole}
+          workspaceName={shopIdentity?.name || (currentRole === UserRole.SUPER_ADMIN ? 'Platform Administration' : 'Pharma Care')}
+          shopLogo={shopIdentity?.logoPath ?? ''}
           username={currentUserName}
           userId={session.userId}
           activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
@@ -1070,8 +1243,8 @@ function PharmacyWorkspace({
               sales={completedSales}
               currentRole={currentRole}
               storeName={companyName}
-              address={readShopProfile().city}
-              phone={readShopProfile().phone}
+              address={shopIdentity?.address ?? ''}
+              phone={shopIdentity?.phone ?? ''}
               generatedBy={currentUserName}
             />
           )}
@@ -1088,8 +1261,8 @@ function PharmacyWorkspace({
               sales={completedSales}
               currentRole={currentRole}
               storeName={companyName}
-              address={readShopProfile().city}
-              phone={readShopProfile().phone}
+              address={shopIdentity?.address ?? ''}
+              phone={shopIdentity?.phone ?? ''}
               generatedBy={currentUserName}
               onLoadCustomSales={(from, toExclusive) => {
                 if (!supabase && isDemoDataLoadedLocally()) {
@@ -1106,15 +1279,17 @@ function PharmacyWorkspace({
 
           {activeItem === 'settings' && (
             <div className="space-y-8">
-              {isAdminRole(currentRole) && (
+              {canPage('settings') && (
                 <SettingsView
                   activeTemplate={billingPreferences.template}
-                  canEditBilling
+                  canEditShopProfile={false}
+                  canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
+                  operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>
                     updateBillingPreferences({ ...billingPreferences, template })
                   }
                   companyName={companyName}
-                  onSaveCompanyName={updateCompanyName}
+                  onSaveCompanyName={() => false}
                   onOpenTemplatePreview={openTemplatePreview}
                   memoSettings={memoSettings}
                   onMemoSettingsChange={updateMemoSettings}
@@ -1138,6 +1313,8 @@ function PharmacyWorkspace({
           {activeItem === 'trash-bin' && <TrashBinView currentRole={currentRole} />}
 
           {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} onChangePassword={() => setShowPasswordDialog(true)} />}
+          {activeItem === 'shops' && currentRole === UserRole.SUPER_ADMIN && <ShopsView />}
+          {activeItem === 'demo' && currentRole === UserRole.SUPER_ADMIN && <DemoRolePreview onOpenDemo={onOpenDemo} />}
           {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}
           {activeItem === 'print-requests' && <PrintRequestsAdminView onPrintReceipt={handlePrintReceipt} />}
           </>
@@ -1182,7 +1359,17 @@ function PharmacyWorkspace({
       )}
       {showPasswordDialog && (
         <Suspense fallback={<ScreenLoading />}>
-          <ChangePasswordModal email={session.email} onClose={() => setShowPasswordDialog(false)} />
+          <ChangePasswordModal
+            email={session.email}
+            mustChangePassword={mustChangePassword}
+            onClose={() => {
+              if (!mustChangePassword) setShowPasswordDialog(false);
+            }}
+            onComplete={() => {
+              setMustChangePassword(false);
+              setShowPasswordDialog(false);
+            }}
+          />
         </Suspense>
       )}
     </div>

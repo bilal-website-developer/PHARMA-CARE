@@ -1,3 +1,5 @@
+-- SUPERSEDED S6 DRAFT: DO NOT RUN. This predates S5 and replaces
+-- trash_bin_events_list() without preserving current shop-scoping.
 alter table public.profiles
   add column if not exists created_by uuid;
 

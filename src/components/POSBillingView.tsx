@@ -10,9 +10,14 @@ import {
   CheckCircle2,
   Package,
   Barcode,
+  Archive,
+  Clock3,
   Monitor,
+  Trash2,
   X,
   Zap,
+  Pause,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   PaymentMethod,
@@ -24,7 +29,7 @@ import {
   ROLE_MAX_DISCOUNT,
   type SaleCustomerType,
 } from '../types/pharmacy';
-import { allocateFefo, localIsoDate } from '../utils/fefo';
+import { allocateFefo, availableSmallestUnits, localIsoDate } from '../utils/fefo';
 import {
   BillingTemplate,
   PharmacyMemoSettings,
@@ -46,7 +51,14 @@ import { STOCK_CHANGED_EVENT } from '../utils/stockAlertsEvents';
 import { DEMO_DATA_CHANGED_EVENT } from '../data/demoDataManager';
 import { postSale, type PostSaleInput } from '../data/sales';
 import { SaleReturnsPanel } from './returns/SaleReturnsPanel';
+import { PaymentProviderSelect } from './PaymentProviderSelect';
 import { isValidOptionalPhone, resolvePosCustomerName } from '../utils/posCustomer';
+import { readHeldBills, writeHeldBills, type HeldBill } from '../utils/heldBills';
+import { getSplitPaymentSummary, parsePaisaAmount } from '../utils/splitPayments';
+import {
+  getPaymentMethodForProvider,
+  type PaymentProviderId,
+} from '../data/paymentProviders';
 import {
   buildCustomerDisplayOptionsMessage,
   buildCustomerDisplayPayment,
@@ -74,6 +86,13 @@ const customerPhoneValidationError = (details: ReturnType<typeof emptyCustomerDe
   }
   return '';
 };
+
+interface SplitPaymentDraft {
+  id: string;
+  providerId: PaymentProviderId;
+  amount: string;
+  reference: string;
+}
 
 interface POSBillingViewProps {
   customers: Customer[];
@@ -107,6 +126,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [catalogRetry, setCatalogRetry] = useState(0);
   // Top Tabs
   const [activeTopTab, setActiveTopTab] = useState<'sale' | 'barcode'>('sale');
+  const [heldBills, setHeldBills] = useState<HeldBill[]>([]);
+  const [heldBillsUserId, setHeldBillsUserId] = useState('');
+  const [heldBillsError, setHeldBillsError] = useState('');
+  const [showHeldBills, setShowHeldBills] = useState(false);
+  const [heldBillsNow, setHeldBillsNow] = useState(Date.now);
+  const heldBillsPanelRef = useRef<HTMLDivElement>(null);
+  const holdCurrentCartRef = useRef<() => void>(() => undefined);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,10 +143,15 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const productGridRef = useRef<HTMLDivElement>(null);
   const tenderedInputRef = useRef<HTMLInputElement>(null);
   const completeSaleButtonRef = useRef<HTMLButtonElement>(null);
+  const splitDoneButtonRef = useRef<HTMLButtonElement>(null);
+  const isPostingSaleRef = useRef(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [quantityWarnings, setQuantityWarnings] = useState<Record<string, string>>({});
+  const cartItemsListRef = useRef<HTMLDivElement>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [walkInName, setWalkInName] = useState('');
   const [customerType, setCustomerType] = useState<SaleCustomerType>('WALK_IN');
@@ -155,6 +186,46 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setShowCustomerDetails(false);
     setCustomerPhoneError('');
   }, [cart.length]);
+
+  useEffect(() => {
+    setHeldBills([]);
+    setHeldBillsUserId('');
+    setHeldBillsError('');
+    setShowHeldBills(false);
+    try {
+      setHeldBills(readHeldBills(currentUserId));
+      setHeldBillsUserId(currentUserId);
+    } catch (error) {
+      setHeldBillsError(error instanceof Error ? error.message : 'Could not load held bills.');
+      setHeldBillsUserId(currentUserId);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!showHeldBills || heldBills.length === 0) return;
+    const timer = window.setInterval(() => setHeldBillsNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [showHeldBills, heldBills.length]);
+
+  useEffect(() => {
+    if (!showHeldBills) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!heldBillsPanelRef.current?.contains(event.target as Node)) {
+        setShowHeldBills(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setShowHeldBills(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showHeldBills]);
 
   useEffect(() => {
     if (!showCustomerDetails) return;
@@ -192,8 +263,16 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
   const [discountNotice, setDiscountNotice] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
-  const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number>(0);
-  const [splitCashPaymentPKR, setSplitCashPaymentPKR] = useState<number>(0);
+  const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number | null>(null);
+  const [onlineProviderId, setOnlineProviderId] = useState<PaymentProviderId>('easypaisa');
+  const [onlinePaymentReference, setOnlinePaymentReference] = useState('');
+  const [splitRows, setSplitRows] = useState<SplitPaymentDraft[]>([]);
+  const [savedSplitRows, setSavedSplitRows] = useState<SplitPaymentDraft[]>([]);
+  const [showSplitModal, setShowSplitModal] = useState(false);
+  const [splitPaymentConfirmed, setSplitPaymentConfirmed] = useState(false);
+  const [splitTouched, setSplitTouched] = useState(false);
+  const [splitError, setSplitError] = useState('');
+  const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
   const [isPostingSale, setIsPostingSale] = useState(false);
   const [saleError, setSaleError] = useState('');
   const [printNotice, setPrintNotice] = useState('');
@@ -217,7 +296,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     cards[highlightedIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [highlightedIndex]);
 
-  // Global F2 / F3 / F4 shortcut handler
+  // Global POS keyboard shortcuts
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {
       // F2 — focus search bar (always)
@@ -227,16 +306,28 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         searchInputRef.current?.select();
         return;
       }
-      // F3 — focus tendered amount (only when checkout modal is open)
-      if (e.key === 'F3' && showCheckoutModal) {
+      // F3 — focus tendered amount in checkout, otherwise toggle held bills
+      if (e.key === 'F3') {
         e.preventDefault();
-        tenderedInputRef.current?.focus();
-        tenderedInputRef.current?.select();
+        if (showCheckoutModal) {
+          tenderedInputRef.current?.focus();
+          tenderedInputRef.current?.select();
+        } else {
+          setHeldBillsNow(Date.now());
+          setShowHeldBills((isOpen) => !isOpen);
+        }
+        return;
+      }
+      // F6 — hold the current bill
+      if (e.key === 'F6') {
+        e.preventDefault();
+        if (!e.repeat) holdCurrentCartRef.current();
         return;
       }
       // F4 — when modal closed: open checkout; when modal open: complete sale
       if (e.key === 'F4') {
         e.preventDefault();
+        if (e.repeat || isPostingSale || isPostingSaleRef.current || showSplitModal) return;
         if (showCheckoutModal) {
           completeSaleButtonRef.current?.click();
         } else {
@@ -246,7 +337,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     };
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, [showCheckoutModal]);
+  }, [showCheckoutModal, showSplitModal, isPostingSale]);
 
   useEffect(() => {
     let active = true;
@@ -306,7 +397,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const totalPaisa = roundingUnitPaisa
     ? Math.floor(unroundedTotalPaisa / roundingUnitPaisa + 0.5) * roundingUnitPaisa
     : unroundedTotalPaisa;
-  const tenderedAmountPaisa = Number.isFinite(tenderedAmountPKR)
+  const tenderedAmountPaisa = tenderedAmountPKR !== null && Number.isFinite(tenderedAmountPKR)
     ? Math.max(0, Math.round(tenderedAmountPKR * 100))
     : 0;
   const customerDisplaySnapshot = useMemo(() => buildCustomerDisplaySnapshot(
@@ -401,6 +492,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [customerDisplayMessage]);
   const roundingPaisa = totalPaisa - unroundedTotalPaisa;
   const totalPKR = totalPaisa / 100;
+  const splitSummary = useMemo(
+    () => getSplitPaymentSummary(splitRows, totalPaisa),
+    [splitRows, totalPaisa],
+  );
 
   const handleDiscountChange = (next: { mode: DiscountMode; value: string }) => {
     const result = computeDiscount({
@@ -427,14 +522,125 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setDiscountNotice('');
   };
 
+  const clearQuantityDraft = (productId: string) => {
+    setQuantityDrafts((drafts) => {
+      if (!(productId in drafts)) return drafts;
+      const next = { ...drafts };
+      delete next[productId];
+      return next;
+    });
+  };
+
+  const clearQuantityFeedback = (productId: string) => {
+    clearQuantityDraft(productId);
+    setQuantityWarnings((warnings) => {
+      if (!(productId in warnings)) return warnings;
+      const next = { ...warnings };
+      delete next[productId];
+      return next;
+    });
+  };
+
   const changeDuePaisa = paymentMethod === 'CASH'
     ? Math.max(0, tenderedAmountPaisa - totalPaisa)
     : 0;
   const changeDuePKR = changeDuePaisa / 100;
   const previousTotalPaisa = useRef(totalPaisa);
+  const createSplitRow = (providerId: PaymentProviderId, amountPaisa: number): SplitPaymentDraft => ({
+    id: globalThis.crypto?.randomUUID?.()
+      ?? `split-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    providerId,
+    amount: (amountPaisa / 100).toFixed(2),
+    reference: '',
+  });
+
+  const openSplitPayment = () => {
+    setPaymentMethod('SPLIT');
+    if (splitRows.length === 0 && savedSplitRows.length === 0) {
+      setSplitRows([createSplitRow('cash', totalPaisa)]);
+    }
+    setSplitError('');
+    setShowSplitModal(true);
+  };
+
   const selectPaymentMethod = (method: 'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT') => {
+    if (method === 'SPLIT') {
+      openSplitPayment();
+      return;
+    }
     setPaymentMethod(method);
-    if (method === 'SPLIT') setSplitCashPaymentPKR(Math.floor(totalPaisa / 2) / 100);
+  };
+
+  const updateSplitRow = (rowId: string, update: Partial<Omit<SplitPaymentDraft, 'id'>>) => {
+    setSplitRows((rows) => rows.map((row) => row.id === rowId ? { ...row, ...update } : row));
+    setSplitTouched(true);
+    setSplitPaymentConfirmed(false);
+    setSplitError('');
+  };
+
+  const addSplitPayment = () => {
+    if (splitSummary.remainingPaisa <= 0) return;
+    setSplitRows((rows) => [...rows, createSplitRow('jazzcash', splitSummary.remainingPaisa)]);
+    setSplitTouched(true);
+    setSplitPaymentConfirmed(false);
+    setSplitError('');
+  };
+
+  const removeSplitPayment = (rowId: string) => {
+    setSplitRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== rowId) : rows);
+    setSplitTouched(true);
+    setSplitPaymentConfirmed(false);
+    setSplitError('');
+  };
+
+  const closeSplitPayment = () => {
+    if (splitTouched && !window.confirm('Close Split Payment? Your entered amounts will not be confirmed.')) return;
+    if (splitTouched) {
+      setSplitRows(savedSplitRows.map((row) => ({ ...row })));
+      setSplitPaymentConfirmed(savedSplitRows.length > 0);
+      setSplitTouched(false);
+      setSplitError('');
+    }
+    setShowSplitModal(false);
+  };
+
+  const confirmSplitPayment = () => {
+    if (!splitSummary.isBalanced) {
+      setSplitError('Paid So Far must equal the Total Bill.');
+      return;
+    }
+    setSavedSplitRows(splitRows.map((row) => ({ ...row })));
+    setSplitPaymentConfirmed(true);
+    setSplitTouched(false);
+    setSplitError('');
+    setShowSplitModal(false);
+  };
+
+  const clearCartContents = () => {
+    setCart([]);
+    setQuantityDrafts({});
+    setQuantityWarnings({});
+    setDiscount({ mode: 'percent', value: '' });
+    setDiscountNotice('');
+    setTenderedAmountPKR(null);
+    setSelectedCustomerId('');
+    setWalkInName('');
+    setCustomerType('WALK_IN');
+    setCustomerDetails(emptyCustomerDetails());
+    setCustomerPhoneError('');
+    setShowCustomerDetails(false);
+    setPaymentMethod('CASH');
+    setOnlineProviderId('easypaisa');
+    setOnlinePaymentReference('');
+    setSplitRows([]);
+    setSavedSplitRows([]);
+    setSplitPaymentConfirmed(false);
+    setSplitTouched(false);
+    setSplitError('');
+    setShowSplitModal(false);
+    setShowClearCartConfirm(false);
+    setShowCheckoutModal(false);
+    setSaleError('');
   };
 
   useEffect(() => {
@@ -517,6 +723,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setSaleError('');
     setDisplayThankYou(false);
     setActiveOptions(null);
+    clearQuantityFeedback(product.id);
 
     setCart((prev) => {
       const idx = prev.findIndex((i) => i.productId === product.id);
@@ -549,11 +756,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         discountPercent: 0,
         lineTotalPaisa: saleUnit.pricePerUnitPaisa,
       };
-      return [...prev, newItem];
+      return [newItem, ...prev];
     });
+    if (!existingItem) {
+      window.requestAnimationFrame(() => cartItemsListRef.current?.scrollTo({ top: 0 }));
+    }
     setDisplayThankYou(false);
     if (showDisplayAlternatives) {
-      const lineIndex = existingItem ? cart.findIndex((item) => item.productId === product.id) : cart.length;
+      const lineIndex = existingItem ? cart.findIndex((item) => item.productId === product.id) : 0;
       openCustomerAlternatives(lineIndex, product.id, quantity);
     } else {
       setActiveOptions(null);
@@ -574,7 +784,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const updateQuantity = (idx: number, delta: number) => {
     const item = cart[idx];
     const product = products.find((candidate) => candidate.id === item?.productId);
-    const unit = product?.units.find((candidate) => candidate.id === item.unitId);
+    const unit = product?.units.find((candidate) => candidate.id === item?.unitId);
     if (!item || !product || !unit) {
       setSaleError('The selected product or sale unit is no longer available. Refresh the POS catalog.');
       return;
@@ -602,9 +812,104 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       };
       return copy;
     });
+    clearQuantityFeedback(item.productId);
     setDisplayThankYou(false);
     setActiveOptions(null);
     setSaleError('');
+  };
+
+  const updateQuantityValue = (idx: number, requestedQuantity: number): boolean => {
+    const item = cart[idx];
+    const product = products.find((candidate) => candidate.id === item?.productId);
+    const unit = product?.units.find((candidate) => candidate.id === item?.unitId);
+    if (!item || !product || !unit) {
+      setSaleError('The selected product or sale unit is no longer available. Refresh the POS catalog.');
+      return false;
+    }
+
+    const maximumQuantity = Math.floor(
+      availableSmallestUnits(product.batches, localIsoDate()) / unit.conversionFactor,
+    );
+    if (maximumQuantity < 1) {
+      setQuantityWarnings((warnings) => ({
+        ...warnings,
+        [item.productId]: 'No full units are currently available.',
+      }));
+      return false;
+    }
+
+    const quantity = Math.min(requestedQuantity, maximumQuantity);
+    if (requestedQuantity > maximumQuantity) {
+      setQuantityWarnings((warnings) => ({
+        ...warnings,
+        [item.productId]: `Only ${maximumQuantity} available; quantity set to ${maximumQuantity}.`,
+      }));
+      setQuantityDrafts((drafts) => ({ ...drafts, [item.productId]: String(quantity) }));
+    } else {
+      setQuantityWarnings((warnings) => {
+        if (!(item.productId in warnings)) return warnings;
+        const next = { ...warnings };
+        delete next[item.productId];
+        return next;
+      });
+    }
+
+    try {
+      allocateFefo(
+        product.batches,
+        getRequiredSmallestUnits(quantity, unit.conversionFactor),
+        localIsoDate(),
+      );
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : 'Unable to allocate stock for this quantity.');
+      return false;
+    }
+
+    setCart((previous) => previous.map((current) => current.productId === item.productId
+      ? {
+          ...current,
+          quantityInUnit: quantity,
+          lineTotalPaisa: quantity * current.mrpPaisaPerUnit,
+        }
+      : current));
+    setDisplayThankYou(false);
+    setActiveOptions(null);
+    setSaleError('');
+    return true;
+  };
+
+  const handleQuantityInputChange = (idx: number, productId: string, value: string) => {
+    setQuantityDrafts((drafts) => ({ ...drafts, [productId]: value }));
+    setQuantityWarnings((warnings) => {
+      if (!(productId in warnings)) return warnings;
+      const next = { ...warnings };
+      delete next[productId];
+      return next;
+    });
+    if (!/^\d+$/.test(value)) return;
+    const quantity = Number(value);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) return;
+    updateQuantityValue(idx, quantity);
+  };
+
+  const applyQuantityDraft = (idx: number, productId: string) => {
+    const draft = quantityDrafts[productId];
+    if (draft === undefined) return;
+    if (!/^\d+$/.test(draft)) {
+      clearQuantityDraft(productId);
+      return;
+    }
+
+    const quantity = Number(draft);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      clearQuantityDraft(productId);
+      return;
+    }
+
+    if (cart[idx]?.quantityInUnit !== quantity) {
+      updateQuantityValue(idx, quantity);
+    }
+    clearQuantityDraft(productId);
   };
 
   const changeCartUnit = (idx: number, unitId: string) => {
@@ -636,6 +941,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           lineTotalPaisa: current.quantityInUnit * unit.pricePerUnitPaisa,
         }
       : current));
+    clearQuantityFeedback(item.productId);
     setDisplayThankYou(false);
     setActiveOptions(null);
     setSaleError('');
@@ -761,7 +1067,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   };
 
   const handleCompleteSale = () => {
-    if (isPostingSale) return;
+    if (isPostingSale || isPostingSaleRef.current) return;
     if (cart.length === 0) return;
     const finalDiscount = computeDiscount({
       billPaisa: subtotalPaisa,
@@ -816,7 +1122,6 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       return;
     }
     setCustomerPhoneError('');
-    const splitCashPaisa = Math.round(splitCashPaymentPKR * 100);
     let payments: PostSaleInput['payments'];
     let tenderedPaisa: number;
     if (paymentMethod === 'CREDIT') {
@@ -827,25 +1132,56 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       payments = [{ paymentMethod: PaymentMethod.CREDIT, amountPaisa: totalPaisa }];
       tenderedPaisa = 0;
     } else if (paymentMethod === 'ONLINE') {
-      payments = [{ paymentMethod: PaymentMethod.EASYPAISA, amountPaisa: totalPaisa }];
-      tenderedPaisa = totalPaisa;
-    } else if (paymentMethod === 'SPLIT') {
-      if (splitCashPaisa <= 0 || splitCashPaisa >= totalPaisa) {
-        setSaleError('A split payment needs a positive cash amount and a positive online amount.');
+      if (onlineProviderId === 'cash' || onlineProviderId === 'card') {
+        setSaleError('Choose a mobile wallet or bank provider for an online payment.');
         return;
       }
-      payments = [
-        { paymentMethod: PaymentMethod.CASH, amountPaisa: splitCashPaisa },
-        { paymentMethod: PaymentMethod.EASYPAISA, amountPaisa: totalPaisa - splitCashPaisa },
-      ];
+      payments = [{
+        paymentMethod: getPaymentMethodForProvider(onlineProviderId),
+        amountPaisa: totalPaisa,
+        providerId: onlineProviderId,
+        ...(onlinePaymentReference.trim() ? { reference: onlinePaymentReference.trim() } : {}),
+      }];
+      tenderedPaisa = totalPaisa;
+    } else if (paymentMethod === 'SPLIT') {
+      if (!splitPaymentConfirmed || !splitSummary.isBalanced) {
+        if (splitRows.length === 0 && savedSplitRows.length === 0) {
+          setSplitRows([createSplitRow('cash', totalPaisa)]);
+        }
+        setShowSplitModal(true);
+        setSplitError(splitPaymentConfirmed ? 'Paid So Far must equal the Total Bill.' : '');
+        return;
+      }
+      const splitPayments: PostSaleInput['payments'] = [];
+      for (const row of splitRows) {
+        const amountPaisa = parsePaisaAmount(row.amount);
+        if (amountPaisa === null || amountPaisa <= 0) {
+          setSplitError('Every split payment must be greater than zero.');
+          setShowSplitModal(true);
+          return;
+        }
+        splitPayments.push({
+          paymentMethod: getPaymentMethodForProvider(row.providerId),
+          amountPaisa,
+          providerId: row.providerId,
+          ...(row.reference.trim() && row.providerId !== 'cash'
+            ? { reference: row.reference.trim() }
+            : {}),
+        });
+      }
+      payments = splitPayments;
       tenderedPaisa = totalPaisa;
     } else {
-      tenderedPaisa = tenderedAmountPaisa || totalPaisa;
+      tenderedPaisa = tenderedAmountPKR === null ? totalPaisa : tenderedAmountPaisa;
       if (tenderedPaisa < totalPaisa) {
         setSaleError('Tendered cash cannot be less than the bill total.');
         return;
       }
-      payments = [{ paymentMethod: PaymentMethod.CASH, amountPaisa: totalPaisa }];
+      payments = [{
+        paymentMethod: PaymentMethod.CASH,
+        amountPaisa: totalPaisa,
+        providerId: 'cash',
+      }];
     }
 
     const saleItems: PostSaleInput['items'] = [];
@@ -879,6 +1215,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       payments,
     };
 
+    isPostingSaleRef.current = true;
     setIsPostingSale(true);
     void postSale(saleInput).then((sale) => {
       onSaleComplete(sale);
@@ -893,14 +1230,110 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           setPrintNotice('Auto-print is disabled for this account. Use Request print to ask an admin.');
         }
       }
-      setCart([]);
-      setDiscount({ mode: 'percent', value: '' });
-      setTenderedAmountPKR(0);
-      setSelectedCustomerId('');
-      setWalkInName('');
+      clearCartContents();
     }).catch((error: unknown) => {
       setSaleError(error instanceof Error ? error.message : 'Could not complete the sale.');
-    }).finally(() => setIsPostingSale(false));
+    }).finally(() => {
+      isPostingSaleRef.current = false;
+      setIsPostingSale(false);
+    });
+  };
+
+  const saveHeldBillList = (nextBills: HeldBill[]) => {
+    if (heldBillsUserId !== currentUserId || heldBillsError) {
+      setHeldBillsError(heldBillsError || 'Held bills are still loading. Try again in a moment.');
+      return false;
+    }
+    try {
+      writeHeldBills(currentUserId, nextBills);
+      setHeldBills(nextBills);
+      setHeldBillsError('');
+      return true;
+    } catch (error) {
+      setHeldBillsError(error instanceof Error ? error.message : 'Could not save held bills.');
+      return false;
+    }
+  };
+
+  const createCurrentHeldBill = (): HeldBill => ({
+    id: globalThis.crypto?.randomUUID?.()
+      ?? `held-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    heldAt: Date.now(),
+    cart: cart.map((item) => ({
+      ...item,
+      ...(item.batchAllocations
+        ? { batchAllocations: item.batchAllocations.map((allocation) => ({ ...allocation })) }
+        : {}),
+    })),
+    discount: { ...discount },
+    customerId: selectedCustomerId,
+    customerName: resolvePosCustomerName(
+      customers.find((customer) => customer.id === selectedCustomerId)?.name,
+      walkInName,
+    ),
+    customerType,
+    totalPaisa,
+  });
+
+  const handleHoldCurrentBill = () => {
+    if (isPostingSale || isPostingSaleRef.current) return;
+    if (cart.length === 0) {
+      setSaleError('Add at least one item before holding a bill.');
+      return;
+    }
+    if (!saveHeldBillList([createCurrentHeldBill(), ...heldBills])) return;
+
+    clearCartContents();
+    setDisplayThankYou(false);
+    setActiveOptions(null);
+  };
+  holdCurrentCartRef.current = handleHoldCurrentBill;
+
+  const handleResumeHeldBill = (heldBill: HeldBill) => {
+    if (isPostingSale || isPostingSaleRef.current) return;
+    const nextBills = heldBills.filter((bill) => bill.id !== heldBill.id);
+    if (cart.length > 0) {
+      nextBills.unshift(createCurrentHeldBill());
+    }
+    if (!saveHeldBillList(nextBills)) return;
+
+    const customerStillExists = customers.some((customer) => customer.id === heldBill.customerId);
+    setCart(heldBill.cart.map((item) => ({
+      ...item,
+      ...(item.batchAllocations
+        ? { batchAllocations: item.batchAllocations.map((allocation) => ({ ...allocation })) }
+        : {}),
+    })));
+    setQuantityDrafts({});
+    setQuantityWarnings({});
+    setDiscount({ ...heldBill.discount });
+    setSelectedCustomerId(customerStillExists ? heldBill.customerId : '');
+    setWalkInName(customerStillExists ? '' : heldBill.customerName);
+    setCustomerType(heldBill.customerType);
+    setCustomerDetails(emptyCustomerDetails());
+    setCustomerPhoneError('');
+    setShowCustomerDetails(false);
+    setTenderedAmountPKR(null);
+    setPaymentMethod('CASH');
+    setOnlineProviderId('easypaisa');
+    setOnlinePaymentReference('');
+    setSplitRows([]);
+    setSavedSplitRows([]);
+    setSplitPaymentConfirmed(false);
+    setSplitTouched(false);
+    setSplitError('');
+    setShowSplitModal(false);
+    setShowCheckoutModal(false);
+    setShowHeldBills(false);
+    setDisplayThankYou(false);
+    setActiveOptions(null);
+    setSaleError('');
+  };
+
+  const handleDeleteHeldBill = (heldBill: HeldBill) => {
+    const customerName = heldBill.customerName || 'this customer';
+    if (!window.confirm(`Delete the held bill for ${customerName}? This cannot be undone.`)) return;
+    saveHeldBillList(heldBills.filter((bill) => bill.id !== heldBill.id));
   };
 
   const openCustomerDisplay = () => {
@@ -929,12 +1362,20 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setDisplayNotice('Customer display opened.');
   };
 
+  const currentUserHeldBills = heldBillsUserId === currentUserId ? heldBills : [];
+
   return (
     <div className="flex h-auto min-h-[600px] flex-col gap-1 lg:h-full lg:min-h-0">
-      {saleError && (
+      {saleError && !showCheckoutModal && !showSplitModal && (
         <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shrink-0">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {saleError}
+        </div>
+      )}
+      {heldBillsError && (
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shrink-0">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {heldBillsError}
         </div>
       )}
       {printNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-text shrink-0">{printNotice}</p>}
@@ -944,9 +1385,9 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 items-stretch">
         {/* Left 7 Cols: Product Catalog & Fast Search */}
         <div className="lg:col-span-7 flex flex-col gap-2 min-h-0">
-          {/* Top Tabs (Sale, Medicine Returns, Barcode Scan) moved here to eliminate right-side gap */}
+          {/* Top Tabs moved here to eliminate right-side gap */}
           <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 bg-surface p-1 rounded-xl border border-border shadow-xs">
+            <div className="flex w-fit max-w-full flex-wrap items-center gap-1.5 bg-surface p-1 rounded-xl border border-border shadow-xs">
               <button
                 type="button"
                 onClick={() => setActiveTopTab('sale')}
@@ -985,6 +1426,112 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <Barcode className="w-3.5 h-3.5" />
                 <span>Barcode Scan</span>
               </button>
+
+              <div ref={heldBillsPanelRef} className="relative">
+                <button
+                  type="button"
+                  aria-controls="pos-held-bills-panel"
+                  aria-expanded={showHeldBills}
+                  aria-label={`Held bills, ${currentUserHeldBills.length} saved`}
+                  onClick={() => {
+                    setHeldBillsNow(Date.now());
+                    setShowHeldBills((isOpen) => !isOpen);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    showHeldBills
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-muted hover:bg-surface-2'
+                  }`}
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>Held</span>
+                  <span className={`min-w-4 rounded-full px-1 text-center text-[10px] leading-4 ${
+                    showHeldBills ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                  }`}>
+                    {currentUserHeldBills.length}
+                  </span>
+                  <span className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                    showHeldBills ? 'bg-white/20 text-white' : 'bg-surface-2 text-muted'
+                  }`}>
+                    F3
+                  </span>
+                </button>
+
+                {showHeldBills && (
+                  <div
+                    id="pos-held-bills-panel"
+                    role="region"
+                    aria-label="Held bills"
+                    className="absolute right-0 top-full z-40 mt-2 flex max-h-96 w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-surface text-text shadow-xl"
+                  >
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                      <h2 className="text-xs font-bold">Held bills</h2>
+                      <span className="text-[10px] font-semibold text-muted">
+                        {currentUserHeldBills.length}
+                      </span>
+                    </div>
+                    {currentUserHeldBills.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-xs text-muted">No held bills</p>
+                    ) : (
+                      <div className="space-y-2 overflow-y-auto p-2">
+                        {currentUserHeldBills.map((heldBill) => {
+                          const itemCount = heldBill.cart.reduce(
+                            (count, item) => count + item.quantityInUnit,
+                            0,
+                          );
+                          const minutesSinceHeld = Math.floor(
+                            Math.max(0, heldBillsNow - heldBill.heldAt) / 60_000,
+                          );
+                          return (
+                            <article
+                              key={heldBill.id}
+                              className="rounded-lg border border-border bg-surface-2 p-2.5"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-bold">
+                                    {heldBill.customerName || 'Walk-in customer'}
+                                  </p>
+                                  <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted">
+                                    <span>{itemCount} items</span>
+                                    <span aria-hidden="true">·</span>
+                                    <Clock3 className="h-3 w-3" />
+                                    <span>{minutesSinceHeld} min ago</span>
+                                  </p>
+                                </div>
+                                <span className="shrink-0 font-mono text-xs font-bold">
+                                  Rs. {(heldBill.totalPaisa / 100).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleResumeHeldBill(heldBill)}
+                                  className="flex-1 rounded-control bg-primary px-2 py-1.5 text-[10px] font-bold text-white hover:brightness-95"
+                                >
+                                  Resume
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteHeldBill(heldBill)}
+                                  className="flex-1 rounded-control border border-danger/40 px-2 py-1.5 text-[10px] font-bold text-danger hover:bg-danger/5"
+                                >
+                                  <Trash2 className="mr-1 inline h-3 w-3" />
+                                  Delete
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-border px-3 py-2 text-[10px] font-semibold text-muted">
+                      <span>F3 open held</span>
+                      <span>F6 hold bill</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1177,13 +1724,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
         </div>
 
         {/* Right 5 Cols: Cart & Checkout Bar (Matching Screenshot 7, 8, 61, 62) */}
-        <div className="lg:col-span-5 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full min-h-0 justify-between">
+        <div className="lg:col-span-5 overflow-hidden bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col h-full min-h-0">
           <div className="flex flex-col min-h-0 flex-1">
             {/* Top Cart Header & Layout Switches (Matching Screenshot 7) */}
-            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 mb-1.5 shrink-0">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-blue-600" />
-                <span className="pos-cart-count text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
+            <div className="shrink-0 border-b border-slate-100 pb-1 mb-1">
+              <div className="flex h-8 min-w-0 items-center gap-1">
+                <ShoppingCart className="h-4 w-4 shrink-0 text-blue-600" />
+                <span className="pos-cart-count shrink-0 whitespace-nowrap text-xs font-black text-slate-900" key={cart.reduce((sum, i) => sum + i.quantityInUnit, 0)}>
                   Cart ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)})
                 </span>
                 <button
@@ -1191,14 +1738,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   onClick={openCustomerDisplay}
                   aria-label="Open customer display"
                   title="Open customer display"
-                  className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-slate-300 px-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <Monitor className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Display</span>
+                  <span>Display</span>
                 </button>
-              </div>
-
-              <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                 <select
                   aria-label="Customer type"
                   value={customerType}
@@ -1217,7 +1761,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                       setSelectedCustomerId('');
                     }
                   }}
-                  className="max-w-[135px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="h-7 w-[118px] max-w-[31%] min-w-0 shrink rounded-lg border border-slate-300 bg-white px-1 text-[10px] font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <option value="WALK_IN">Walk-in Customer</option>
                   <option value="REGISTERED">Registered Customer</option>
@@ -1225,66 +1769,47 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   <option value="DOCTOR_CLINIC">Doctor / Clinic</option>
                   <option value="WHOLESALE_RETAILER">Wholesale / Retailer</option>
                 </select>
-                <select
-                  aria-label="Registered customer"
-                  value={selectedCustomerId}
-                  onChange={(event) => {
-                    setSelectedCustomerId(event.target.value);
-                    setWalkInName('');
-                    if (event.target.value) {
-                      setCustomerType((type) => type === 'CREDIT' ? type : 'REGISTERED');
-                      setCustomerDetails(emptyCustomerDetails());
-                    }
-                  }}
-                  className="max-w-[135px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <option value="">Walk-in Customer</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>{customer.name}</option>
-                  ))}
-                </select>
-                {!selectedCustomerId && (
-                  <div className="relative" ref={customerDetailsRef}>
-                    <input
-                      ref={customerNameRef}
-                      type="text"
-                      placeholder="Customer name (optional)"
-                      aria-label="Walk-in customer name"
-                      aria-haspopup="dialog"
-                      aria-expanded={showCustomerDetails}
-                      aria-controls="pos-customer-details"
-                      value={walkInName}
-                      onChange={(event) => setWalkInName(event.target.value)}
+                <div className="relative min-w-0 flex-1" ref={customerDetailsRef}>
+                  <input
+                    ref={customerNameRef}
+                    type="text"
+                    placeholder="Customer name (optional)"
+                    aria-label="Walk-in customer name"
+                    aria-haspopup="dialog"
+                    aria-expanded={showCustomerDetails}
+                    aria-controls="pos-customer-details"
+                    value={walkInName}
+                    onChange={(event) => setWalkInName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return;
+                      event.preventDefault();
+                      const name = walkInName.trim();
+                      if (!name) return;
+                      setWalkInName(name);
+                      setCustomerPhoneError('');
+                      setShowCustomerDetails(true);
+                    }}
+                    className="h-7 w-full min-w-0 rounded-lg border border-slate-300 px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                  {showCustomerDetails && (
+                    <div
+                      role="dialog"
+                      id="pos-customer-details"
+                      aria-label="Customer Details"
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter') return;
                         event.preventDefault();
-                        const name = walkInName.trim();
-                        if (!name) return;
-                        setWalkInName(name);
+                        const phoneError = customerPhoneValidationError(customerDetails);
+                        if (phoneError) {
+                          setCustomerPhoneError(phoneError);
+                          return;
+                        }
                         setCustomerPhoneError('');
-                        setShowCustomerDetails(true);
+                        setShowCustomerDetails(false);
+                        customerNameRef.current?.focus();
                       }}
-                      className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    />
-                    {showCustomerDetails && (
-                      <div
-                        role="dialog"
-                        id="pos-customer-details"
-                        aria-label="Customer Details"
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter') return;
-                          event.preventDefault();
-                          const phoneError = customerPhoneValidationError(customerDetails);
-                          if (phoneError) {
-                            setCustomerPhoneError(phoneError);
-                            return;
-                          }
-                          setCustomerPhoneError('');
-                          setShowCustomerDetails(false);
-                          customerNameRef.current?.focus();
-                        }}
-                        className="absolute right-0 top-full z-40 mt-1 w-[min(18rem,calc(100vw-2rem))] space-y-2 rounded-xl border border-border bg-surface p-3 text-left shadow-lg"
-                      >
+                      className="absolute right-0 top-full z-40 mt-1 w-[min(18rem,calc(100vw-2rem))] space-y-2 rounded-xl border border-border bg-surface p-3 text-left shadow-lg"
+                    >
                         <div>
                           <h3 className="text-xs font-bold text-text">Customer Details</h3>
                           <p className="truncate text-[11px] text-muted">{walkInName.trim()}</p>
@@ -1384,15 +1909,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                         >
                           Done
                         </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* Cart Items List — with flex-1 min-h-0 overflow-y-auto so it stretches full card height */}
-            <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div ref={cartItemsListRef} className="space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
               {cart.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">
                   <Package className="w-8 h-8 mx-auto mb-1 text-slate-300" />
@@ -1402,10 +1926,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
               ) : (
                 cart.map((item, idx) => (
                   <div
-                    key={`${item.productId}-${idx}`}
+                    key={item.productId}
                     className="pos-cart-item p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs"
                   >
-                    <div className="flex-1 pr-2 truncate">
+                    <div className="min-w-0 flex-1 pr-2">
                       <div className="font-bold text-slate-900 truncate">{item.productName}</div>
                       <div className="text-[10px] text-slate-500 font-mono">
                         Rs. {(item.mrpPaisaPerUnit / 100).toFixed(0)} × {item.quantityInUnit} · {item.unitName}
@@ -1426,6 +1950,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                           </select>
                         </label>
                       ) : null}
+                      {quantityWarnings[item.productId] && (
+                        <p role="status" className="mt-1 text-[10px] font-medium text-warning">
+                          {quantityWarnings[item.productId]}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1436,9 +1965,23 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                         >
                           <Minus className="w-2.5 h-2.5" />
                         </button>
-                        <span className="px-1.5 font-mono font-bold text-xs">
-                          {item.quantityInUnit}
-                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          aria-label={`Quantity of ${item.productName}`}
+                          value={quantityDrafts[item.productId] ?? String(item.quantityInUnit)}
+                          onFocus={(event) => event.currentTarget.select()}
+                          onClick={(event) => event.currentTarget.select()}
+                          onChange={(event) => handleQuantityInputChange(idx, item.productId, event.target.value)}
+                          onBlur={() => applyQuantityDraft(idx, item.productId)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return;
+                            event.preventDefault();
+                            applyQuantityDraft(idx, item.productId);
+                          }}
+                          className="w-10 rounded-sm bg-transparent px-0.5 text-center font-mono text-xs font-bold selection:bg-blue-200 focus:bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
                         <button
                           onClick={() => updateQuantity(idx, 1)}
                           className="px-1.5 py-0.5 text-slate-600 hover:bg-slate-100"
@@ -1465,16 +2008,14 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           </div>
 
           {/* ── Bottom Dock Checkout Panel (Matching Screenshot 8, 61, 62) ─── */}
-          <div className="mt-auto pt-2.5 border-t border-slate-200 space-y-2 shrink-0">
-            {/* Subtotal & Quick Discount Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-slate-600 font-medium">
-                Subtotal ({cart.reduce((sum, i) => sum + i.quantityInUnit, 0)} sale units):{' '}
-                <strong className="text-slate-900 font-mono">Rs. {subtotalPKR.toFixed(0)}</strong>
+          <div className="mt-auto shrink-0 space-y-1.5 border-t border-slate-200 pt-1.5">
+            <div className="flex min-w-0 items-center justify-between gap-1 text-[10px]">
+              <span className="shrink-0 font-medium text-slate-600">
+                Subtotal <strong className="font-mono text-slate-900">Rs. {subtotalPKR.toFixed(0)}</strong>
               </span>
-              <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
+              <div className="flex min-w-0 items-center gap-1 font-semibold text-slate-600">
                 <span>Disc:</span>
-                <label className="inline-flex items-center gap-1 rounded-control border border-border bg-surface px-2 text-text focus-within:ring-2 focus-within:ring-accent">
+                <label className="inline-flex min-w-0 items-center gap-1 rounded-control border border-border bg-surface px-1.5 text-text focus-within:ring-2 focus-within:ring-accent">
                   <span className="text-muted">Rs.</span>
                   <input
                     aria-label="Cart discount amount"
@@ -1490,29 +2031,29 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                       }
                       handleDiscountChange({ mode: 'amount', value });
                     }}
-                    className="w-20 min-w-0 bg-transparent py-1 font-mono text-text outline-none disabled:cursor-not-allowed"
+                    className="w-14 min-w-0 bg-transparent py-1 font-mono text-text outline-none disabled:cursor-not-allowed"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => handleDiscountChange({ mode: 'amount', value: '' })}
-                  className="rounded-control px-1.5 py-1 text-xs font-semibold text-muted hover:bg-surface disabled:cursor-not-allowed"
+                  className="rounded-control px-1 py-1 text-[10px] font-semibold text-muted hover:bg-surface disabled:cursor-not-allowed"
                   disabled={cart.length === 0}
                 >
                   Clear
                 </button>
-                {cart.length === 0 && <span className="text-muted">Add items first</span>}
               </div>
-
-              {/* Quick Discount Pills */}
-              <div className="pos-discount-options flex items-center gap-1 text-[10px]">
+            </div>
+            <div className="flex min-w-0 items-center justify-between gap-1">
+              <div className="pos-discount-options flex min-w-0 items-center gap-0.5 text-[9px]">
                 {[0, 2, 5, 10, 15, 20].map((pct) => (
                   <button
                     key={pct}
+                    type="button"
                     onClick={() => handleDiscountChange({ mode: 'percent', value: String(pct) })}
                     disabled={cart.length === 0}
                     aria-pressed={discount.mode === 'percent' && Number(discount.value || 0) === pct}
-                    className={`px-1.5 py-0.5 rounded font-bold transition ${
+                    className={`rounded px-1 py-1 font-bold transition ${
                       discount.mode === 'percent' && Number(discount.value || 0) === pct
                         ? 'bg-blue-600 text-white'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -1522,132 +2063,164 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   </button>
                 ))}
               </div>
+              <div className="flex shrink-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-slate-700">NET TOTAL</span>
+                <span className="pos-total-value whitespace-nowrap font-mono text-base font-black text-slate-950" key={totalPKR}>
+                  Rs. {totalPKR.toFixed(2)}
+                </span>
+              </div>
             </div>
             {discountNotice && cart.length > 0 && (
-              <p role="alert" className="text-xs font-semibold text-danger">{discountNotice}</p>
+              <p role="alert" className="text-[10px] font-semibold text-danger">{discountNotice}</p>
             )}
 
-            {/* NET TOTAL */}
-            <div className="flex items-center justify-between py-1 bg-slate-50 px-2.5 rounded-lg border border-slate-200">
-              <span className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                NET TOTAL
-              </span>
-              <span className="pos-total-value text-base font-black font-mono text-slate-950" key={totalPKR}>
-                Rs. {totalPKR.toFixed(2)}
-              </span>
-            </div>
-
-            {/* Tendered Cash & Quick Cash Pills (Matching Screenshot 62) */}
             {paymentMethod === 'CASH' && (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                <div className="flex flex-1 items-center gap-1">
-                  <span className="text-[11px] font-semibold text-muted">Tendered:</span>
-                  <input
-                    type="number"
-                    min={totalPKR}
-                    step="0.01"
-                    placeholder="0"
-                    value={tenderedAmountPKR || ''}
-                    onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
-                    className="w-20 rounded-control border border-border bg-surface px-2 py-1 font-mono text-xs font-bold text-text"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setTenderedAmountPKR(totalPKR)}
-                    className="rounded-control bg-primary px-2 py-1 text-[10px] font-bold text-white"
-                  >
-                    Exact
-                  </button>
-                </div>
-                <div className="flex items-center gap-1 text-[10px]">
-                  {[50, 100, 500, 1000, 5000].map((amt) => (
+              <div className="flex min-w-0 items-center gap-1 text-[10px]">
+                <span className="shrink-0 font-semibold text-muted">Tendered:</span>
+                <input
+                  type="number"
+                  min={totalPKR}
+                  step="0.01"
+                  placeholder="0"
+                  value={tenderedAmountPKR ?? ''}
+                  onChange={(event) => setTenderedAmountPKR(event.target.value === '' ? null : Number(event.target.value))}
+                  className="w-16 shrink-0 rounded-control border border-border bg-surface px-1.5 py-1 font-mono text-[11px] font-bold text-text"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTenderedAmountPKR(totalPKR)}
+                  className="shrink-0 rounded-control bg-primary px-1.5 py-1 font-bold text-white"
+                >
+                  Exact
+                </button>
+                <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5">
+                  {[50, 100, 500, 1000, 5000].map((amount) => (
                     <button
-                      key={amt}
+                      key={amount}
                       type="button"
-                      onClick={() => setTenderedAmountPKR(amt)}
-                      className="rounded-control border border-border bg-surface px-1.5 py-0.5 font-semibold text-text hover:bg-surface-muted"
+                      onClick={() => setTenderedAmountPKR(amount)}
+                      className="min-w-0 rounded-control border border-border bg-surface px-1 py-1 font-semibold text-text hover:bg-surface-muted"
                     >
-                      Rs.{amt}
+                      {amount >= 1000 ? `${amount / 1000}k` : amount}
                     </button>
                   ))}
                 </div>
               </div>
             )}
-            {paymentMethod === 'SPLIT' && (
-              <p className="text-xs text-muted">Set cash and online amounts in the checkout window.</p>
+            {changeDuePKR > 0 && paymentMethod === 'CASH' && (
+              <p className="text-right text-[10px] font-semibold text-emerald-800">
+                Change due: Rs. {changeDuePKR.toFixed(2)}
+              </p>
             )}
 
-            {/* Change Due Banner (Wapis Karein) (Matching Screenshot 10, 62) */}
-            {changeDuePKR > 0 && (
-              <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-300 text-xs flex items-center justify-between text-emerald-950">
-                <span className="font-bold flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                  Wapis Karein (Change Due):
-                </span>
-                <span className="text-sm font-black font-mono text-emerald-800">
-                  Rs. {changeDuePKR.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            {/* Payment Methods Chips (Matching Screenshot 61) */}
-            <div className="pos-payment-methods grid grid-cols-4 gap-1.5 text-xs pt-1">
+            <div className="pos-payment-methods grid grid-cols-4 gap-1.5 text-xs">
               <button
+                type="button"
                 onClick={() => selectPaymentMethod('CASH')}
                 aria-pressed={paymentMethod === 'CASH'}
-                className={`py-1 rounded-lg border font-bold text-[11px] transition ${
+                className={`rounded-lg border py-1 font-bold text-[11px] transition ${
                   paymentMethod === 'CASH'
-                    ? 'bg-emerald-600 text-white border-emerald-700'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    ? 'border-emerald-700 bg-emerald-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Cash
               </button>
               <button
+                type="button"
                 onClick={() => selectPaymentMethod('ONLINE')}
                 aria-pressed={paymentMethod === 'ONLINE'}
-                className={`py-1 rounded-lg border font-bold text-[11px] transition ${
+                className={`rounded-lg border py-1 font-bold text-[11px] transition ${
                   paymentMethod === 'ONLINE'
-                    ? 'bg-blue-600 text-white border-blue-700'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    ? 'border-blue-700 bg-blue-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Online
               </button>
               <button
+                type="button"
                 onClick={() => selectPaymentMethod('CREDIT')}
                 aria-pressed={paymentMethod === 'CREDIT'}
-                className={`py-1 rounded-lg border font-bold text-[11px] transition ${
+                className={`rounded-lg border py-1 font-bold text-[11px] transition ${
                   paymentMethod === 'CREDIT'
-                    ? 'bg-amber-600 text-white border-amber-700'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    ? 'border-amber-700 bg-amber-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Credit
               </button>
               <button
+                type="button"
                 onClick={() => selectPaymentMethod('SPLIT')}
                 aria-pressed={paymentMethod === 'SPLIT'}
-                className={`py-1 rounded-lg border font-bold text-[11px] transition ${
+                className={`rounded-lg border py-1 font-bold text-[11px] transition ${
                   paymentMethod === 'SPLIT'
-                    ? 'bg-purple-600 text-white border-purple-700'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    ? 'border-purple-700 bg-purple-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 Split
               </button>
             </div>
 
-            {/* Charge / Complete Sale Button (Matching Screenshot 8, 62) */}
-            <div className="flex items-center gap-2 pt-1">
+            {paymentMethod === 'ONLINE' && (
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] gap-1.5">
+                <label className="grid min-w-0 gap-0.5 text-[9px] font-semibold text-muted">
+                  Provider
+                  <PaymentProviderSelect
+                    value={onlineProviderId}
+                    onChange={setOnlineProviderId}
+                    ariaLabel="Online payment provider"
+                  />
+                </label>
+                <label className="grid min-w-0 gap-0.5 text-[9px] font-semibold text-muted">
+                  TID / Ref
+                  <input
+                    type="text"
+                    value={onlinePaymentReference}
+                    onChange={(event) => setOnlinePaymentReference(event.target.value)}
+                    placeholder="TID / Ref (optional)"
+                    maxLength={200}
+                    className="h-9 w-full min-w-0 rounded-control border border-border bg-surface px-2 text-xs font-normal text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={handleHoldCurrentBill}
+                disabled={cart.length === 0 || isPostingSale}
+                aria-label="Hold the cart"
+                title={'Hold the cart\nPress F6 to hold this bill'}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/40 text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+              >
+                <Pause aria-hidden="true" className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowClearCartConfirm(true)}
+                disabled={cart.length === 0 || isPostingSale}
+                aria-label="Clear cart"
+                title="Clear cart"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/40 text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+              >
+                <Trash2 aria-hidden="true" className="h-4 w-4" />
+              </button>
               <button
                 ref={chargeButtonRef}
-                onClick={() => setShowCheckoutModal(true)}
-                disabled={cart.length === 0}
-                className="pos-charge-button relative flex-1 overflow-hidden py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                type="button"
+                onClick={() => {
+                  setShowHeldBills(false);
+                  setShowCheckoutModal(true);
+                }}
+                disabled={cart.length === 0 || isPostingSale}
+                className="pos-charge-button relative flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-primary px-2 text-xs font-black text-white shadow-md shadow-primary/25 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Charge Rs. {totalPKR.toFixed(2)} (F4)</span>
+                <Zap aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Charge Rs. {totalPKR.toFixed(2)} (F4)</span>
               </button>
             </div>
           </div>
@@ -1717,32 +2290,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   type="number"
                   step="0.01"
                   placeholder="0"
-                  value={tenderedAmountPKR || ''}
-                  onChange={(e) => setTenderedAmountPKR(Number(e.target.value))}
+                  value={tenderedAmountPKR ?? ''}
+                  onChange={(e) => setTenderedAmountPKR(e.target.value === '' ? null : Number(e.target.value))}
                   className="w-full px-3 py-2 text-base font-black font-mono border-2 border-blue-500 rounded-xl focus:outline-none"
                 />
               </div>}
-              {paymentMethod === 'SPLIT' && (
-                <div className="order-2 grid grid-cols-1 gap-3 rounded-control border border-border bg-surface-muted p-3 sm:grid-cols-2">
-                  <label className="text-sm font-semibold text-text">
-                    Cash portion (Rs)
-                    <input
-                      type="number"
-                      min="0.01"
-                      max={Math.max(0, totalPKR - 0.01)}
-                      step="0.01"
-                      value={splitCashPaymentPKR || ''}
-                      onChange={(event) => setSplitCashPaymentPKR(Number(event.target.value))}
-                      className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 font-mono text-text"
-                    />
-                  </label>
-                  <p className="self-end text-sm text-text">
-                    Online portion: Rs. {(Math.max(0, totalPaisa - Math.round(splitCashPaymentPKR * 100)) / 100).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted sm:col-span-2">Both amounts must be greater than zero. Split payments record exact cash and online portions.</p>
-                </div>
-              )}
-
               {/* Quick Cash pills */}
               {paymentMethod === 'CASH' && <div className="order-3 flex items-center gap-1.5 flex-wrap">
                 <button
@@ -1802,7 +2354,37 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 </div>
               </div>
 
-              <div className="order-8 pt-2 flex items-center gap-2">
+              {paymentMethod === 'ONLINE' && (
+                <div className="order-8 grid min-w-0 grid-cols-2 gap-2">
+                  <label className="grid min-w-0 gap-1 text-[10px] font-semibold text-muted">
+                    Provider
+                    <PaymentProviderSelect
+                      value={onlineProviderId}
+                      onChange={setOnlineProviderId}
+                      ariaLabel="Online payment provider"
+                    />
+                  </label>
+                  <label className="grid min-w-0 gap-1 text-[10px] font-semibold text-muted">
+                    TID / Ref
+                    <input
+                      type="text"
+                      value={onlinePaymentReference}
+                      onChange={(event) => setOnlinePaymentReference(event.target.value)}
+                      placeholder="TID / Ref (optional)"
+                      maxLength={200}
+                      className="min-h-9 w-full min-w-0 rounded-control border border-border bg-surface px-2 text-xs font-normal text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {saleError && (
+                <p role="alert" className="order-9 text-xs font-semibold text-danger">
+                  {saleError}
+                </p>
+              )}
+
+              <div className="order-10 pt-2 flex items-center gap-2">
                 <button
                   onClick={() => setShowCheckoutModal(false)}
                   className="flex-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
@@ -1824,6 +2406,210 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                   }
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSplitModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeSplitPayment();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="split-payment-title"
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+            onKeyDownCapture={(event) => {
+              if (event.key !== 'Enter') return;
+              const target = event.target;
+              if (!(target instanceof HTMLElement)) return;
+              if (target.closest('[aria-haspopup="listbox"]')) return;
+              if (!(target instanceof HTMLInputElement)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const fields = Array.from(
+                event.currentTarget.querySelectorAll<HTMLElement>(
+                  'button[aria-haspopup="listbox"], input.split-payment-field',
+                ),
+              );
+              const currentIndex = fields.indexOf(target);
+              const nextField = fields[currentIndex + 1];
+              if (nextField) nextField.focus();
+              else splitDoneButtonRef.current?.focus();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return;
+              event.preventDefault();
+              closeSplitPayment();
+            }}
+          >
+            <header className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 id="split-payment-title" className="flex items-center gap-2 text-base font-black text-text">
+                <ArrowLeftRight aria-hidden="true" className="h-5 w-5 text-primary" />
+                Split Payment
+              </h2>
+              <button
+                type="button"
+                onClick={closeSplitPayment}
+                aria-label="Close split payment"
+                className="rounded-control p-1.5 text-muted hover:bg-surface-muted hover:text-text"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="min-h-0 space-y-3 overflow-y-auto p-4">
+              <div className="space-y-3">
+                {splitRows.map((row, index) => (
+                  <div key={row.id} className="rounded-xl border border-border bg-surface p-3">
+                    <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_2rem] items-end gap-2">
+                      <label className="grid min-w-0 gap-1 text-[10px] font-semibold text-muted">
+                        Payment method
+                        <PaymentProviderSelect
+                          value={row.providerId}
+                          onChange={(providerId) => updateSplitRow(row.id, {
+                            providerId,
+                            ...(providerId === 'cash' ? { reference: '' } : {}),
+                          })}
+                          includeCash
+                          includeCard
+                          ariaLabel={`Payment method for payment ${index + 1}`}
+                        />
+                      </label>
+                      <label className="grid min-w-0 gap-1 text-[10px] font-semibold text-muted">
+                        Amount (Rs)
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.amount}
+                          onChange={(event) => updateSplitRow(row.id, { amount: event.target.value })}
+                          aria-label={`Amount for payment ${index + 1}`}
+                          className="split-payment-field h-9 w-full min-w-0 rounded-control border border-border bg-surface px-2 font-mono text-xs font-bold text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeSplitPayment(row.id)}
+                        disabled={splitRows.length === 1}
+                        aria-label={`Remove payment ${index + 1}`}
+                        className="inline-flex h-9 w-8 items-center justify-center rounded-control border border-danger/40 text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <X aria-hidden="true" className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {row.providerId !== 'cash' && (
+                      <input
+                        type="text"
+                        value={row.reference}
+                        onChange={(event) => updateSplitRow(row.id, { reference: event.target.value })}
+                        placeholder="TID / Ref / Account (optional)"
+                        aria-label={`TID / Ref / Account for payment ${index + 1}`}
+                        maxLength={200}
+                        className="split-payment-field mt-2 h-9 w-full rounded-control border border-border bg-surface px-2 text-xs text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1 rounded-xl border border-border bg-surface-muted p-3 text-xs">
+                <div className="flex justify-between font-black text-text">
+                  <span>Total Bill:</span>
+                  <span className="font-mono">Rs. {totalPKR.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-primary">
+                  <span>Paid So Far:</span>
+                  <span className="font-mono">Rs. {(splitSummary.paidPaisa / 100).toFixed(2)}</span>
+                </div>
+                <div className={`flex justify-between font-semibold ${
+                  splitSummary.remainingPaisa === 0
+                    ? 'text-muted'
+                    : splitSummary.remainingPaisa > 0
+                      ? 'text-amber-700'
+                      : 'text-danger'
+                }`}>
+                  <span>Remaining:</span>
+                  <span className="font-mono">
+                    {splitSummary.remainingPaisa < 0 ? '- ' : ''}
+                    Rs. {(Math.abs(splitSummary.remainingPaisa) / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {splitError && (
+                <p role="alert" className="text-xs font-semibold text-danger">{splitError}</p>
+              )}
+              {!splitError && !splitSummary.isBalanced && (
+                <p role="status" className="text-xs font-medium text-muted">
+                  {!splitSummary.hasValidRows
+                    ? 'Every payment must be a positive amount.'
+                    : splitSummary.remainingPaisa > 0
+                      ? 'Paid So Far must equal the Total Bill.'
+                      : 'Paid amount exceeds the Total Bill.'}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={addSplitPayment}
+                  disabled={splitSummary.remainingPaisa <= 0}
+                  className="rounded-control border border-primary px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  + Add Payment
+                </button>
+                <button
+                  ref={splitDoneButtonRef}
+                  type="button"
+                  onClick={confirmSplitPayment}
+                  disabled={!splitSummary.isBalanced}
+                  className="rounded-control bg-primary px-5 py-2 text-xs font-bold text-white hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearCartConfirm && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setShowClearCartConfirm(false);
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="clear-cart-title"
+            aria-describedby="clear-cart-description"
+            className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+          >
+            <h2 id="clear-cart-title" className="text-base font-black text-text">Clear cart?</h2>
+            <p id="clear-cart-description" className="mt-2 text-sm text-muted">
+              Clear all items from this cart?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearCartConfirm(false)}
+                className="rounded-control border border-border px-4 py-2 text-xs font-bold text-text hover:bg-surface-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={clearCartContents}
+                className="rounded-control bg-primary px-4 py-2 text-xs font-bold text-white hover:brightness-95"
+              >
+                Clear
+              </button>
             </div>
           </div>
         </div>

@@ -35,7 +35,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - `src/components/TrashBinView.tsx`: Admin Trash Bin with one-at-a-time permanent deletion for eligible users/products/suppliers; voided purchases remain audit-only, and referenced catalog records cannot be purged.
 - Other feature screens in `src/components/` include Dashboard, Reports, Suppliers, Cash Book, Master Data, and print-request administration.
 - `src/utils/`, `src/types/`, `src/data/`: reusable logic, TypeScript domain shapes, and mock pharmacy data.
-- `supabase/migrations/`, `supabase/functions/`, `supabase/baseline/`: database migrations, Edge Functions, and a supplied schema snapshot.
+- `supabase/migrations/`, `supabase/fresh/`, `supabase/functions/`, `supabase/baseline/`: database migrations, owner-run SQL Editor packages, Edge Functions, and a supplied schema snapshot.
 - `docs/`: database references, `MASTER_PLAN.md`, `MULTI_SHOP_FULL_PLAN.md`, execution progress, redesign notes, and this context.
 - `scripts/`, `.githooks/`: context generation and commit-hook tooling.
 - `public/`: static assets and fonts.
@@ -45,10 +45,10 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - Supabase Auth/Postgres: shared across clients connected to the same configured project. Products, Stock Inventory, purchase workflows, and supplier writes use server RPCs; supplier, product-unit, and profile reads still include direct table reads. Authorization and persistence are not uniform across every screen.
 - Supabase Edge Functions: the `manage-users` function exists; print approval, requester-name listing, audited receipt-only modification, and profile Trash Bin events use database RPCs/Edge Functions.
 - Supabase CLI is available as a local development dependency (`npx supabase`); hosted deployment still requires an authenticated CLI session and the correct project ref.
-- Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, receipt settings, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters.
+- Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, cached receipt/memo settings, WhatsApp templates, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters. Shared billing template, receipt format, supported Pharmacy Memo settings, and shop identity/logo now load from server-backed shop records/RPCs.
 - S1 owner-run SQL recovery package is under `supabase/fresh/`: it snapshots `public` table data, selected catalog metadata, and sequence state into an isolated forced-RLS schema. Owner reports successful snapshot execution and smoke test `complete: true` with all 26 table counts matching. Catalog metadata is not a complete schema restore. It is not a full database backup and does not include Auth users, Storage objects, or platform configuration.
-- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. They are presented as compact segmented controls and toggle rows. Shop identity, billing, and business settings remain hidden from non-admin roles.
-- Mixed persistence: the active POS catalog uses `pos_catalog()`; the client calls `post_sale_with_customer_details()` (which delegates to `post_sale()`). Owner reports the POS customer-details migration and smoke test passed, and S5 batches 027, 029, 032, and supplier Batch 039 passed their owner-run smoke tests. Query 033 found five unscoped purchase RPCs; Query 034 confirmed no purchase rows, a valid unique `(shop_id, pr_no)` index, one counter assigned at `last_number = 0`, and two suppliers with NULL `shop_id` before Batch 039. Queries 035-038 found six unscoped print RPCs, unscoped Trash routines, and unscoped `stock_alerts_summary()`; their authenticated grants deny anon/PUBLIC. The supplier backfill/scope batch is owner-reported successful. Print had four shop-assigned requests and none pending; Trash had 56 shop-assigned events, and `restore_trash_medicine(uuid)` was absent. `stock_alerts_list()` is absent; `stock_alerts_summary()` is present and unscoped. Query 040 initially failed because it joined `stock_batches.purchase_id`, a column that does not exist; the purchase-to-batch relationship is through `purchase_items`. Query 050 supersedes it with a consolidated read-only preflight for all remaining S5 groups. Dashboard stock/expiry KPIs still use `INITIAL_PRODUCTS` sample data, and Cash Book transactions/expenses remain React in-memory state.
+- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. They are presented as compact segmented controls and toggle rows. WhatsApp templates remain browser-local; staff with the explicit Settings grant can edit only supported operational settings, while shop identity/logo is managed through the platform Shops page.
+- Mixed persistence: the active POS catalog uses `pos_catalog()`; the client calls `post_sale_with_customer_details()` (which delegates to `post_sale()`). Historical S5 preflight findings identified unscoped purchase/print/Trash/alert routines and the missing `restore_trash_medicine(uuid)`; the owner reports the 051 dry run, 052 apply, all six 053 smoke checks, and 054 final catalog check passed. The S5 package is complete by owner report; broader two-shop verification remains open. Dashboard stock/expiry KPIs still use `INITIAL_PRODUCTS` sample data, and Cash Book transactions/expenses remain React in-memory state.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
 - Shared production data behavior depends on Supabase deployment and the live schema, which may differ from checked-in migrations.
 
@@ -56,15 +56,15 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 
 Role names in `src/types/pharmacy.ts`: `admin`, `super_admin`, `manager`, `cashier`, `accountant`.
 
-Permission keys in `src/permissions.tsx`: `pos`, `products`, `categories`, `suppliers`, `customers`, `sales_history`, `purchase_history`, `purchases`, `expenses`, `stock_inventory`, `reports`, `manage_users`, plus POS print toggles `pos_print_sale` and `pos_print_payment`.
+Permission keys in `src/permissions.tsx`: `pos`, `products`, `categories`, `suppliers`, `customers`, `sales_history`, `purchase_history`, `purchases`, `expenses`, `stock_inventory`, `reports`, `manage_users`, `settings`, plus POS print toggles `pos_print_sale` and `pos_print_payment`.
 
-UI defaults: Admin and Super Admin get every module. Manager gets POS, Products, Categories, Suppliers, Customers, Sales History, Purchase History, Purchases, Stock Inventory, and Reports. Cashier gets POS and Customers. Accountant gets Customers, Suppliers, Sales History, Purchase History, Expenses, and Reports. Non-admin permissions can be configured; admin roles use their full defaults. Dashboard/help, personal print requests, and the Settings route are available to all; non-admin Settings contains personal display/accessibility preferences only. Shop/business Settings, Trash Bin, and print-request administration remain Admin/Super Admin-only. UI checks do not replace database/server authorization.
+Business-page access now requires explicit grants for all shop roles; `Super Admin` is platform-only and receives no shop-module access. `Manage Users` requires the Admin grant or the Super Admin platform role. Settings requires the `settings` grant and is not available to Super Admin. Dashboard/help and personal print requests remain available to all; Trash Bin and print-request administration are Admin-only in the sidebar. Print Requests and Trash still lack explicit permission keys and need matching database/server authorization review. UI checks do not replace database/server authorization.
 
 Cost visibility target: Admin and Super Admin may view cost; Manager may view it only with at least one of `products`, `stock_inventory`, `purchases`, or `purchase_history`; Accountant may view it read-only through `purchase_history` or `reports`; a Cashier explicitly granted `products` may view product cost on Products/Add Product screens only, never in POS or other interfaces. This is view-only access and does not grant purchase, batch-cost, profit, or margin access. Current `can_view_cost()` excludes Cashiers, so this approved change is not yet implemented; production behavior still requires live verification.
 
-- Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), manages shops/Admin accounts/page grants, and has no shop-business access or catalog-seeding exception. The initially empty Developer Shop uses a separate Admin login; all retained current non-Super-Admin accounts/data map to Shop 1. A shop may have multiple Admins. Super Admin grants each Admin's pages; Shop Admins may manage only Manager/Cashier staff in their shop and may grant only permissions they hold. Staff cannot manage accounts; only Super Admin manages Admins, shop assignment, and account status. Preserve creator-scoped Team view behavior. Only Super Admin may see shop IDs or read/edit private Admin notes through protected server paths. S1/S2 ACL and backup checks passed by owner report; owner chose no cleanup. S3 preparation/backfill/smoke checks passed by owner report: 24 business tables are assigned to one active Pharma Care shop, Super Admin is unassigned, 24 shop FKs/indexes exist, and privacy checks pass. Owner confirms `tenant_private` is unchecked in Data API Exposed schemas and Dashboard, Products, POS, and Sales History open without errors. Owner's inventory confirms all 24 tenant tables and `shops` have RLS enabled (not forced), no public views, and two self-scoped preference tables. S4 duplicate preflight passed. Diagnostic found four null-shop Super Admin audit events, no other unassigned business rows, and zero objects from the failed 011 attempt. Owner applied 011 (16 scoped indexes and 27 composite FKs); 011/013 smoke tests passed, validating all 27. Owner applied 014 and its smoke test passed, confirming old global keys and parent-only FKs were removed. Owner's 008 RLS metadata smoke test passed for all 24 tenant tables, shop-ID concealment, Super Admin own-profile/platform-event scope, and helper grants. Owner reports the app/role checks work; S4 is complete for the current single-shop phase. Cross-shop isolation remains a later release gate. Owner's S5 inventory found 70 routines (67 SECURITY DEFINER), none executable by anon, 58 executable by authenticated, and no SECURITY DEFINER routine missing a configured search_path. Owner reports batches 017, 019, 021, 023, 025, 027, 029, 032, and 039 with their smoke tests passed; Query 050 consolidates the remaining S5 preflight. Earlier inventories found five unscoped purchase RPCs and the global purchase counter; the live PR uniqueness index was already shop-scoped. Queries 036-038 found unscoped print, Trash, and stock-alert RPCs; `restore_trash_medicine(uuid)` is absent. Review Query 050 before preparing grouped S5 migrations.
+- Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), manages shops/Admin accounts/page grants, and has no shop-business access or catalog-seeding exception. The initially empty Developer Shop uses a separate Admin login; all retained current non-Super-Admin accounts/data map to Shop 1. A shop may have multiple Admins. Super Admin grants each Admin's pages; Shop Admins may manage only Manager/Cashier staff in their shop and may grant only permissions they hold. Staff cannot manage accounts; only Super Admin manages Admins, shop assignment, and account status. Preserve creator-scoped Team view behavior. Only Super Admin may see shop IDs or read/edit private Admin notes through protected server paths. S1/S2, single-shop S3/S4, and S5 051–054 are owner-reported complete; broader two-shop isolation remains open. S6 062 helper and 064 guard checks, 066/067 schema checks, and 068 scoped-settings smoke/final checks all PASS by owner report. 068's staff-with-settings write scenario was unavailable in current data. After the first 069 postflight signature error was corrected locally, the owner reran 070 (READY), supplied 071 (PASS; 27/27 write guards), and reports the corrected 069 rollback-only smoke test passed. Manage Users API v5 remains undeployed; do not run legacy `202610290002_manage_users_team.sql`, which would replace S5 shop-scoped Trash logic.
 
-Permission review findings from current source: Admin and Super Admin bypass assigned page permissions in both UI defaults and database `has_any_permission`; Super Admin can therefore reach business pages despite the platform-only target. Shop Admin user management can grant any permission and is scoped by `created_by`, not shop. Non-admin users granted `manage_users` can manage lower-role accounts, contrary to the approved staff boundary. Cashier defaults are POS and Customers; POS catalog omits cost, but `can_view_cost()` also denies Cashiers with `products`, so the approved Products-only cost exception is not implemented. Client page checks are UX controls; database/RPC/Edge Function checks remain authoritative.
+Current S6 source includes explicit module grants, platform-only Super Admin routing, Shops UI, server-backed shop identity/private notes, and Manage Users API v5 account/provisioning actions. Package 069 adds immediate suspension lockout and account limits without changing applied S4 RLS policies or `tenant_private.current_shop_id()`. After the first 069 postflight signature error was corrected locally, the owner reran 070 (READY), supplied 071 (PASS; 27/27 write guards), and reports the corrected rollback-only smoke test passed. No deployment is confirmed. Owner-reported checks for 062/064/066/067/068 remain valid; 068's staff-with-settings write case was unavailable. Two-shop acceptance and explicit Print Requests/Trash authorization review remain open. The approved Cashier Products-only cost exception is still not implemented (`can_view_cost()` excludes Cashiers); client page checks remain UX controls and do not replace database/server authorization.
 
 Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_entries, medicine_units, medicines, sale_payments, sales, stock_movements, and supplier_ledger; the earlier inventory also found authenticated access to medicine_barcode_seq. Later ACL changes removed those barcode-sequence grants, and query 024 confirms anon/authenticated lack USAGE. Profiles and suppliers retain REFERENCES/TRIGGER/MAINTAIN alongside SELECT. Direct per-user CRUD on user_favorites and user_sidebar_preferences is protected by own-row RLS. Sixteen current routines expose EXECUTE to anon and/or PUBLIC. Future-object defaults expose postgres-owned functions to anon/authenticated and sequences to authenticated; supabase_admin defaults expose tables, sequences, and functions to anon/authenticated. The five cost-bearing base tables have no anon/authenticated ACL listed in Q6. ACL lockdown files now match the six-argument save_supplier signature and exact rollback grants; table ACL migration also removes excess MAINTAIN and barcode-sequence grants. Supplier activation and demo cleanup no longer fall back to direct table writes. `npm run lint`, `npm run build`, and `git diff --check` pass; SQL has not been runtime-tested or applied.
 
@@ -99,9 +99,10 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 ## Current status
 
 - **S1/S2 owner-reported status:** S1 snapshot and S2 ACL checks passed; the 26-table backup-only verification passed and the owner chose to preserve all data. A1 is applied; optional A2 remains gated on its preflight. S3/S4 single-shop tenant foundations are owner-reported complete; two-shop isolation remains a release gate. See `docs/EXECUTION_PROGRESS.md` and `docs/MASTER_PLAN.md`.
-- **S2 known mismatch:** The expected `restore_trash_medicine(uuid)` RPC is absent from the live catalog despite the checked-in migration. Do not rerun `20261012170000_trash_bin_history.sql` wholesale; reconcile the RPC separately. A prior privilege check also found authenticated write privileges and barcode-sequence grants that needed the later ACL package.
+- **S2 known mismatch:** Live `restore_trash_medicine(uuid)` was absent despite the checked-in migration. Its separate scoped repair is prepared in the S5 remaining package; do not replay `20261012170000_trash_bin_history.sql` wholesale.
 - **Owner workflow:** Prefer one copyable read-only result per verification stage, keep forward and rollback SQL separate, and gate every database stage on owner-run checks. Owner prefers the Supabase SQL Editor and does not want DBCode connected; never ask for or record credentials. A credential appeared in a historical DBCode setup screenshot; ensure it has been rotated before reuse. Prior customer-display, user-management, SPA/PWA, alerts, and Track A hardening work is in feature docs and Git history.
-- **S4/S5 status:** Owner reports S4 stages 011/013/014/008 passed; all 24 tenant tables have `shop_id` and RLS, and 27 composite FKs plus shop-scoped indexes are validated. Two-shop isolation remains a release gate. Owner reports S5 batches 017, 019, 021, 023, 025, 027, 029, 032, and 039 and their smoke tests passed. Query 050A-C report zero purchase/reference mismatches, no purchase rows, one shop counter at 0, four shop-scoped print requests with none pending, and 56 shop-scoped Trash events with no null shop IDs; `restore_trash_medicine()` is absent. Query 050E found unscoped `customer_accounts_summary()`; owner reports 050F applied and its cross-shop smoke test passed. Query 050G now confirms other authenticated business RPCs are unscoped; grouped 040-043 remains blocked.
+- **S4/S5 status:** S4 stages 011/013/014/008 and S5 batches 017–054 are owner-reported complete. The owner reports 051 dry run, 052 apply, all six 053 checks PASS, and 054 `unscoped_business_count = 0`; the broader two-shop release gate remains open. `RUN_S5_REMAINING.md` is retained as history and must not be rerun.
+- **Done in source:** POS Held bills use user-scoped browser storage, F3/F6 shortcuts, cart replacement on resume, and confirmation before delete. The POS cart is latest-item-first, uses an editable stock-bounded quantity, and keeps checkout controls pinned while only the item list scrolls. Lint, tests, and production build pass.
 - **Fixed in `b62b547`:** Product-controlled label text is HTML-escaped in generated print markup using the shared receipt helper; hostile markup and quoted attribute payloads are covered by tests. The existing receipt/memo rendering behavior is unchanged.
 - **Done/history:** Barcode generation/printing, Products/Master Data/Stock Inventory redesigns, shared receipts/POS printing, and Phase 4a owner-reported migrations are recorded in feature docs. `docs/REDESIGN_PROGRESS.md` has stale Phase 4 status; newer source and owner report supersede it. Barcode follow-up prompt: `docs/barcode-labels-agent-prompt.md`.
 - **In progress:** Purchases and Purchase History use RPCs. The owner reports that 4c's direct-table revokes are applied and verified in the test-data Supabase project. Verify the deployed `can_view_cost()` definition and table grants before release.
@@ -119,14 +120,15 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - **W6 TypeScript baseline:** `strict` and `noUnusedParameters` are enabled after both command-line measurements returned zero diagnostics. `noUnusedLocals` remains disabled because its 16 remaining diagnostics are in preserved components and the retained `RepositoryReviewView` import. The broader source cleanup is committed as `cce45bb`; ESLint packages/config remain pending owner approval and TypeScript 7 compatibility review. Details and release-date evidence are in `docs/EXECUTION_PROGRESS.md`.
 - **W7 client bundle optimization:** Sidebar screens and modal views load on demand (Dashboard, login, and shell remain eager); Purchase History XLSX, receipt print workflow, and barcode label code are deferred until used. Loading and retryable screen-error states are present. First-load production gzip measured 172.26 kB, down from 418.24 kB and below the 200 kB target. Lint, tests, and build pass; see `docs/EXECUTION_PROGRESS.md` for emitted chunk sizes. Physical slow/offline-network and route-refresh checks remain manual.
 - **Security ACL plan:** Owner-reported live ACL audit found `stock_batches` and the other four 4c cost-bearing tables revoked; a later `stock_batches` grant had undone its revoke once. Reassert revokes in the new lockdown migration. Staged files A-D and rollback scripts are proposals only and have not been applied. The owner reports profile DML already revoked; file D reasserts that state.
-- **Next:** 050H's smoke test reached its synthetic `sale_items` fixture and failed the configured unit-price validation. The fixture has been corrected to match configured unit sale prices. The owner then reported “successful, no rows”; the script's final `ROLLBACK` could hide the earlier PASS result. The script now rolls back before its final PASS `SELECT`. Owner should recopy and rerun only `supabase/fresh/050H_scope_authenticated_business_rpcs.smoke_test.sql`; do not rerun the migration. Grouped 040-043 stays blocked until the visible PASS row is returned. The assistant has not run live SQL or pushed.
+- **Next:** S5 050F/050H/053/054 and S6 packages 062/064/066/067/068 have passed by owner report; do not rerun them. Run the new S6 070 dry run, 069 apply/smoke, and 071 final check only by owner. Deploy API v5/frontend only after those checks pass. Two-shop acceptance and Print Requests/Trash authorization review remain.
 
 ## Known issues and Later
 
-- Query 050G owner output confirms authenticated `master_data_overview()`, `pos_customers()`, `sales_history(integer)`, and `record_customer_payment(uuid, integer, text)` lacked current-shop checks; the first three read across all shops, while payment used a customer ID without a same-shop guard. `save_customer(...)` relied on the shop-assignment trigger rather than explicit RPC scope. 050H scoped replacements and safe rollback are prepared. Its smoke test passed function preflight; after correcting the fixture prices, the owner reported success with no rows. The PASS `SELECT` now follows `ROLLBACK` so the result is visible; owner must rerun the updated smoke test. Anon and PUBLIC execute were false in the supplied 050G result.
-- Owner-approved multi-shop decisions and the detailed plan are in `docs/MULTI_SHOP_FULL_PLAN.md` and `docs/MASTER_PLAN.md`. S3/S4 single-shop tenant foundations are applied by owner report; cross-shop isolation and later S6 remain incomplete. Private notes require reviewed server/database support, not browser-local storage. Keep owner-run SQL stages gated on reviewed outputs.
+- Query 050G owner output confirms authenticated `master_data_overview()`, `pos_customers()`, `sales_history(integer)`, and `record_customer_payment(uuid, integer, text)` lacked current-shop checks; the first three read across all shops, while payment used a customer ID without a same-shop guard. `save_customer(...)` relied on the shop-assignment trigger rather than explicit RPC scope. Prepared 050H replacements and safe rollback; owner reports its smoke test PASS for all five RPCs. The assistant has not independently applied or runtime-tested SQL. Anon and PUBLIC execute were false in the supplied 050G result.
+- The S5 preflight found `stock_alerts_summary(integer)` unscoped and `stock_alerts_list()` absent; the owner reports 052 applied, all 053 checks passed, and 054 returned `unscoped_business_count = 0`.
+- Owner-approved multi-shop decisions and the detailed plan are in `docs/MULTI_SHOP_FULL_PLAN.md` and `docs/MASTER_PLAN.md`. S3/S4 single-shop tenant foundations and S5 business RPC scoping are complete by owner report; cross-shop isolation remains open. S6 060/061 discovery, 062 helpers, 064 guards, 066/067 schema, and 068 scoped settings functions passed owner checks. Package 069, Shops UI, private-note API, and API v5 provisioning/recovery code are prepared locally, not applied or deployed. Owner-supplied 063 showed the prior status RPC's global Admin count; package 069 adds per-shop Admin/staff caps. Super Admin remains platform-only. Explicit Print Requests/Trash authorization and two-shop acceptance remain open. Partial Team SQL objects exist.
 - Optional A2 default-privilege changes remain unapplied. The Q6 inventory omits global default ACLs; do not apply A2 or run either rollback until `supabase/fresh/trackA/002_default_privilege_preflight.sql` has been run by the owner and the rollback has been matched to its output.
-- Current code conflicts with some role targets: Admin/Super Admin defaults grant every module, Admin can grant all permission keys, and staff with `manage_users` may manage lower-role accounts. The shop schema exists, but explicit page grants and platform-only Super Admin business boundaries still need implementation and owner verification.
+- S6 source uses explicit module grants, restricts Shop Admin assignment to Manager/Cashier staff in the same shop, and keeps Super Admin platform-only. Packages 064/066/067/068 passed owner-provided checks; package 069's owner-reported smoke and 071 aggregate checks pass. API v5 is local only. Suspension blocks access immediately. Do not treat client checks as server authorization.
 - DBCode VS Code extension reported a SQL language-server startup timeout followed by closed connections in editor logs on 2026-10-13; the exact cause is unknown and no database operation or project runtime failure is indicated by those log lines.
 - Live Supabase schema/RPC availability may lag behind checked-in migrations; verify migration state before diagnosing app behavior.
 - Sidebar favorites and their one-time tip dismissal are persisted per `auth.uid()` with user-only RLS and no `shop_id`; they are not yet isolated by shop even though the tenant helper exists.
@@ -136,13 +138,13 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - Historical readiness baseline (2026-10-21, intended development/test project; superseded by later S3/S4 owner reports): 26 public tables had RLS enabled/not forced and no shop columns; no views, Storage buckets/policies, Realtime publication tables, or migration ledger were listed. The inventory found 57 functions, 55 SECURITY DEFINER, 16 anon-executable and 11 PUBLIC-executable. No runtime anon RPC call was run at that time. The owner later reported completing the S3/S4 tenant foundation and ACL stages. Do not use this historical baseline as current schema evidence.
 - A previous sign-in error was reported, but current authentication/runtime status was not tested in this audit. POS source requires active medicine, configured units, and positive eligible stock; the stock alert function requires `min_stock_alert > 0` for both low and out alerts.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
-- The Manage Users UI requires `api_version: 2`; owner-run CLI output confirms the matching `manage-users` function was deployed to project `itdetfyxrwixhxsfydfz` on 2026-11-04. Refresh and verify in the app; do not redeploy unless the warning remains. If a PowerShell/VS Code terminal cannot resolve Node, restart VS Code to inherit the persisted user PATH or append `C:\Program Files\nodejs` to that terminal's `$env:Path`. Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` remain local until their separate migration/function deployment.
+- The Manage Users UI expects `api_version: 5`; the matching Edge Function remains local and deployment is unverified. Owner reports package 069 smoke and 071 final checks PASS. Deploy the matching function and frontend together only after remaining release checks are ready. If a PowerShell/VS Code terminal cannot resolve Node, restart VS Code to inherit the persisted user PATH or append `C:\Program Files\nodejs` to that terminal's `$env:Path`. Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` remain local until their separate migration/function deployment.
 - Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Product label printing supports linear formats only; QR-code generation is not implemented. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
 - Supabase bootstrap hazard: `supabase/baseline/00_baseline_schema.sql` is a reconstructed schema reference, not a complete dump. The migration directory also contains timestamped barcode rollback files; do not apply them as forward migrations. Bootstrap instructions and metadata-only comparison queries are in `docs/STAGING_BOOTSTRAP.md`.
 - Approved business rule: positive stock in `ACTIVE`/`NEAR_EXPIRY` batches for an active medicine remains sellable through expiry (`expiry_date >= current_date`). `src/utils/fefo.ts` uses this boundary; verify the deployed RPC uses the same rule.
 - Trash Bin tracks app product/supplier deactivation and purchase-void workflows; out-of-band physical deletions made through another client or dashboard are not captured.
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
-- Shared settings across counters are not implemented; receipt templates and some preferences are browser-local.
+- WhatsApp templates and some preferences remain browser-local; billing, receipt, Pharmacy Memo, and shop identity settings have server-backed paths.
 - Sale-return request/review is implemented in source; the owner reports the rollback-only RPC smoke test passed. Cash payout/accounting reconciliation, broader UI workflows, and Sales History reporting remain unverified. Sales History reprint is not implemented; return memo rendering and print-request review are separate.
 - Direct ESC/POS printer-driver support is not implemented; browser printing uses the browser print dialog.
 - Several screens still use mock/in-memory data; identify persistence from the current component before changing it.
@@ -150,7 +152,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
 - POS product browsing uses the permission-checked `pos_catalog()` RPC and its response excludes cost data. Sale posting uses `post_sale()` and sales/customer summaries use RPCs. Dashboard stock KPIs still use sample `INITIAL_PRODUCTS`; Cash Book transactions/expenses remain in memory; sales reports do not yet reconcile persisted return records. The active POS/server sale path does not capture or enforce prescription proof for `requires_prescription` medicines; see `docs/audit/LOGIC_AUDIT.md`.
 - Future public tables must explicitly grant only required privileges to `authenticated` and enable appropriate RLS. The 2026-10-21 live catalog found 16 anon-executable and 11 PUBLIC-executable functions; tenancy work must revoke those grants, retain required authenticated EXECUTE, and set safe default function privileges. No pre-login function requirement was identified in the frontend scan; runtime verification remains pending.
-- Sale and purchase identifiers are generated in source and constrained by the current single-shop schema; verify uniqueness and retry/concurrency behavior against the deployed database. Per-shop numbering awaits tenant scoping; gap-free guarantees are deferred unless concurrency, rollback, retry, and failure tests prove them.
+- Sale and purchase identifiers are generated in source and constrained by the current schema; verify uniqueness and retry/concurrency behavior against the deployed database. S5's shop-keyed purchase counter and per-shop pending print-reference index are owner-reported applied. Gap-free guarantees remain unproven.
 - Discount rules to enforce inside the future post_sale RPC: per-role maximum percent, discount never above the bill, never below batch cost (cashier only sees a generic 'Discount not allowed'), discount stored in paisa with the sale, audit_logs entry for discounts above a threshold.
 - Enforce the Rs 200 maximum discount and the role percent caps inside the future post_sale RPC; make the Rs 200 limit editable in Settings.
 
@@ -162,18 +164,14 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 
 ## Changelog
 
-- 2026-11-14 — Owner reports 050F applied and its smoke test passed: same-shop customer and ledger visible, foreign-shop data hidden, and platform Super Admin denied. The 050F smoke test uses synthetic fixtures and rolls them back. Remaining grouped S5 work awaits review of other 050D SECURITY DEFINER definitions; marker flags alone are not proof of tenant safety.
-- 2026-11-14 — The owner no longer had the earlier 050D output, so prepared 050G as one read-only JSON query for remaining public SECURITY DEFINER candidates. Reviewed the owner-provided result: four authenticated business RPCs were unscoped, and `save_customer` relied on the shop-assignment trigger. The owner chose scoped fixes; prepared 050H migration, disable-only rollback, and rollback-only two-shop smoke test. SQL parsed locally only; no live SQL was run.
-- 2026-11-14 — The owner-reported 050H smoke test failed sale-item unit-price validation; its foreign unit fixture was 1,000 paisa while the sale item used 9,000,000 paisa. Corrected both synthetic unit fixtures to set explicit matching sale prices, and added a fixture-price assertion. Rerun the smoke test only; migration is not to be rerun. No live SQL was run by the assistant.
-- 2026-11-14 — The owner reported the corrected 050H smoke test returned “successful, no rows.” Moved its PASS result query after the final fixture-cleanup `ROLLBACK` so SQL Editor displays the result; owner must rerun the updated smoke test. The assistant has not run live SQL.
-- 2026-11-14 — At the owner's explicit request, pushed the prepared S5 SQL package and related documentation to `feature/team-view-manage-users` in commit `ac76eb8`. No live SQL or deployment was performed by the assistant.
-- 2026-11-12 — Added POS customer-type/details capture and compact POS-only layout, plus inclusive local-date Custom Analytics backed by a shop-scoped date-range RPC. TypeScript, tests, and build pass; database migration is owner-run and unapplied here.
-- 2026-11-11 — S2 backup-only verification passed: 26 tables, complete, and no checks. The owner chose no cleanup; preserve all current data.
-- 2026-11-11 — S3 preflight found 26 RLS-enabled tables, no shop objects, and 66 policies. Owner chose Shop 1 `Pharma Care`; privilege/RPC checks found table-wide SELECT and a `request_print` response exposing whole-row data. S3 therefore uses safe column grants/projections and removes `shop_id` from that response; no Admin UUID is needed, and client-supplied shop IDs are not trusted.
-- 2026-11-12 — Initial S3 DDL/backfill failed with PostgreSQL 55006 and left no objects behind; schema preparation and locked backfill were split. Owner reports revised prep/backfill/smoke passed: 24 tables assigned to one active Pharma Care shop, Super Admin unassigned, 24 FKs/indexes, privacy checks pass, and `tenant_private` remains unexposed; Dashboard, Products, POS, and Sales History open without errors.
-- 2026-11-12–13 — Owner prefers Supabase SQL Editor, not DBCode. S4 is complete for the single-shop phase by owner report. Owner reports S5 batches 017, 019, 021, 023, 025, 027, 029, and 032 passed. Queries 034-038 found no purchases, a valid per-shop PR index and counter, two active unreferenced suppliers without shop assignment, six unscoped print RPCs, unscoped Trash operations with one missing restore function, and an unscoped stock-alert summary. No live SQL was run by the assistant or push performed.
-- 2026-11-10–11 — Added the Vercel SPA fallback and per-user customer-display links; polished installation, Trash Bin, password visibility, design tokens/icons, and TopNav password access. Tests, TypeScript, and build passed; hosted SQL/Edge Function deployment and authenticated visual verification remain owner work.
-- 2026-11-03–09 — Owner-run S1/S2 and Manage Users deployment completed. Earlier barcode/returns, Admin controls, UI, performance, and POS work is documented in feature plans and Git history.
+- 2026-11-14 — Owner reports S5 050F/050H/054A/B and all six 053 checks PASS after local test-fixture fixes; no grants changed. Prepared S6 Shops/account-management source and packages 069–071; SQL/deployment remain owner-run.
+- 2026-11-15 — Corrected a package 069 postflight signature check and rollback-only smoke target; owner reports 070 READY, 071 PASS (27/27 write guards), and the corrected 069 smoke test PASS. Deployment is not confirmed.
+- 2026-11-15 — A platform Super Admin screenshot showed an erroneous pending-print-count toast. The client had polled the shop-scoped RPC for Super Admin; `App.tsx` now uses the `print-requests` page-access rule so platform-only Super Admins do not request that shop count. TypeScript, permission tests, alternate-output production build, and diff check pass; the browser change is not yet runtime-verified.
+- 2026-11-15 — Owner reports package 072 final check PASS and successful two-shop testing. Exact scenario coverage and deployed frontend/Edge Function versions are unverified; Print Requests/Trash authorization review remains open. Shops has collapsed rows, expandable shop/profile-grant editing, logo upload, and package 072 Storage policies.
+- 2026-11-15 — Reworked Demo into a full-screen isolated session with role-specific sample navigation/data. The Super Admin Auth session stays active; **Sign out demo** clears in-memory state and returns to the Super Admin dashboard. Role grants are representative templates, not a particular user's saved grants. Demo pages are mock UI, not the live feature screens or an authorization test; no demo business APIs, SQL, or deployment are involved.
+- 2026-11-14 — S6 062/064/068 checks PASS by owner; added grants, platform-only routing, shared settings, guarded account paths, POS refinements, and Held bills. The 068 staff-granted write case was unavailable.
+- 2026-11-03–14 — Added POS customer details/analytics and completed owner-reported S1–S4/S5 work; deployment and hosted validation remain owner work.
+- 2026-11-15 — Owner confirms saving the Admin `Settings` grant with success and signing out/in, but the Admin still returns to Dashboard. The screenshot shows the grant selected; the exact profile permissions returned to the fresh session and matching account/project remain unverified. Shared browser remains at Login. Console showed Supabase Auth/API errors; project URL omitted.
 
 ## Legacy barcode migrations
 
@@ -189,15 +187,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-14T00:14:25.895Z
+Generated at (UTC): 2026-11-15T06:22:24.243Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- docs: record S5 package push
 - Prepare S5 tenant-scope SQL stages
 - Complete POS, analytics, and tenant rollout work
 - Fix Vercel customer display deep links
 - Persist customer display link per account
-- Complete POS settings and access-control updates
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
@@ -220,8 +218,13 @@ npm scripts:
 - - `test:print-request-editor`: `tsx --test src/utils/printRequestEditor.test.ts`
 - - `test:trash-bin`: `tsx --test src/utils/trashBin.test.ts`
 - - `test:store-settings`: `tsx --test src/utils/storeSettings.test.ts`
+- - `test:shop-settings`: `tsx --test src/data/shopSettings.test.ts`
+- - `test:shop-logo`: `tsx --test src/utils/shopLogo.test.ts`
+- - `test:demo-preview`: `tsx --test src/utils/demoPreview.test.ts`
 - - `test:install-prompt`: `tsx --test src/utils/installPrompt.test.ts`
 - - `test:pos-customer`: `tsx --test src/utils/posCustomer.test.ts`
+- - `test:held-bills`: `tsx --test src/utils/heldBills.test.ts`
+- - `test:payment-details`: `tsx --test src/utils/paymentDetails.test.ts src/utils/splitPayments.test.ts`
 - - `test:report`: `tsx --test src/utils/salesReport.test.ts`
 - - `test:discount`: `tsx --test src/utils/discount.test.ts`
 - - `test:barcode-scanner`: `tsx --test src/utils/useBarcodeScanner.test.ts`
@@ -230,7 +233,7 @@ npm scripts:
 - - `test:sidebar`: `tsx --test src/components/sidebarPinLogic.test.ts`
 - - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
 - - `test:customer-display`: `tsx --test src/utils/customerDisplay.test.ts`
-- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:install-prompt && npm run test:pos-customer && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display`
+- - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display`
 
 Dependencies and versions:
 - - `@e965/xlsx` ^0.20.3 (dependency)
@@ -267,6 +270,8 @@ src/
     src/components/CustomerDisplayView.tsx
     src/components/CustomerLedgerScreen.tsx
     src/components/DashboardView.tsx
+    src/components/DemoRolePreview.tsx
+    src/components/DemoWorkspace.tsx
     src/components/DiscountBox.tsx
     src/components/EndOfDayModal.tsx
     src/components/GlowCredit.css
@@ -282,6 +287,7 @@ src/
     src/components/masterDataSimilarity.ts
     src/components/MasterDataView.tsx
     src/components/MyPrintRequestsView.tsx
+    src/components/PaymentProviderSelect.tsx
     src/components/PharmaLogo.css
     src/components/PharmaLogo.tsx
     src/components/POSBillingView.tsx
@@ -291,6 +297,7 @@ src/
     src/components/returns/
     src/components/SalesHistoryView.tsx
     src/components/SettingsView.tsx
+    src/components/ShopsView.tsx
     src/components/Sidebar.tsx
     src/components/sidebarMenuPosition.ts
     src/components/sidebarPages.ts
@@ -311,6 +318,7 @@ src/
   src/data/
     src/data/demoDataManager.ts
     src/data/mockPharmacyData.ts
+    src/data/paymentProviders.ts
     src/data/posCatalog.ts
     src/data/posCatalogLogic.test.ts
     src/data/posCatalogLogic.ts
@@ -318,6 +326,8 @@ src/
     src/data/returnLogic.ts
     src/data/saleReturns.ts
     src/data/sales.ts
+    src/data/shopSettings.test.ts
+    src/data/shopSettings.ts
     src/data/sidebarPreferences.ts
     src/data/stockAlertLogic.test.ts
     src/data/stockAlertLogic.ts
@@ -332,15 +342,21 @@ src/
     src/utils/auth.ts
     src/utils/customerDisplay.test.ts
     src/utils/customerDisplay.ts
+    src/utils/demoPreview.test.ts
+    src/utils/demoPreview.ts
     src/utils/discount.test.ts
     src/utils/discount.ts
     src/utils/fefo.test.ts
     src/utils/fefo.ts
     src/utils/fetchAllSupabaseRows.ts
+    src/utils/heldBills.test.ts
+    src/utils/heldBills.ts
     src/utils/installPrompt.test.ts
     src/utils/installPrompt.ts
     src/utils/labelUtils.test.ts
     src/utils/labelUtils.ts
+    src/utils/paymentDetails.test.ts
+    src/utils/paymentDetails.ts
     src/utils/posCustomer.test.ts
     src/utils/posCustomer.ts
     src/utils/printRequestEditor.test.ts
@@ -353,6 +369,11 @@ src/
     src/utils/receipt.ts
     src/utils/salesReport.test.ts
     src/utils/salesReport.ts
+    src/utils/shopLogo.test.ts
+    src/utils/shopLogo.ts
+    src/utils/shopSettings.ts
+    src/utils/splitPayments.test.ts
+    src/utils/splitPayments.ts
     src/utils/stockAlertsEvents.ts
     src/utils/storageMigration.ts
     src/utils/storeSettings.test.ts
@@ -376,18 +397,24 @@ Test files:
 - src/components/sidebarPinLogic.test.ts
 - src/data/posCatalogLogic.test.ts
 - src/data/returnLogic.test.ts
+- src/data/shopSettings.test.ts
 - src/data/stockAlertLogic.test.ts
 - src/permissions.test.ts
 - src/utils/customerDisplay.test.ts
+- src/utils/demoPreview.test.ts
 - src/utils/discount.test.ts
 - src/utils/fefo.test.ts
+- src/utils/heldBills.test.ts
 - src/utils/installPrompt.test.ts
 - src/utils/labelUtils.test.ts
+- src/utils/paymentDetails.test.ts
 - src/utils/posCustomer.test.ts
 - src/utils/printRequestEditor.test.ts
 - src/utils/printSnapshot.test.ts
 - src/utils/receipt.test.ts
 - src/utils/salesReport.test.ts
+- src/utils/shopLogo.test.ts
+- src/utils/splitPayments.test.ts
 - src/utils/storeSettings.test.ts
 - src/utils/supabaseError.test.ts
 - src/utils/trashBin.test.ts

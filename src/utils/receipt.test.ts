@@ -157,6 +157,21 @@ test('buildMemoData whitelists sale receipt fields and strips all cost and profi
   assert.equal(data.isCredit, false);
 });
 
+test('prints provider and transaction reference on the pharmacy memo', () => {
+  const saleWithDetails: CompletedSale = {
+    ...sale,
+    paymentMethod: PaymentMethod.CARD,
+    paymentDetails: [{
+      paymentMethod: PaymentMethod.CARD,
+      providerId: 'nayapay',
+      amountPaisa: 90000,
+      reference: 'TID-123',
+    }],
+  };
+  const html = memoHtml(buildMemoData(saleWithDetails));
+  assert.match(html, /NayaPay: Rs\. 900\.00 · Ref: TID-123/);
+});
+
 test('prints the real discount and discounted balance for a partially paid sale', () => {
   const discountedSale: CompletedSale = {
     ...sale,

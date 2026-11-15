@@ -3,6 +3,12 @@ import test from 'node:test';
 import {
   assignableRolesFor,
   canAssignRole,
+  canAccessShopProfile,
+  canUseManagementActionDuringPasswordChange,
+  canManagePlatformShops,
+  canEditManagedUser,
+  hasValidShopAssignment,
+  isShopRoleLimitReached,
   canManageTarget,
   canViewAdminTeam,
   canViewManagedUser,
@@ -27,10 +33,30 @@ const emptyChange = {
   activeSuperAdminCount: 1,
 };
 
-test('admins are assigned only lower roles; super admins may assign admin and super_admin', () => {
-  assert.deepEqual(assignableRolesFor('admin'), ['cashier', 'manager', 'accountant']);
-  assert.ok(assignableRolesFor('super_admin').includes('admin'));
-  assert.ok(assignableRolesFor('super_admin').includes('super_admin'));
+test('Shop Admins assign staff; Super Admins assign Admin accounts only', () => {
+  assert.deepEqual(assignableRolesFor('admin'), ['cashier', 'manager']);
+  assert.deepEqual(assignableRolesFor('super_admin'), ['admin']);
+  assert.equal(canAssignRole('super_admin', 'super_admin'), false);
+  assert.deepEqual(assignableRolesFor('manager', ['manage_users']), []);
+});
+
+test('only platform Super Admins manage shops and private platform resources', () => {
+  assert.equal(canManagePlatformShops('super_admin'), true);
+  assert.equal(canManagePlatformShops('admin'), false);
+  assert.equal(canManagePlatformShops('manager'), false);
+});
+
+test('shop staff share one role-independent profile cap', () => {
+  assert.equal(isShopRoleLimitReached('admin', 10, 0, 10, 100), true);
+  assert.equal(isShopRoleLimitReached('cashier', 0, 99, 10, 100), false);
+  assert.equal(isShopRoleLimitReached('manager', 0, 100, 10, 100), true);
+  assert.equal(isShopRoleLimitReached('super_admin', 0, 1000, 10, 100), false);
+});
+
+test('first-login accounts can only call the password completion action', () => {
+  assert.equal(canUseManagementActionDuringPasswordChange('complete_first_login_password', true), true);
+  assert.equal(canUseManagementActionDuringPasswordChange('list', true), false);
+  assert.equal(canUseManagementActionDuringPasswordChange('list', false), true);
 });
 
 test('admin cannot create or manage admin users while super_admin can manage admins', () => {
@@ -146,10 +172,9 @@ test('does not block removing an inactive admin when another active admin remain
   }), null);
 });
 
-  test('protects the last active admin from deletion, demotion, and deactivation', () => {
+  test('protects the last active admin from deletion and deactivation', () => {
     for (const change of [
       { action: 'delete' as const },
-      { action: 'update' as const, nextRole: 'cashier' as const, nextActive: true },
       { action: 'update' as const, nextRole: 'admin' as const, nextActive: false },
     ]) {
       assert.match(profileChangeDenial({
@@ -176,14 +201,35 @@ test('does not block removing an inactive admin when another active admin remain
   }), null);
 });
 
-  test('Manage Users holders can manage lower roles but not another Manage Users holder', () => {
+  test('only Admin roles can manage users; Shop Admins cannot grant Manage Users', () => {
     const permissions = ['manage_users', 'customers', 'pos'];
-    assert.deepEqual(assignableRolesFor('manager', permissions), ['cashier', 'manager', 'accountant']);
-    assert.deepEqual(grantablePermissionsFor('manager', permissions, [
+    assert.deepEqual(assignableRolesFor('manager', permissions), []);
+    assert.deepEqual(grantablePermissionsFor('admin', permissions, [
       'pos', 'customers', 'manage_users', 'reports', 'pos_print_sale', 'pos_print_payment',
     ]), ['customers', 'pos']);
-    assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['pos'], permissions), true);
-    assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['manage_users'], permissions), false);
+    assert.equal(canManageTarget('manager', 'actor', 'user', 'cashier', ['pos'], permissions), false);
+    assert.equal(canManageTarget('admin', 'actor', 'user', 'cashier', ['pos'], permissions, 'actor'), true);
+    assert.equal(permissionGrantDenial('admin', permissions, ['pos']), null);
+    assert.match(permissionGrantDenial('admin', permissions, ['reports']) ?? '', /only grant permissions that you hold/);
+    assert.match(permissionGrantDenial('admin', permissions, ['manage_users']) ?? '', /Only super_admin/);
+    assert.equal(canUseManageUsers('manager', permissions), false);
+  });
+
+  test('Manage Users profile scope requires the same shop for Admins and no shop for Super Admins', () => {
+    assert.equal(canAccessShopProfile('admin', 'shop-a', 'shop-a'), true);
+    assert.equal(canAccessShopProfile('admin', 'shop-a', 'shop-b'), false);
+    assert.equal(canAccessShopProfile('admin', 'shop-a', null), false);
+    assert.equal(canAccessShopProfile('admin', null, null), false);
+    assert.equal(canAccessShopProfile('super_admin', null, 'shop-a'), true);
+    assert.equal(canAccessShopProfile('super_admin', 'shop-a', 'shop-a'), false);
+  });
+
+  test('profile shop assignment matches platform versus shop-role invariants', () => {
+    assert.equal(hasValidShopAssignment('super_admin', null), true);
+    assert.equal(hasValidShopAssignment('super_admin', 'shop-a'), false);
+    assert.equal(hasValidShopAssignment('admin', 'shop-a'), true);
+    assert.equal(hasValidShopAssignment('cashier', null), false);
+    assert.equal(hasValidShopAssignment('unknown', 'shop-a'), false);
   });
 
   test('admins can manage only their own created users; unassigned users stay inaccessible', () => {
@@ -200,7 +246,7 @@ test('does not block removing an inactive admin when another active admin remain
     assert.equal(canViewManagedUser('admin', 'admin-a', 'member', 'admin-b'), false);
     assert.equal(canViewManagedUser('admin', 'admin-a', 'legacy', null), false);
     assert.equal(canViewManagedUser('super_admin', 'root', 'legacy', null), true);
-    assert.equal(canViewManagedUser('manager', 'manager-a', 'member', null), true);
+    assert.equal(canViewManagedUser('manager', 'manager-a', 'member', null), false);
   });
 
   test('only super_admin may access an Admin team view', () => {
@@ -208,6 +254,13 @@ test('does not block removing an inactive admin when another active admin remain
     assert.equal(canViewAdminTeam('super_admin', 'cashier'), false);
     assert.equal(canViewAdminTeam('admin', 'admin'), false);
     assert.equal(canViewAdminTeam('manager', 'admin'), false);
+  });
+
+  test('Super Admin profile editing is limited to Admin accounts and self', () => {
+    assert.equal(canEditManagedUser('super_admin', 'admin', false), true);
+    assert.equal(canEditManagedUser('super_admin', 'cashier', false), false);
+    assert.equal(canEditManagedUser('super_admin', 'super_admin', true), true);
+    assert.equal(canEditManagedUser('admin', 'manager', false), true);
   });
 
   test('only super_admin may change account status or remove user access', () => {
@@ -264,19 +317,20 @@ test('does not block removing an inactive admin when another active admin remain
     }).status, 'removed');
   });
 
-  test('only admins or active profiles with Manage Users permission pass the edge-function gate', () => {
+  test('Manage Users requires an explicit grant for Shop Admins', () => {
     assert.equal(canUseManageUsers('cashier', []), false);
-    assert.equal(canUseManageUsers('manager', ['manage_users']), true);
-    assert.equal(canUseManageUsers('admin', []), true);
+    assert.equal(canUseManageUsers('manager', ['manage_users']), false);
+    assert.equal(canUseManageUsers('admin', []), false);
+    assert.equal(canUseManageUsers('admin', ['manage_users']), true);
     assert.equal(canUseManageUsers('super_admin', []), true);
   });
 
-  test('Manage Users holders can grant only held permissions and cannot grant Manage Users', () => {
+  test('Shop Admins can grant only permissions they hold and cannot grant Manage Users', () => {
     const callerPermissions = ['manage_users', 'customers', 'pos'];
-    assert.equal(permissionGrantDenial('manager', callerPermissions, ['customers', 'pos']), null);
-    assert.match(permissionGrantDenial('manager', callerPermissions, ['reports']) ?? '', /only grant permissions that you hold/);
-    assert.match(permissionGrantDenial('manager', callerPermissions, ['manage_users']) ?? '', /Only admin or super_admin/);
-    assert.equal(permissionGrantDenial('admin', [], ['manage_users']), null);
+    assert.equal(permissionGrantDenial('admin', callerPermissions, ['customers', 'pos']), null);
+    assert.match(permissionGrantDenial('admin', callerPermissions, ['reports']) ?? '', /only grant permissions that you hold/);
+    assert.match(permissionGrantDenial('admin', callerPermissions, ['manage_users']) ?? '', /Only super_admin/);
+    assert.equal(permissionGrantDenial('manager', callerPermissions, ['customers']), 'Only admin or super_admin may manage users.');
   });
 
   test('normalizes print sub-permissions and strips them when POS is absent', () => {

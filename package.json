@@ -24,8 +24,13 @@
     "test:print-request-editor": "tsx --test src/utils/printRequestEditor.test.ts",
     "test:trash-bin": "tsx --test src/utils/trashBin.test.ts",
     "test:store-settings": "tsx --test src/utils/storeSettings.test.ts",
+    "test:shop-settings": "tsx --test src/data/shopSettings.test.ts",
+    "test:shop-logo": "tsx --test src/utils/shopLogo.test.ts",
+    "test:demo-preview": "tsx --test src/utils/demoPreview.test.ts",
     "test:install-prompt": "tsx --test src/utils/installPrompt.test.ts",
     "test:pos-customer": "tsx --test src/utils/posCustomer.test.ts",
+    "test:held-bills": "tsx --test src/utils/heldBills.test.ts",
+    "test:payment-details": "tsx --test src/utils/paymentDetails.test.ts src/utils/splitPayments.test.ts",
     "test:report": "tsx --test src/utils/salesReport.test.ts",
     "test:discount": "tsx --test src/utils/discount.test.ts",
     "test:barcode-scanner": "tsx --test src/utils/useBarcodeScanner.test.ts",
@@ -34,7 +39,7 @@
     "test:sidebar": "tsx --test src/components/sidebarPinLogic.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
     "test:customer-display": "tsx --test src/utils/customerDisplay.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:install-prompt && npm run test:pos-customer && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

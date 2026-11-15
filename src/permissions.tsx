@@ -15,6 +15,7 @@ export const MODULES = [
   { key: 'stock_inventory', label: 'Stock Inventory' },
   { key: 'reports', label: 'Reports' },
   { key: 'manage_users', label: 'Manage Users' },
+  { key: 'settings', label: 'Settings' },
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]['key'];
@@ -38,7 +39,6 @@ export function setModulePermission(
   permissions: readonly PermissionKey[],
   module: ModuleKey,
   enabled: boolean,
-  defaultSalePrint = false,
 ): PermissionKey[] {
   const next = new Set(permissions);
   if (enabled) next.add(module);
@@ -47,8 +47,6 @@ export function setModulePermission(
   if (module === 'pos') {
     if (!enabled) {
       POS_PRINT_PERMISSION_KEYS.forEach((permission) => next.delete(permission));
-    } else if (defaultSalePrint && !POS_PRINT_PERMISSION_KEYS.some((permission) => next.has(permission))) {
-      next.add('pos_print_sale');
     }
   }
 
@@ -67,19 +65,6 @@ export function setPosPrintPermission(
   return normalizePermissionSelection([...next]);
 }
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, readonly ModuleKey[]> = {
-  [UserRole.CASHIER]: ['pos', 'customers'],
-  [UserRole.MANAGER]: [
-    'pos', 'products', 'categories', 'suppliers', 'customers',
-    'sales_history', 'purchase_history', 'purchases', 'stock_inventory', 'reports',
-  ],
-  [UserRole.ACCOUNTANT]: [
-    'customers', 'suppliers', 'sales_history', 'purchase_history', 'expenses', 'reports',
-  ],
-  [UserRole.ADMIN]: MODULES.map(({ key }) => key),
-  [UserRole.SUPER_ADMIN]: MODULES.map(({ key }) => key),
-};
-
 export function isModuleKey(value: unknown): value is ModuleKey {
   return typeof value === 'string' && MODULES.some(({ key }) => key === value);
 }
@@ -89,7 +74,7 @@ export function isPermissionKey(value: unknown): value is PermissionKey {
 }
 
 export function permissionsForRole(role: UserRole, permissions: readonly string[]) {
-  return isAdminRole(role) ? ROLE_DEFAULT_PERMISSIONS[role] : permissions;
+  return role === UserRole.SUPER_ADMIN ? [] : permissions;
 }
 
 export function isAdminRole(role: UserRole) {
@@ -103,7 +88,11 @@ export function canAccessModule(role: UserRole, permissions: readonly string[], 
 export function canAccessPage(role: UserRole, permissions: readonly string[], pageKey: string) {
   const page = getSidebarPage(pageKey);
   if (!page || !page.allowedRoles.includes(role)) return false;
-  if (page.adminOnly) return isAdminRole(role);
+  if (page.key === 'manage-users') {
+    return role === UserRole.SUPER_ADMIN
+      || (role === UserRole.ADMIN && canAccessModule(role, permissions, 'manage_users'));
+  }
+  if (page.adminOnly) return role === UserRole.ADMIN;
   return page.module ? canAccessModule(role, permissions, page.module) : true;
 }
 

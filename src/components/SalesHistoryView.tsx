@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { CompletedSale, PaymentMethod, UserRole } from '../types/pharmacy';
 import { printHtmlDocument } from '../utils/receipt';
+import { formatPaymentDetails } from '../utils/paymentDetails';
 import {
   parseSaleDate,
   renderSalesReport,
@@ -523,6 +524,14 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                           >
                             {sale.paymentMethod}
                           </span>
+                          {sale.paymentDetails && sale.paymentDetails.length > 0 && (
+                            <span
+                              className="mt-0.5 block max-w-48 truncate text-[9px] font-medium text-muted"
+                              title={formatPaymentDetails(sale.paymentDetails, sale.paymentMethod)}
+                            >
+                              {formatPaymentDetails(sale.paymentDetails, sale.paymentMethod)}
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-bold text-text whitespace-nowrap">
                           Rs.{' '}
