@@ -4,6 +4,7 @@ import {
   SHOP_LOGO_MAX_BYTES,
   shopLogoFileError,
   shopLogoFileExtension,
+  shopLogoObjectPath,
   shopLogoStoragePath,
 } from './shopLogo';
 
@@ -20,15 +21,27 @@ test('rejects unsupported, oversized, and SVG uploads', () => {
 
 test('only recognizes stored logos belonging to the matching shop and project', () => {
   const projectUrl = 'https://project.supabase.co';
-  const logoUrl = `${projectUrl}/storage/v1/object/public/shop-logos/shop-1/logo.webp`;
-  assert.equal(shopLogoStoragePath(logoUrl, projectUrl, 'shop-1'), 'shop-1/logo.webp');
-  assert.equal(shopLogoStoragePath(logoUrl, projectUrl, 'shop-2'), null);
+  const shopId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const logoUrl = `${projectUrl}/storage/v1/object/public/shop-logos/${shopId}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.webp`;
+  assert.equal(shopLogoStoragePath(logoUrl, projectUrl, shopId), `${shopId}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.webp`);
+  assert.equal(shopLogoStoragePath(logoUrl, projectUrl, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'), null);
+  assert.equal(
+    shopLogoObjectPath(
+      `${projectUrl}/storage/v1/object/public/shop-logos/dddddddd-dddd-4ddd-8ddd-dddddddddddd/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.png`,
+      projectUrl,
+    ),
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.png',
+  );
   assert.equal(
     shopLogoStoragePath('https://other.supabase.co/storage/v1/object/public/shop-logos/shop-1/logo.webp', projectUrl, 'shop-1'),
     null,
   );
   assert.equal(
-    shopLogoStoragePath(`${projectUrl}/storage/v1/object/public/shop-logos/shop-1/a/b.webp`, projectUrl, 'shop-1'),
+    shopLogoStoragePath(`${projectUrl}/storage/v1/object/public/shop-logos/${shopId}/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/a.webp`, projectUrl, shopId),
+    null,
+  );
+  assert.equal(
+    shopLogoObjectPath(`${projectUrl}/storage/v1/object/public/shop-logos/not-a-uuid/logo.webp`, projectUrl),
     null,
   );
 });

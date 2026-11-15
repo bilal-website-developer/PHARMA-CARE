@@ -11,6 +11,7 @@ import {
   PaymentMethod,
 } from '../types/pharmacy';
 import type { PosCatalogProduct } from './posCatalogLogic';
+import { buildDemoStockPurchaseItems } from './demoStockPurchase';
 
 export const DEMO_DATA_CHANGED_EVENT = 'pharma-care.demoDataChanged';
 
@@ -48,7 +49,7 @@ export interface DemoMedicineDefinition {
 }
 
 export const DEMO_SUPPLIER = {
-  name: 'Premier Distributors Ltd',
+  name: 'DEMO - Premier Distributors Ltd',
   contact: '021-35681234 / 0300-8201122',
   address: 'Plot 45, Sector 15, Korangi Industrial Area, Karachi',
   licence_or_tax_number: '3049281-7 / DTL-KHI-8891',
@@ -774,121 +775,159 @@ export async function checkDemoDataStatus(): Promise<{ loaded: boolean; count: n
   if (!supabase) {
     return { loaded: localLoaded, count: localLoaded ? DEMO_MEDICINES.length : 0 };
   }
-  try {
-    const { data: demoMeds, error } = await supabase
-      .from('medicines')
-      .select('id, is_active')
-      .like('code', 'DEMO-%');
-
-    if (error || !demoMeds) {
-      return { loaded: localLoaded, count: localLoaded ? DEMO_MEDICINES.length : 0 };
-    }
-
-    const activeDemoMeds = demoMeds.filter((m) => m.is_active);
-    const hasData = activeDemoMeds.length > 0 || localLoaded;
-    return { loaded: hasData, count: activeDemoMeds.length || (localLoaded ? DEMO_MEDICINES.length : 0) };
-  } catch {
-    return { loaded: localLoaded, count: localLoaded ? DEMO_MEDICINES.length : 0 };
-  }
+  const { data: demoMeds, error } = await supabase
+    .from('medicines')
+    .select('id, is_active')
+    .like('code', 'DEMO-MED-%');
+  if (error) throw new Error(`Could not check demo data status: ${error.message}`);
+  const activeDemoMeds = (demoMeds ?? []).filter((medicine) => medicine.is_active);
+  return { loaded: activeDemoMeds.length > 0, count: activeDemoMeds.length };
 }
 
 export async function loadDemoData(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    let createdCount = 0;
-
     if (supabase) {
-      // 1. Ensure Demo Supplier exists and is active
-      try {
-        const { data: existingSuppliers } = await supabase
-          .from('suppliers')
-          .select('id, is_active')
-          .eq('name', DEMO_SUPPLIER.name)
-          .limit(1);
+      const { data: existingSuppliers, error: supplierQueryError } = await supabase
+        .from('suppliers')
+        .select('id, is_active')
+        .eq('name', DEMO_SUPPLIER.name)
+        .limit(1);
+      if (supplierQueryError) throw new Error(`Could not check the demo supplier: ${supplierQueryError.message}`);
 
-        if (existingSuppliers && existingSuppliers.length > 0) {
-          if (!existingSuppliers[0].is_active) {
-            await supabase.rpc('activate_supplier', { p_supplier_id: existingSuppliers[0].id });
-          }
-        } else {
-          await supabase.rpc('save_supplier', {
-            p_supplier_id: null,
-            p_name: DEMO_SUPPLIER.name,
-            p_contact: DEMO_SUPPLIER.contact,
-            p_address: DEMO_SUPPLIER.address,
-            p_licence_or_tax_number: DEMO_SUPPLIER.licence_or_tax_number,
-            p_payment_terms: DEMO_SUPPLIER.payment_terms,
-          });
-        }
-      } catch (e) {
-        console.warn('Could not insert or activate demo supplier in Supabase:', e);
+      const existingSupplier = existingSuppliers?.[0];
+      if (existingSupplier && !existingSupplier.is_active) {
+        const { error } = await supabase.rpc('activate_supplier', {
+          p_supplier_id: existingSupplier.id,
+        });
+        if (error) throw new Error(`Could not activate the demo supplier: ${error.message}`);
+      }
+      if (!existingSupplier) {
+        const { error } = await supabase.rpc('save_supplier', {
+          p_supplier_id: null,
+          p_name: DEMO_SUPPLIER.name,
+          p_contact: DEMO_SUPPLIER.contact,
+          p_address: DEMO_SUPPLIER.address,
+          p_licence_or_tax_number: DEMO_SUPPLIER.licence_or_tax_number,
+          p_payment_terms: DEMO_SUPPLIER.payment_terms,
+        });
+        if (error) throw new Error(`Could not create the demo supplier: ${error.message}`);
       }
 
-      // 2. Reactivate existing demo medicines in DB or insert them
-      try {
-        const { data: existingMeds } = await supabase
-          .from('medicines')
-          .select('id, code, is_active')
-          .like('code', 'DEMO-%');
+      const { data: suppliers, error: supplierReloadError } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('name', DEMO_SUPPLIER.name)
+        .eq('is_active', true)
+        .limit(1);
+      if (supplierReloadError) throw new Error(`Could not load the demo supplier: ${supplierReloadError.message}`);
+      const supplierId = suppliers?.[0]?.id;
+      if (!supplierId) throw new Error('The demo supplier could not be resolved after saving.');
 
-        if (existingMeds && existingMeds.length > 0) {
-          const inactiveIds = existingMeds.filter((m) => !m.is_active).map((m) => m.id);
-          if (inactiveIds.length > 0) {
-            await supabase.rpc('products_bulk_update', {
-              ids: inactiveIds,
-              action: 'activate',
-              value: '',
-            });
-          }
-          createdCount = existingMeds.length;
-        } else {
-          // If none exist in DB, create them via save_medicine RPC
-          for (const med of DEMO_MEDICINES) {
-            try {
-              const { data: savedId } = await supabase.rpc('save_medicine', {
-                p_medicine_id: null,
-                p_values: {
-                  code: med.code,
-                  barcode: med.barcode,
-                  brand_name: med.brand_name,
-                  generic_name: med.generic_name,
-                  strength: med.strength,
-                  category: med.category,
-                  company: med.company,
-                  drug_class: med.drug_class,
-                  storage_condition: med.storage_condition,
-                  rack_location: med.rack_location,
-                  min_stock_alert: med.min_stock_alert,
-                  requires_prescription: med.requires_prescription,
-                  is_active: true,
-                },
-                p_units: med.units.map((u) => ({
-                  name: u.name,
-                  conversion_factor: u.conversion_factor,
-                  is_default_sale_unit: u.is_default_sale_unit,
-                  price_paisa: u.price_paisa,
-                  barcode: u.barcode ?? null,
-                })),
-              });
-              if (savedId) createdCount++;
-            } catch (insErr) {
-              console.warn(`Failed to insert demo medicine ${med.code}:`, insErr);
-            }
-          }
+      const { data: existingMeds, error: medicineQueryError } = await supabase
+        .from('medicines')
+        .select('id, code, is_active')
+        .like('code', 'DEMO-MED-%');
+      if (medicineQueryError) throw new Error(`Could not check demo medicines: ${medicineQueryError.message}`);
+
+      const medicinesByCode = new Map((existingMeds ?? []).map((medicine) => [medicine.code, medicine]));
+      const medicineIds = new Map<string, string>();
+      const inactiveIds: string[] = [];
+      for (const medicine of DEMO_MEDICINES) {
+        const existing = medicinesByCode.get(medicine.code);
+        if (existing) {
+          medicineIds.set(medicine.code, existing.id);
+          if (!existing.is_active) inactiveIds.push(existing.id);
+          continue;
         }
-      } catch (medErr) {
-        console.warn('Could not ensure demo medicines in Supabase:', medErr);
+
+        const { data: savedId, error } = await supabase.rpc('save_medicine', {
+          p_medicine_id: null,
+          p_values: {
+            code: medicine.code,
+            barcode: medicine.barcode,
+            brand_name: medicine.brand_name,
+            generic_name: medicine.generic_name,
+            strength: medicine.strength,
+            category: medicine.category,
+            company: medicine.company,
+            drug_class: medicine.drug_class,
+            storage_condition: medicine.storage_condition,
+            rack_location: medicine.rack_location,
+            min_stock_alert: medicine.min_stock_alert,
+            requires_prescription: medicine.requires_prescription,
+            is_active: true,
+          },
+          p_units: medicine.units.map((unit) => ({
+            name: unit.name,
+            conversion_factor: unit.conversion_factor,
+            is_default_sale_unit: unit.is_default_sale_unit,
+            price_paisa: unit.price_paisa,
+            barcode: unit.barcode ?? null,
+          })),
+        });
+        if (error) throw new Error(`Could not create ${medicine.brand_name}: ${error.message}`);
+        if (typeof savedId !== 'string' || !savedId) {
+          throw new Error(`The database did not return an ID for ${medicine.brand_name}.`);
+        }
+        medicineIds.set(medicine.code, savedId);
+      }
+
+      if (inactiveIds.length > 0) {
+        const { error } = await supabase.rpc('products_bulk_update', {
+          ids: inactiveIds,
+          action: 'activate',
+          value: '',
+        });
+        if (error) throw new Error(`Could not activate demo medicines: ${error.message}`);
+      }
+
+      const ids = [...medicineIds.values()];
+      const { data: units, error: unitQueryError } = await supabase
+        .from('medicine_units')
+        .select('id, medicine_id, name, is_default_sale_unit')
+        .in('medicine_id', ids);
+      if (unitQueryError) throw new Error(`Could not load demo sale units: ${unitQueryError.message}`);
+
+      const { data: purchaseCatalog, error: catalogError } = await supabase.rpc('purchase_catalog');
+      if (catalogError) throw new Error(`Could not check current demo stock: ${catalogError.message}`);
+      if (!Array.isArray(purchaseCatalog)) {
+        throw new Error('The purchase catalog returned an invalid response.');
+      }
+      const stockByMedicine = new Map<string, number>();
+      for (const row of purchaseCatalog) {
+        if (typeof row !== 'object' || row === null) continue;
+        const catalogRow = row as { id?: unknown; stock?: unknown };
+        if (typeof catalogRow.id !== 'string') continue;
+        const stock = typeof catalogRow.stock === 'number' ? catalogRow.stock : Number(catalogRow.stock);
+        if (Number.isFinite(stock)) stockByMedicine.set(catalogRow.id, stock);
+      }
+
+      const stockItems = buildDemoStockPurchaseItems(DEMO_MEDICINES, medicineIds, units ?? [], stockByMedicine);
+
+      if (stockItems.length > 0) {
+        const { error } = await supabase.rpc('post_purchase', {
+          p_supplier_id: supplierId,
+          p_invoice_number: null,
+          p_purchase_date: new Date().toISOString().slice(0, 10),
+          p_paid_paisa: 0,
+          p_notes: 'Initial inventory for Pharma Care demo data.',
+          p_discount_paisa: 0,
+          p_payment_type: 'cash',
+          p_items: stockItems,
+        });
+        if (error) throw new Error(`Could not add initial demo stock: ${error.message}`);
       }
     }
 
     try {
       localStorage.setItem(DEMO_FLAG_KEY, 'true');
     } catch {
-      // ignore
+      // The database-backed demo records remain available if local UI preferences cannot be saved.
     }
 
     dispatchStockChanged();
     dispatchDemoDataChanged();
-    return { success: true, count: createdCount || DEMO_MEDICINES.length };
+    return { success: true, count: DEMO_MEDICINES.length };
   } catch (err) {
     return {
       success: false,
@@ -906,7 +945,7 @@ export async function removeDemoData(): Promise<{ success: boolean; deletedCount
       const { data: demoMeds, error: medsError } = await supabase
         .from('medicines')
         .select('id')
-        .like('code', 'DEMO-%');
+        .like('code', 'DEMO-MED-%');
       if (medsError) throw new Error(medsError.message);
 
       if (demoMeds?.length) {
@@ -945,7 +984,7 @@ export async function removeDemoData(): Promise<{ success: boolean; deletedCount
 
     dispatchStockChanged();
     dispatchDemoDataChanged();
-    return { success: true, deletedCount: deletedCount || DEMO_MEDICINES.length };
+    return { success: true, deletedCount: supabase ? deletedCount : DEMO_MEDICINES.length };
   } catch (err) {
     return {
       success: false,

@@ -29,6 +29,8 @@ import {
   ShopOperationalSettings,
   updateCurrentShopSettings,
 } from './data/shopSettings';
+import { updateCurrentShopProfile } from './data/shopProfile';
+import type { ShopProfileUpdate } from './data/shopProfile';
 import { Sidebar, NavItemKey } from './components/Sidebar';
 import { getSidebarPage, sidebarPageForRoute } from './components/sidebarPages';
 import { toggleSidebarFavorite } from './components/sidebarPinLogic';
@@ -312,6 +314,11 @@ export default function App() {
           session={session}
           onLogout={handleLogout}
           authMessage={authMessage}
+          onShopProfileChange={(shopProfile) => {
+            setSession((current) => current
+              ? { ...current, shopProfile }
+              : current);
+          }}
         />
       </AppErrorBoundary>
       {installPromptEvent && !installPromptDismissed && (
@@ -325,10 +332,12 @@ function PharmacyApp({
   session,
   onLogout,
   authMessage,
+  onShopProfileChange,
 }: {
   session: WorkspaceSession;
   onLogout: () => void;
   authMessage: string;
+  onShopProfileChange: (shopProfile: AuthSession['shopProfile']) => void;
 }) {
   const [demoRole, setDemoRole] = useState<UserRole | null>(null);
 
@@ -352,6 +361,7 @@ function PharmacyApp({
         onLogout={onLogout}
         authMessage={authMessage}
         onOpenDemo={setDemoRole}
+        onShopProfileChange={onShopProfileChange}
       />
     </PermissionsProvider>
   );
@@ -362,11 +372,13 @@ function PharmacyWorkspace({
   onLogout,
   authMessage,
   onOpenDemo,
+  onShopProfileChange,
 }: {
   session: WorkspaceSession;
   onLogout: () => void;
   authMessage: string;
   onOpenDemo: (role: UserRole) => void;
+  onShopProfileChange: (shopProfile: AuthSession['shopProfile']) => void;
 }) {
   const { canPage } = usePermissions();
   const visibleSidebarKeys = React.useMemo(
@@ -552,12 +564,17 @@ function PharmacyWorkspace({
       storeName: shopIdentity.name,
       address: shopIdentity.address,
       phone: shopIdentity.phone,
-      logoUrl: shopIdentity.logoPath || settings.logoUrl,
+      logoUrl: shopIdentity.logoPath,
     }
     : settings;
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(() =>
     withShopIdentity(readPharmacyMemoSettings(companyName))
   );
+  useEffect(() => {
+    if (shopIdentity) {
+      setMemoSettings((current) => withShopIdentity(current));
+    }
+  }, [shopIdentity?.address, shopIdentity?.logoPath, shopIdentity?.name, shopIdentity?.phone]);
   const [shopSettings, setShopSettings] = useState<ShopOperationalSettings | null>(null);
   const shopSettingsRef = React.useRef<ShopOperationalSettings | null>(null);
   const shopSettingsSaveQueue = React.useRef<Promise<void>>(Promise.resolve());
@@ -705,11 +722,11 @@ function PharmacyWorkspace({
     }
   }, [activeItem]);
 
-  const [isDemoActive, setIsDemoActive] = useState(isDemoDataLoadedLocally);
+  const [isDemoActive, setIsDemoActive] = useState(() => !supabase && isDemoDataLoadedLocally());
 
   useEffect(() => {
     const handleDemoChange = () => {
-      setIsDemoActive(isDemoDataLoadedLocally());
+      setIsDemoActive(!supabase && isDemoDataLoadedLocally());
     };
     window.addEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
     return () => window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleDemoChange);
@@ -717,10 +734,10 @@ function PharmacyWorkspace({
 
   // Main Datasets
   const products = isDemoActive ? getDemoProducts() : [];
-  const [customers, setCustomers] = useState<Customer[]>(() => (isDemoDataLoadedLocally() ? getDemoCustomers() : []));
-  const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>(() => (isDemoDataLoadedLocally() ? getDemoLedgerEntries() : {}));
-  const [transactions, setTransactions] = useState<CashTransaction[]>(() => (isDemoDataLoadedLocally() ? getDemoTransactions() : []));
-  const [completedSales, setCompletedSales] = useState<CompletedSale[]>(() => (isDemoDataLoadedLocally() ? getDemoSales() : []));
+  const [customers, setCustomers] = useState<Customer[]>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoCustomers() : []));
+  const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoLedgerEntries() : {}));
+  const [transactions, setTransactions] = useState<CashTransaction[]>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoTransactions() : []));
+  const [completedSales, setCompletedSales] = useState<CompletedSale[]>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoSales() : []));
   const [dataLoadError, setDataLoadError] = useState('');
 
   useEffect(() => {
@@ -746,7 +763,7 @@ function PharmacyWorkspace({
         if (accounts.customers.length > 0) {
           setCustomers(accounts.customers);
           setLedgerEntries(accounts.ledgerEntries);
-        } else if (isDemoDataLoadedLocally()) {
+        } else if (!supabase && isDemoDataLoadedLocally()) {
           setCustomers(getDemoCustomers());
           setLedgerEntries(getDemoLedgerEntries());
         } else {
@@ -754,7 +771,7 @@ function PharmacyWorkspace({
           setLedgerEntries({});
         }
       }).catch((err) => {
-        if (isDemoDataLoadedLocally()) {
+        if (!supabase && isDemoDataLoadedLocally()) {
           setCustomers(getDemoCustomers());
           setLedgerEntries(getDemoLedgerEntries());
         } else {
@@ -766,13 +783,13 @@ function PharmacyWorkspace({
         if (!active) return;
         if (loadedCustomers.length > 0) {
           setCustomers(loadedCustomers);
-        } else if (isDemoDataLoadedLocally()) {
+        } else if (!supabase && isDemoDataLoadedLocally()) {
           setCustomers(getDemoCustomers());
         } else {
           setCustomers([]);
         }
       }).catch((err) => {
-        if (isDemoDataLoadedLocally()) {
+        if (!supabase && isDemoDataLoadedLocally()) {
           setCustomers(getDemoCustomers());
         } else {
           reportLoadError(err);
@@ -788,13 +805,13 @@ function PharmacyWorkspace({
         if (!active) return;
         if (sales.length > 0) {
           setCompletedSales(sales);
-        } else if (isDemoDataLoadedLocally()) {
+        } else if (!supabase && isDemoDataLoadedLocally()) {
           setCompletedSales(getDemoSales());
         } else {
           setCompletedSales([]);
         }
       }).catch((err) => {
-        if (isDemoDataLoadedLocally()) {
+        if (!supabase && isDemoDataLoadedLocally()) {
           setCompletedSales(getDemoSales());
         } else {
           reportLoadError(err);
@@ -804,7 +821,7 @@ function PharmacyWorkspace({
       setCompletedSales([]);
     }
 
-    if (isDemoDataLoadedLocally()) {
+    if (!supabase && isDemoDataLoadedLocally()) {
       setTransactions((prev) => (prev.length > 0 ? prev : getDemoTransactions()));
     } else {
       setTransactions([]);
@@ -1278,14 +1295,24 @@ function PharmacyWorkspace({
               {canPage('settings') && (
                 <SettingsView
                   activeTemplate={billingPreferences.template}
-                  canEditShopProfile={false}
+                  canEditShopProfile={currentRole === UserRole.ADMIN && canPage('settings')}
+                  isShopAdmin={currentRole === UserRole.ADMIN}
+                  canManageDemoData={currentRole === UserRole.ADMIN
+                    && canPage('products')
+                    && canPage('suppliers')
+                    && canPage('purchases')}
                   canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
                   operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>
                     updateBillingPreferences({ ...billingPreferences, template })
                   }
                   companyName={companyName}
-                  onSaveCompanyName={() => false}
+                  shopProfile={shopIdentity}
+                  onUpdateShopProfile={async (profile: ShopProfileUpdate) => {
+                    const updatedProfile = await updateCurrentShopProfile(profile);
+                    onShopProfileChange(updatedProfile);
+                    return updatedProfile;
+                  }}
                   onOpenTemplatePreview={openTemplatePreview}
                   memoSettings={memoSettings}
                   onMemoSettingsChange={updateMemoSettings}

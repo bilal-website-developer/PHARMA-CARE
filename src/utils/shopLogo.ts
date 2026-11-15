@@ -26,6 +26,15 @@ export function shopLogoStoragePath(
   supabaseUrl: string,
   shopId: string,
 ): string | null {
+  const path = shopLogoObjectPath(logoUrl, supabaseUrl);
+  if (!path || path.split('/')[0] !== shopId) return null;
+  return path;
+}
+
+export function shopLogoObjectPath(
+  logoUrl: string | null,
+  supabaseUrl: string,
+): string | null {
   if (!logoUrl) return null;
 
   try {
@@ -37,10 +46,9 @@ export function shopLogoStoragePath(
     if (markerIndex < 0) return null;
 
     const path = decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
-    const [pathShopId, fileName, ...extra] = path.split('/');
-    if (pathShopId !== shopId || !fileName || extra.length > 0 || fileName === '.' || fileName === '..') {
-      return null;
-    }
+    const [folder, fileName, ...extra] = path.split('/');
+    if (!folder || !fileName || extra.length > 0 || !/^[0-9a-f-]{36}$/i.test(folder)
+      || !/^[0-9a-f-]{36}\.(png|jpg|webp)$/i.test(fileName)) return null;
     return path;
   } catch {
     return null;

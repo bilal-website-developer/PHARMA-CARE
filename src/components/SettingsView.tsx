@@ -26,30 +26,29 @@ import {
 import { buildPrintSnapshot, PrintReceiptHandler } from '../utils/printWorkflow';
 import {
   getPharmacyMemoSettingsValidationMessage,
-  readShopLogo,
 } from '../utils/storeSettings';
 import { checkDemoDataStatus, loadDemoData, removeDemoData } from '../data/demoDataManager';
+import type { ShopProfile } from '../utils/auth';
+import {
+  removeCurrentShopLogo,
+  uploadCurrentShopLogo,
+} from '../data/shopProfile';
+import type { ShopProfileUpdate } from '../data/shopProfile';
+import { shopLogoFileError } from '../utils/shopLogo';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
 const DEFAULT_DEBT_TEMPLATE =
   'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!';
 
 interface SavedShopProfile {
-  phone: string;
-  city: string;
   urduFooter: string;
   debtTemplate: string;
-  logoUrl?: string;
 }
 
 function readSavedShopProfile(): SavedShopProfile {
-  const fallbackLogo = readShopLogo();
   const defaults = {
-    phone: '',
-    city: '',
     urduFooter: 'شکریہ! دوبارہ تشریف لائیں',
     debtTemplate: DEFAULT_DEBT_TEMPLATE,
-    logoUrl: fallbackLogo,
   };
   try {
     const saved = globalThis.localStorage?.getItem(SETTINGS_STORAGE_KEY);
@@ -58,11 +57,8 @@ function readSavedShopProfile(): SavedShopProfile {
     if (typeof parsed !== 'object' || parsed === null) return defaults;
     const values = parsed as Partial<SavedShopProfile>;
     return {
-      phone: typeof values.phone === 'string' ? values.phone : defaults.phone,
-      city: typeof values.city === 'string' ? values.city : defaults.city,
       urduFooter: typeof values.urduFooter === 'string' ? values.urduFooter : defaults.urduFooter,
       debtTemplate: typeof values.debtTemplate === 'string' ? values.debtTemplate : defaults.debtTemplate,
-      logoUrl: typeof values.logoUrl === 'string' ? values.logoUrl : fallbackLogo,
     };
   } catch {
     return defaults;
@@ -71,9 +67,12 @@ function readSavedShopProfile(): SavedShopProfile {
 
 interface SettingsViewProps {
   companyName: string;
-  onSaveCompanyName: (companyName: string) => boolean;
+  shopProfile: ShopProfile | null;
+  onUpdateShopProfile: (profile: ShopProfileUpdate) => Promise<ShopProfile>;
   activeTemplate: BillingTemplate;
   canEditShopProfile: boolean;
+  isShopAdmin: boolean;
+  canManageDemoData: boolean;
   canEditOperationalSettings: boolean;
   operationalSettingsError: string;
   onTemplateChange: (template: BillingTemplate) => void;
@@ -87,9 +86,12 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   companyName,
-  onSaveCompanyName,
+  shopProfile,
+  onUpdateShopProfile,
   activeTemplate,
   canEditShopProfile,
+  isShopAdmin,
+  canManageDemoData,
   canEditOperationalSettings,
   operationalSettingsError,
   onTemplateChange,
@@ -100,13 +102,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onMemoFormatChange,
   onPrintReceipt,
 }) => {
-  const [savedShopProfile] = useState(readSavedShopProfile);
+  const [savedShopProfile, setSavedShopProfile] = useState(readSavedShopProfile);
   const [shopName, setShopName] = useState(companyName);
-  const [phone, setPhone] = useState(savedShopProfile.phone);
-  const [city, setCity] = useState(savedShopProfile.city);
+  const [phone, setPhone] = useState(shopProfile?.phone ?? '');
+  const [city, setCity] = useState(shopProfile?.address ?? '');
   const [urduFooter, setUrduFooter] = useState(savedShopProfile.urduFooter);
   const [debtTemplate, setDebtTemplate] = useState(savedShopProfile.debtTemplate);
-  const [logoUrl, setLogoUrl] = useState<string>(() => savedShopProfile.logoUrl || readShopLogo());
+  const [logoUrl, setLogoUrl] = useState<string>(() => shopProfile?.logoPath ?? '');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
@@ -124,8 +128,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [savedMemoSettings]);
 
   useEffect(() => {
-    void checkDemoDataStatus().then(setDemoStatus);
-  }, []);
+    if (!shopProfile) return;
+    setShopName(shopProfile.name || companyName);
+    setPhone(shopProfile.phone);
+    setCity(shopProfile.address);
+    setLogoUrl(shopProfile.logoPath);
+    setLogoFile(null);
+    setMemoSettings((current) => ({
+      ...current,
+      storeName: shopProfile.name,
+      address: shopProfile.address,
+      phone: shopProfile.phone,
+      logoUrl: shopProfile.logoPath,
+    }));
+  }, [companyName, shopProfile?.address, shopProfile?.logoPath, shopProfile?.name, shopProfile?.phone]);
+
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreviewUrl('');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(logoFile);
+    setLogoPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [logoFile]);
+
+  useEffect(() => {
+    if (!isShopAdmin || !canManageDemoData) return undefined;
+    let active = true;
+    void checkDemoDataStatus()
+      .then((status) => {
+        if (active) setDemoStatus(status);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setDemoNotice({
+            text: error instanceof Error ? error.message : 'Could not check demo data status.',
+            error: true,
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [canManageDemoData, isShopAdmin]);
 
   const handleLoadDemoData = async () => {
     setDemoBusy(true);
@@ -157,7 +203,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         setDemoStatus({ loaded: false, count: 0 });
         setConfirmRemoveOpen(false);
         setDemoNotice({
-          text: `Demo data removed successfully (${result.deletedCount} items cleared). Your workspace is clean.`,
+          text: `Demo data removed successfully (${result.deletedCount} medicines deactivated). Existing sales and purchase history are preserved.`,
           error: false,
         });
       } else {
@@ -173,25 +219,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      window.alert('Logo file must be smaller than 2MB.');
+    const fileError = shopLogoFileError(file);
+    if (fileError) {
+      setSaveNotice({ text: fileError, error: true });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result;
-      if (typeof result === 'string') {
-        setLogoUrl(result);
-        setMemoSettings((current) => ({ ...current, logoUrl: result }));
-      }
-    };
-    reader.readAsDataURL(file);
+    setLogoFile(file);
+    setSaveNotice(null);
   };
 
   const handleRemoveLogo = () => {
     setLogoUrl('');
+    setLogoFile(null);
     setMemoSettings((current) => ({ ...current, logoUrl: '' }));
   };
+  const displayedLogoUrl = logoPreviewUrl || logoUrl;
 
   const memoPreview = useMemo(() => {
     try {
@@ -201,7 +243,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {
             ...memoSettings,
             storeName: memoSettings.storeName || shopName,
-            logoUrl,
+            logoUrl: displayedLogoUrl,
             printLogo: memoSettings.printLogo !== false,
           },
           memoFormat
@@ -218,7 +260,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           customerName: 'احمد',
           paymentMode: 'CASH',
           status: 'PAID',
-          logoUrl,
+          logoUrl: displayedLogoUrl,
           items: PHARMACY_MEMO_TEST_FIXTURE.lines.map((line) => ({
             name: line.name,
             batchNo: line.batch ?? '',
@@ -241,25 +283,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       };
     }
   },
-    [memoFormat, memoSettings, shopName, logoUrl]
+    [displayedLogoUrl, memoFormat, memoSettings, shopName]
   );
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedShopName = shopName.trim();
-    const nextMemoSettings: PharmacyMemoSettings = {
-      ...memoSettings,
-      storeName: canEditShopProfile ? normalizedShopName : memoSettings.storeName.trim(),
-      logoUrl: canEditShopProfile ? logoUrl : memoSettings.logoUrl,
-      printLogo: memoSettings.printLogo !== false,
-    };
     if (canEditShopProfile && !normalizedShopName) {
       setSavedSuccess(false);
       setSaveNotice({ text: 'Enter a shop name before updating the profile.', error: true });
       return;
     }
+    let memoSettingsToSave: PharmacyMemoSettings = {
+      ...memoSettings,
+      storeName: canEditShopProfile ? normalizedShopName : memoSettings.storeName.trim(),
+      logoUrl: canEditShopProfile ? displayedLogoUrl : memoSettings.logoUrl,
+      printLogo: memoSettings.printLogo !== false,
+    };
     const memoValidationMessage = canEditOperationalSettings
-      ? getPharmacyMemoSettingsValidationMessage(nextMemoSettings)
+      ? getPharmacyMemoSettingsValidationMessage(memoSettingsToSave)
       : null;
     if (memoValidationMessage) {
       setSavedSuccess(false);
@@ -268,45 +310,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     setSettingsSaving(true);
+    let uploadedLogoUrl = '';
     try {
       if (canEditShopProfile) {
+        if (logoFile) uploadedLogoUrl = await uploadCurrentShopLogo(logoFile);
+        const savedProfile = await onUpdateShopProfile({
+          name: normalizedShopName,
+          phone: phone.trim(),
+          address: city.trim(),
+          logoPath: logoFile ? uploadedLogoUrl : logoUrl,
+        });
+
         try {
           globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
-            phone,
-            city,
             urduFooter,
             debtTemplate,
-            logoUrl,
           }));
         } catch {
           setSavedSuccess(false);
           setSaveNotice({
-            text: 'Profile details could not be saved in this browser. Check browser storage and try again.',
+            text: 'Shop details were saved, but the Urdu footer and debt reminder could not be saved in this browser.',
             error: true,
           });
           return;
         }
-        if (!onSaveCompanyName(normalizedShopName)) {
-          setSavedSuccess(false);
-          setSaveNotice({
-            text: 'Other profile details were saved, but the shop name could not be saved. Check browser storage.',
-            error: true,
-          });
-          return;
+
+        setShopName(savedProfile.name);
+        setPhone(savedProfile.phone);
+        setCity(savedProfile.address);
+        setLogoUrl(savedProfile.logoPath);
+        setLogoFile(null);
+        setSavedShopProfile({ urduFooter, debtTemplate });
+        memoSettingsToSave = {
+          ...memoSettingsToSave,
+          storeName: savedProfile.name,
+          address: savedProfile.address,
+          phone: savedProfile.phone,
+          logoUrl: savedProfile.logoPath,
+        };
+        if (shopProfile?.logoPath && shopProfile.logoPath !== savedProfile.logoPath) {
+          try {
+            await removeCurrentShopLogo(shopProfile.logoPath);
+          } catch (cleanupError) {
+            const cleanupMessage = cleanupError instanceof Error
+              ? cleanupError.message
+              : 'The previous logo could not be removed from Storage.';
+            setSaveNotice({ text: `Shop profile was saved, but ${cleanupMessage}`, error: true });
+            setSavedSuccess(false);
+            return;
+          }
         }
       }
-      if (canEditOperationalSettings && !await onMemoSettingsChange(nextMemoSettings)) {
+      if (canEditOperationalSettings && !await onMemoSettingsChange(memoSettingsToSave)) {
         setSavedSuccess(false);
         setSaveNotice({
-          text: 'Profile details were saved, but shared shop settings could not be saved. Review the error and try again.',
+          text: 'Shop profile was saved, but shared shop settings could not be saved. Review the error and try again.',
           error: true,
         });
         return;
       }
-      setMemoSettings(nextMemoSettings);
+      setMemoSettings(memoSettingsToSave);
       setSaveNotice(null);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (error) {
+      let message = error instanceof Error ? error.message : 'Could not save the shop profile.';
+      if (uploadedLogoUrl) {
+        try {
+          await removeCurrentShopLogo(uploadedLogoUrl);
+        } catch (cleanupError) {
+          message += ` The newly uploaded logo could not be removed: ${cleanupError instanceof Error ? cleanupError.message : 'Storage cleanup failed.'}`;
+        }
+      }
+      setSavedSuccess(false);
+      setSaveNotice({ text: message, error: true });
     } finally {
       setSettingsSaving(false);
     }
@@ -362,7 +439,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <label className="font-semibold text-text">Store / Shop Name</label>
               {!canEditShopProfile && (
                 <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                  Admin Only
+                  Shop Admin Only
                 </span>
               )}
             </div>
@@ -377,7 +454,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:opacity-60 disabled:cursor-not-allowed"
             />
             {!canEditShopProfile && (
-              <p className="mt-1 text-[11px] text-muted">Only Admin and Super Admin can edit the shop name.</p>
+              <p className="mt-1 text-[11px] text-muted">Only the Shop Admin can edit the shop name.</p>
             )}
           </div>
 
@@ -387,14 +464,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <label className="font-semibold text-text">Shop Logo</label>
               {!canEditShopProfile && (
                 <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                  Admin Only
+                  Shop Admin Only
                 </span>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex h-16 w-32 items-center justify-center rounded-lg border border-dashed border-border bg-surface p-1">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="Shop Logo Preview" className="max-h-full max-w-full object-contain" />
+                {displayedLogoUrl ? (
+                  <img src={displayedLogoUrl} alt="Shop Logo Preview" className="max-h-full max-w-full object-contain" />
                 ) : (
                   <span className="text-[10px] text-muted">No custom logo</span>
                 )}
@@ -403,15 +480,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-control border border-border bg-white px-3 py-1.5 text-xs font-semibold text-text hover:bg-surface">
-                      <span>{logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                      <span>{displayedLogoUrl ? 'Change Logo' : 'Upload Logo'}</span>
                       <input
                         type="file"
-                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        accept="image/png,image/jpeg,image/webp"
                         className="hidden"
                         onChange={handleLogoUpload}
                       />
                     </label>
-                    {logoUrl && (
+                    {displayedLogoUrl && (
                       <button
                         type="button"
                         onClick={handleRemoveLogo}
@@ -422,12 +499,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-muted">
-                    Supports PNG, JPG, SVG, WebP (max 2MB). Appears in the top header and on printed slips.
+                    Supports PNG, JPG, and WebP (max 2MB). Appears in the top header and on printed slips.
                   </p>
                 </div>
               ) : (
                 <p className="text-xs text-muted">
-                  Only Admin and Super Admin can upload or change the shop logo.
+                  Only the Shop Admin can edit the shop profile and logo.
                 </p>
               )}
             </div>
@@ -703,7 +780,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* ── Demo Data & Client Showcase (Load / Remove) ────────────────────── */}
-      {canEditShopProfile && <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
+      {isShopAdmin && <div className="space-y-4 rounded-card border border-border bg-white p-6 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-black text-text">
@@ -728,6 +805,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
+        {!canManageDemoData && (
+          <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+            Grant this Admin the Products, Suppliers, and Purchases pages to load or remove shared demo data.
+          </p>
+        )}
+
         {demoNotice && (
           <div
             role={demoNotice.error ? 'alert' : 'status'}
@@ -744,7 +827,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
           <button
             type="button"
-            disabled={demoBusy}
+            disabled={demoBusy || !canManageDemoData}
             onClick={handleLoadDemoData}
             className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:opacity-90 disabled:opacity-50"
           >
@@ -755,7 +838,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {demoStatus.loaded && (
             <button
               type="button"
-              disabled={demoBusy}
+              disabled={demoBusy || !canManageDemoData}
               onClick={() => setConfirmRemoveOpen(true)}
               className="inline-flex items-center gap-2 rounded-control border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
             >
@@ -771,12 +854,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Are you sure you want to remove all demo medicines and suppliers?
             </p>
             <p className="text-[11px] text-red-700">
-              All demo medicines (Panadol, Augmentin, etc.) and demo batches will be permanently removed. Your real pharmacy products and actual sales will remain completely untouched.
+              Demo medicines will be deactivated so they disappear from Products and POS. Related purchase and sales history is preserved; real products are not changed.
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={demoBusy}
+                disabled={demoBusy || !canManageDemoData}
                 onClick={handleRemoveDemoData}
                 className="rounded-control bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >

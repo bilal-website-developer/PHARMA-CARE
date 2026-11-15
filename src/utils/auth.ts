@@ -2,13 +2,20 @@ import { UserRole } from '../types/pharmacy';
 import { isPermissionKey } from '../permissions';
 import { supabase } from './supabase';
 
+export interface ShopProfile {
+  name: string;
+  phone: string;
+  address: string;
+  logoPath: string;
+}
+
 export interface AuthSession {
   userId: string;
   displayName: string;
   email: string;
   role: UserRole;
   permissions: string[];
-  shopProfile: { name: string; phone: string; address: string; logoPath: string } | null;
+  shopProfile: ShopProfile | null;
 }
 
 const legacyPasswordCleanupAttempted = new Set<string>();
