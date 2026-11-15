@@ -479,41 +479,50 @@ export function printHtmlDocument(html: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const frame = document.createElement('iframe');
     frame.title = 'Print receipt';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.tabIndex = -1;
     frame.style.position = 'fixed';
-    frame.style.width = '0';
-    frame.style.height = '0';
+    frame.style.width = '100vw';
+    frame.style.height = '100vh';
+    frame.style.left = '-10000px';
+    frame.style.top = '0';
     frame.style.border = '0';
-    frame.style.right = '0';
-    frame.style.bottom = '0';
     let finished = false;
+    let printStarted = false;
     const fail = (error: Error) => {
       if (finished) return;
       finished = true;
       frame.remove();
       reject(error);
     };
-    frame.onload = () => {
-      try {
-        if (!frame.contentWindow) throw new Error('Print frame is unavailable.');
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-        window.setTimeout(() => {
-          if (finished) return;
-          finished = true;
-          frame.remove();
-          resolve();
-        }, 1000);
-      } catch (error) {
-        fail(error instanceof Error ? error : new Error('The print dialog could not be opened.'));
-      }
+    const printWhenReady = () => {
+      const printDocument = frame.contentDocument;
+      if (printStarted || !printDocument?.body?.innerHTML.trim()) return;
+      printStarted = true;
+      frame.removeEventListener('load', printWhenReady);
+      void (async () => {
+        try {
+          const printWindow = frame.contentWindow;
+          if (!printWindow) throw new Error('Print frame is unavailable.');
+          await printDocument.fonts.ready;
+          await new Promise<void>((done) => {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(() => done()));
+          });
+          printWindow.focus();
+          printWindow.print();
+          window.setTimeout(() => {
+            if (finished) return;
+            finished = true;
+            frame.remove();
+            resolve();
+          }, 1000);
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error('The print dialog could not be opened.'));
+        }
+      })();
     };
+    frame.addEventListener('load', printWhenReady);
     document.body.appendChild(frame);
-    if (!frame.contentDocument) {
-      fail(new Error('Print document is unavailable.'));
-      return;
-    }
-    frame.contentDocument.open();
-    frame.contentDocument.write(withReceiptTheme(html));
-    frame.contentDocument.close();
+    frame.srcdoc = withReceiptTheme(html);
   });
 }

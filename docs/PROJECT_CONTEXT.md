@@ -150,7 +150,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - Print requests are stored in `public.print_requests`; the admin UI has no permanent-delete action. Removing a request row does not remove its related audit-log history.
 - WhatsApp templates and some preferences remain browser-local; billing, receipt, Pharmacy Memo, and shop identity settings have server-backed paths.
 - Sale-return request/review is implemented in source; the owner reports the rollback-only RPC smoke test passed. Cash payout/accounting reconciliation, broader UI workflows, and Sales History reporting remain unverified. Sales History reprint is not implemented; return memo rendering and print-request review are separate.
-- Direct ESC/POS printer-driver support is not implemented; browser printing uses the browser print dialog.
+- Direct ESC/POS printer-driver support is not implemented; browser printing uses the native print dialog. Silent printing requires a managed kiosk/browser setup.
 - Several screens still use mock/in-memory data; identify persistence from the current component before changing it.
 - Supplier reads still include direct table access; create/update/activation/deactivation now use shop-scoped, permission-checked RPCs by owner report after Batch 039 and its smoke test passed.
 - Backend role/permission enforcement, API/RPC integration testing, backup, persistent store details, and printer controls need validation/completion.
@@ -175,6 +175,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - 2026-11-15 — Fixed partial demo cleanup: status now detects an active demo supplier even when no medicines were created, the cleanup button is always visible to Admins with Products/Suppliers/Purchases grants, and supplier creation is delayed until the medicine catalog is prepared. Posted purchase history remains by design. Lint, focused demo tests, and build pass.
 - 2026-11-15 — Fixed demo-load eligibility: it now checks the Categories module grant directly instead of looking for a nonexistent `categories` sidebar page key (`master-data` is the page key). Added a permission test for that route/grant mapping.
 - 2026-11-15 — POS discount now defaults to Rs for new carts and after cart clearing/completed sales; Clear returns to Rs mode while percentage quick actions remain available.
+- 2026-11-16 — Fixed receipt printing so the hidden iframe waits for the receipt document, fonts, and layout before opening a single print dialog. Normal browser pages cannot suppress the native print confirmation; silent printing requires managed kiosk configuration.
 - 2026-11-15 — Investigated localhost slowness: port 3000 had no listener; started Vite and verified localhost HTML and warmed development modules respond in 0.003–0.01 seconds. Production preview is the appropriate comparison for optimized-load performance; authenticated app data still depends on hosted Supabase.
 
 ## Legacy barcode migrations
@@ -191,15 +192,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-15T18:51:25.977Z
+Generated at (UTC): 2026-11-15T20:53:56.864Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- fix: default POS discounts to rupees and unblock demo loading
 - fix: seed demo product master data
 - fix: complete POS catalog and tenant admin workflows
 - fix: hide legacy password cleanup warning
 - fix: remove user password change flow
-- feat: add POS, tenant admin, and role demo workflows
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
