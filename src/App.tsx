@@ -380,7 +380,7 @@ function PharmacyWorkspace({
   onOpenDemo: (role: UserRole) => void;
   onShopProfileChange: (shopProfile: AuthSession['shopProfile']) => void;
 }) {
-  const { canPage } = usePermissions();
+  const { can, canPage } = usePermissions();
   const visibleSidebarKeys = React.useMemo(
     () => visibleSidebarPageKeys(session.role, session.permissions),
     [session.role, session.permissions],
@@ -1305,7 +1305,7 @@ function PharmacyWorkspace({
                     && canPage('products')
                     && canPage('suppliers')
                     && canPage('purchases')
-                    && (!supabase || canPage('categories'))}
+                    && (!supabase || can('categories'))}
                   canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
                   operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>

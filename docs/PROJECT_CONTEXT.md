@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-Vite serves on port 3000. `npm test` runs the project's registered unit tests; see the generated test-file list below for coverage.
+Vite serves on port 3000. `npm test` runs the project's registered unit tests; `npm run test:discount` runs the discount calculation tests.
 
 ## Folder map
 
@@ -47,7 +47,7 @@ Vite serves on port 3000. `npm test` runs the project's registered unit tests; s
 - Supabase CLI is available as a local development dependency (`npx supabase`); hosted deployment still requires an authenticated CLI session and the correct project ref.
 - Browser `localStorage`: per-browser/device preferences, saved inventory views, purchase drafts, cached receipt/memo settings, WhatsApp templates, per-user stock-alert keys seen, and other UI settings. These do not synchronize across counters. Shared billing template, receipt format, supported Pharmacy Memo settings, and shop identity/logo now load from server-backed shop records/RPCs.
 - S1 owner-run SQL recovery package is under `supabase/fresh/`: it snapshots `public` table data, selected catalog metadata, and sequence state into an isolated forced-RLS schema. Owner reports successful snapshot execution and smoke test `complete: true` with all 26 table counts matching. Catalog metadata is not a complete schema restore. It is not a full database backup and does not include Auth users, Storage objects, or platform configuration.
-- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. WhatsApp templates remain browser-local; Shop Admins with the Settings grant can edit their own shop profile/logo after package 073 is applied, while Super Admin shop identity/logo controls remain in the platform Shops page. Shop Admin demo data is written to shared tenant data, remains until manually removed, and is deactivated rather than physically deleted so business history is preserved. Loading seeds missing shop categories/manufacturers through scoped RPCs and requires Categories plus Products, Suppliers, and Purchases grants.
+- Personal theme, text size, animation, and similar-medicine display preferences are available from the Settings page to every signed-in role and are stored per user in this browser. WhatsApp templates remain browser-local; Shop Admins with the Settings grant can edit their own shop profile/logo after package 073 is applied, while Super Admin shop identity/logo controls remain in the platform Shops page. Shop Admin demo data is written to shared tenant data, remains until manually removed, and is deactivated rather than physically deleted so business history is preserved. Loading seeds missing shop categories/manufacturers through scoped RPCs and requires Categories plus Products, Suppliers, and Purchases grants; the Categories requirement uses the module permission directly because its sidebar page key is `master-data`. The cleanup button remains available to permitted Admins even when no demo medicines are active; status also detects an active demo supplier left by a partial load. Posted purchase history is intentionally retained.
 - Mixed persistence: the active POS catalog uses `pos_catalog()`; the client calls `post_sale_with_customer_details()` (which delegates to `post_sale()`). Historical S5 preflight findings identified unscoped purchase/print/Trash/alert routines and the missing `restore_trash_medicine(uuid)`; the owner reports the 051 dry run, 052 apply, all six 053 smoke checks, and 054 final catalog check passed. The S5 package is complete by owner report; broader two-shop verification remains open. Dashboard stock/expiry KPIs still use `INITIAL_PRODUCTS` sample data, and Cash Book transactions/expenses remain React in-memory state.
 - Other storage: unknown; no general file/object-storage workflow is established by the checked-in frontend docs.
 - Shared production data behavior depends on Supabase deployment and the live schema, which may differ from checked-in migrations.
@@ -140,6 +140,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 - Production browser code is delivered as hashed JavaScript and remains inspectable by design; source maps are absent from current production assets. The named `version` import removed local test-file path strings, but cannot hide shipped app code. The frontend reads only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; the owner-reported Vercel names do not include these, and `NEXT_PUBLIC_*` names are not read by this Vite app. Verify the Production build environment before redeploying. Historical-only `supabase/.temp/pooler-url` has no embedded password; no credential-shaped values were found by the limited repository/history scan. The earlier source-sighting URL remains unverified.
 - Historical readiness baseline (2026-10-21, intended development/test project; superseded by later S3/S4 owner reports): 26 public tables had RLS enabled/not forced and no shop columns; no views, Storage buckets/policies, Realtime publication tables, or migration ledger were listed. The inventory found 57 functions, 55 SECURITY DEFINER, 16 anon-executable and 11 PUBLIC-executable. No runtime anon RPC call was run at that time. The owner later reported completing the S3/S4 tenant foundation and ACL stages. Do not use this historical baseline as current schema evidence.
 - The 2026-11-15 browser screenshot showed `/auth/v1/token?grant_type=refresh_token` returning 400; this is separate from application RPC errors and indicates the saved Supabase session is no longer refreshable. Sign out and sign in again; if needed, clear only this site's stored Supabase auth session, never share refresh tokens. POS requires an active medicine, configured units, and positive eligible stock; stock alerts require `min_stock_alert > 0` for both low and out alerts.
+- Local performance check (2026-11-15): no process was listening on port 3000 when checked, so the first localhost request could not connect. Starting Vite restored service; warmed HTML and source-module requests returned in roughly 0.003–0.01 seconds. Development mode serves uncompressed modules (including a 2.37 MB Supabase JS dependency) and auth/data still call hosted Supabase; use production preview to assess optimized bundle performance.
 - The print-request requester-name and modify RPCs in `20261012160000_modify_print_requests.sql` are local until that migration is applied to the target Supabase project.
 - The Manage Users UI expects `api_version: 5`; the matching Edge Function remains local and deployment is unverified. Owner reports package 069 smoke and 071 final checks PASS. Deploy the matching function and frontend together only after remaining release checks are ready. If a PowerShell/VS Code terminal cannot resolve Node, restart VS Code to inherit the persisted user PATH or append `C:\Program Files\nodejs` to that terminal's `$env:Path`. Trash Bin event schema/triggers/listing/restore RPCs in `20261012170000_trash_bin_history.sql` remain local until their separate migration/function deployment.
 - Barcode workflow is partial: assignment targets `medicines.barcode`; the checked-in unique index is global and does not cover `medicine_units.barcode` or future shops. Client actions, per-product label quantities, scanner test, and POS/Products keyboard scanning are implemented, but live RPC availability, unit-barcode scanning, cross-shop uniqueness, and physical scanner/printer output are unverified. Product label printing supports linear formats only; QR-code generation is not implemented. Owner reported manually running the legacy barcode SQL, but no live schema query was performed in this checkout.
@@ -167,15 +168,14 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 
 ## Changelog
 
-- 2026-11-14 — Owner reports S5 050F/050H/054A/B and all six 053 checks PASS after local test-fixture fixes; no grants changed. Prepared S6 Shops/account-management source and packages 069–071; SQL/deployment remain owner-run.
-- 2026-11-15 — Corrected a package 069 postflight signature check and rollback-only smoke target; owner reports 070 READY, 071 PASS (27/27 write guards), and the corrected 069 smoke test PASS. Deployment is not confirmed.
-- 2026-11-15 — A platform Super Admin screenshot showed an erroneous pending-print-count toast. The client had polled the shop-scoped RPC for Super Admin; `App.tsx` now uses the `print-requests` page-access rule so platform-only Super Admins do not request that shop count. TypeScript, permission tests, alternate-output production build, and diff check pass; the browser change is not yet runtime-verified.
-- 2026-11-15 — Owner reports package 072 final check PASS and successful two-shop testing. Exact scenario coverage and deployed frontend/Edge Function versions are unverified; Print Requests/Trash authorization review remains open. Shops has collapsed rows, expandable shop/profile-grant editing, logo upload, and package 072 Storage policies.
-- 2026-11-15 — Reworked Demo into a full-screen isolated session with role-specific sample navigation/data. The Super Admin Auth session stays active; **Sign out demo** clears in-memory state and returns to the Super Admin dashboard. Role grants are representative templates, not a particular user's saved grants. Demo pages are mock UI, not the live feature screens or an authorization test; no demo business APIs, SQL, or deployment are involved.
-- 2026-11-14 — S6 062/064/068 checks PASS by owner; added grants, platform-only routing, shared settings, guarded account paths, POS refinements, and Held bills. The 068 staff-granted write case was unavailable.
-- 2026-11-03–14 — Added POS customer details/analytics and completed owner-reported S1–S4/S5 work; deployment and hosted validation remain owner work.
+- 2026-11-03–15 — Added POS customer details/analytics and completed owner-reported S1–S5 work. Owner reports 050F/050H/054A/B, all six 053 checks, S6 062/064/068, package 069 smoke/071 (27/27 guards), and 072 final/two-shop checks passed. Packages/deployment and broad two-shop verification remain owner-managed; the 068 staff-with-settings case was unavailable.
+- 2026-11-15 — Added Shops/account-management UI and isolated mock role demo; mock role grants are not saved account grants. Corrected package 069 postflight/smoke checks and stopped the platform Super Admin from polling the shop-only pending-print count. SQL/deployment and hosted validation remain owner-managed.
 - 2026-11-15 — Fixed the POS/Products mismatch by removing the Supabase-session mock catalog fallback; restored Shop Admin demo-data load/remove controls and tenant-scoped profile/logo editing. Demo records use live shop-scoped workflows; removal deactivates demo medicines/supplier while preserving history. The Settings screenshot later exposed demo load failure because `save_medicine` requires an active shop category/manufacturer. The client now creates/reactivates the demo's missing master data using scoped RPCs; loading requires Categories in addition to Products, Suppliers, and Purchases (remove still needs only the latter three). TypeScript, demo-data tests, full tests, and build pass. Categories/manufacturers added for demo remain reusable master data. Owner reports applying package 073; its smoke test still lacks eligible Admin/staff test accounts, and reported 071 guard counts conflict (28/27 then 29/28); confirm same project/order before repair. The targeted repair SQL and 073 final check guard the tenant table. Production `manage-users` Edge Function deployment is confirmed; frontend deployment remains owner-run. Payment RPC/table status is now reported present; reconcile project/schema cache before retrying. The screenshot's refresh-token 400 is a stale/revoked browser session; sign out/in. The `beforeinstallprompt` banner warning is informational.
 - 2026-11-15 — Removed the Supabase POS catalog's direct `medicines` fallback, which bypassed the authorized `pos_catalog()` RPC and caused the browser's 403. Empty RPC results now remain empty rather than triggering unauthorized reads or synthesized products. Lint, POS catalog tests, and production build pass; redeploy/reload the frontend. No database change is needed.
+- 2026-11-15 — Fixed partial demo cleanup: status now detects an active demo supplier even when no medicines were created, the cleanup button is always visible to Admins with Products/Suppliers/Purchases grants, and supplier creation is delayed until the medicine catalog is prepared. Posted purchase history remains by design. Lint, focused demo tests, and build pass.
+- 2026-11-15 — Fixed demo-load eligibility: it now checks the Categories module grant directly instead of looking for a nonexistent `categories` sidebar page key (`master-data` is the page key). Added a permission test for that route/grant mapping.
+- 2026-11-15 — POS discount now defaults to Rs for new carts and after cart clearing/completed sales; Clear returns to Rs mode while percentage quick actions remain available.
+- 2026-11-15 — Investigated localhost slowness: port 3000 had no listener; started Vite and verified localhost HTML and warmed development modules respond in 0.003–0.01 seconds. Production preview is the appropriate comparison for optimized-load performance; authenticated app data still depends on hosted Supabase.
 
 ## Legacy barcode migrations
 
@@ -191,247 +191,42 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-15T13:51:17.021Z
+Generated at (UTC): 2026-11-15T18:51:25.977Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- fix: seed demo product master data
 - fix: complete POS catalog and tenant admin workflows
 - fix: hide legacy password cleanup warning
 - fix: remove user password change flow
 - feat: add POS, tenant admin, and role demo workflows
-- docs: record S5 package push
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`
 - - `build`: `vite build`
 - - `preview`: `vite preview`
-- - `clean`: `rm -rf dist server.js`
-- - `prepare`: `node scripts/setup-hooks.mjs`
 - - `context:update`: `node scripts/update-context.mjs`
 - - `lint`: `tsc --noEmit`
-- - `test:fefo`: `tsx --test src/utils/fefo.test.ts`
-- - `test:receipt`: `tsx --test src/utils/receipt.test.ts`
-- - `test:inventory-ui`: `tsx --test src/components/inventory/inventoryUiLogic.test.ts`
-- - `test:stock-inventory`: `tsx --test src/components/inventory/stockInventoryLogic.test.ts`
-- - `test:inventory-products`: `tsx --test src/components/inventory/productImportLogic.test.ts`
-- - `test:stock-alerts`: `tsx --test src/data/stockAlertLogic.test.ts`
-- - `test:pos-catalog`: `tsx --test src/data/posCatalogLogic.test.ts`
-- - `test:product-filters`: `tsx --test src/components/inventory/productFilterLogic.test.ts`
-- - `test:master-data`: `tsx --test src/components/masterDataSimilarity.test.ts`
-- - `test:print-snapshot`: `tsx --test src/utils/printSnapshot.test.ts`
-- - `test:print-request-editor`: `tsx --test src/utils/printRequestEditor.test.ts`
-- - `test:trash-bin`: `tsx --test src/utils/trashBin.test.ts`
-- - `test:store-settings`: `tsx --test src/utils/storeSettings.test.ts`
-- - `test:shop-settings`: `tsx --test src/data/shopSettings.test.ts`
-- - `test:shop-logo`: `tsx --test src/utils/shopLogo.test.ts`
-- - `test:demo-data`: `tsx --test src/data/demoStockPurchase.test.ts src/data/demoMasterData.test.ts`
-- - `test:demo-preview`: `tsx --test src/utils/demoPreview.test.ts`
-- - `test:install-prompt`: `tsx --test src/utils/installPrompt.test.ts`
-- - `test:pos-customer`: `tsx --test src/utils/posCustomer.test.ts`
-- - `test:held-bills`: `tsx --test src/utils/heldBills.test.ts`
-- - `test:payment-details`: `tsx --test src/utils/paymentDetails.test.ts src/utils/splitPayments.test.ts`
-- - `test:report`: `tsx --test src/utils/salesReport.test.ts`
 - - `test:discount`: `tsx --test src/utils/discount.test.ts`
-- - `test:barcode-scanner`: `tsx --test src/utils/useBarcodeScanner.test.ts`
-- - `test:labels`: `tsx --test src/utils/labelUtils.test.ts`
-- - `test:permissions`: `tsx --test src/permissions.test.ts`
-- - `test:sidebar`: `tsx --test src/components/sidebarPinLogic.test.ts`
-- - `test:manage-users-policy`: `tsx --test supabase/functions/manage-users/policy.test.ts`
-- - `test:customer-display`: `tsx --test src/utils/customerDisplay.test.ts`
 - - `test`: `npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-data && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display`
 
-Dependencies and versions:
-- - `@e965/xlsx` ^0.20.3 (dependency)
-- - `@google/genai` ^2.4.0 (dependency)
-- - `@supabase/supabase-js` ^2.117.3 (dependency)
-- - `@tailwindcss/vite` ^4.3.3 (dependency)
-- - `@types/express` ^4.17.21 (devDependency)
-- - `@types/node` ^22.14.0 (devDependency)
-- - `@types/react-dom` ^19.3.0 (devDependency)
-- - `@types/react` ^19.3.0 (devDependency)
-- - `@vitejs/plugin-react` ^6.1.1 (dependency)
-- - `autoprefixer` ^10.4.21 (devDependency)
-- - `dotenv` ^17.2.3 (dependency)
-- - `esbuild` ^0.28.0 (devDependency)
-- - `express` ^4.21.2 (dependency)
-- - `jsbarcode` 3.12.3 (dependency)
-- - `lucide-react` ^0.546.0 (dependency)
-- - `motion` ^12.23.24 (dependency)
-- - `react-dom` ^19.0.1 (dependency)
-- - `react` ^19.0.1 (dependency)
-- - `supabase` ^3.0.0 (devDependency)
-- - `tailwindcss` ^4.3.3 (devDependency)
-- - `tsx` ^4.21.0 (devDependency)
-- - `typescript` ^7.0.2 (devDependency)
-- - `vite` ^8.3.0 (dependency)
+Dependencies and versions: see `package.json`.
 
-src/ tree (maximum two directory levels):
+src/ directories (maximum two directory levels):
 ```text
 src/
-  src/App.tsx
   src/components/
-    src/components/BarcodeScannerTest.tsx
-    src/components/CashBookScreen.tsx
-    src/components/CustomerDisplayView.tsx
-    src/components/CustomerLedgerScreen.tsx
-    src/components/DashboardView.tsx
-    src/components/DemoRolePreview.tsx
-    src/components/DemoWorkspace.tsx
-    src/components/DiscountBox.tsx
-    src/components/EndOfDayModal.tsx
-    src/components/GlowCredit.css
-    src/components/GlowCredit.tsx
-    src/components/HelpSupportView.tsx
-    src/components/InstallAppPrompt.tsx
     src/components/inventory/
-    src/components/InventoryScreen.tsx
     src/components/labels/
-    src/components/LoginView.tsx
-    src/components/ManageUsersView.tsx
-    src/components/masterDataSimilarity.test.ts
-    src/components/masterDataSimilarity.ts
-    src/components/MasterDataView.tsx
-    src/components/MyPrintRequestsView.tsx
-    src/components/PaymentProviderSelect.tsx
-    src/components/PharmaLogo.css
-    src/components/PharmaLogo.tsx
-    src/components/POSBillingView.tsx
-    src/components/PrintRequestsAdminView.tsx
-    src/components/PurchaseHistoryView.tsx
-    src/components/ReportsScreen.tsx
     src/components/returns/
-    src/components/SalesHistoryView.tsx
-    src/components/SettingsView.tsx
-    src/components/ShopsView.tsx
-    src/components/Sidebar.tsx
-    src/components/sidebarMenuPosition.ts
-    src/components/sidebarPages.ts
-    src/components/sidebarPinLogic.test.ts
-    src/components/sidebarPinLogic.ts
-    src/components/StockAlertBell.tsx
-    src/components/StockPurchaseView.tsx
-    src/components/SuppliersView.tsx
-    src/components/TemplatePreviewModal.tsx
-    src/components/TopNav.tsx
-    src/components/TrashBinView.tsx
-    src/components/UserPreferencesPanel.tsx
-    src/components/WhatsAppRemindersView.tsx
   src/config/
-    src/config/developer.ts
   src/constants/
-    src/constants/brand.ts
   src/data/
-    src/data/demoDataManager.ts
-    src/data/demoMasterData.test.ts
-    src/data/demoMasterData.ts
-    src/data/demoStockPurchase.test.ts
-    src/data/demoStockPurchase.ts
-    src/data/mockPharmacyData.ts
-    src/data/paymentProviders.ts
-    src/data/posCatalog.ts
-    src/data/posCatalogLogic.test.ts
-    src/data/posCatalogLogic.ts
-    src/data/returnLogic.test.ts
-    src/data/returnLogic.ts
-    src/data/saleReturns.ts
-    src/data/sales.ts
-    src/data/shopProfile.ts
-    src/data/shopSettings.test.ts
-    src/data/shopSettings.ts
-    src/data/sidebarPreferences.ts
-    src/data/stockAlertLogic.test.ts
-    src/data/stockAlertLogic.ts
-    src/data/stockAlerts.ts
-  src/index.css
-  src/main.tsx
-  src/permissions.test.ts
-  src/permissions.tsx
   src/types/
-    src/types/pharmacy.ts
   src/utils/
-    src/utils/auth.ts
-    src/utils/customerDisplay.test.ts
-    src/utils/customerDisplay.ts
-    src/utils/demoPreview.test.ts
-    src/utils/demoPreview.ts
-    src/utils/discount.test.ts
-    src/utils/discount.ts
-    src/utils/fefo.test.ts
-    src/utils/fefo.ts
-    src/utils/fetchAllSupabaseRows.ts
-    src/utils/heldBills.test.ts
-    src/utils/heldBills.ts
-    src/utils/installPrompt.test.ts
-    src/utils/installPrompt.ts
-    src/utils/labelUtils.test.ts
-    src/utils/labelUtils.ts
-    src/utils/paymentDetails.test.ts
-    src/utils/paymentDetails.ts
-    src/utils/posCustomer.test.ts
-    src/utils/posCustomer.ts
-    src/utils/printRequestEditor.test.ts
-    src/utils/printRequestEditor.ts
-    src/utils/printRequestTypes.ts
-    src/utils/printSnapshot.test.ts
-    src/utils/printSnapshot.ts
-    src/utils/printWorkflow.ts
-    src/utils/receipt.test.ts
-    src/utils/receipt.ts
-    src/utils/salesReport.test.ts
-    src/utils/salesReport.ts
-    src/utils/shopLogo.test.ts
-    src/utils/shopLogo.ts
-    src/utils/shopSettings.ts
-    src/utils/splitPayments.test.ts
-    src/utils/splitPayments.ts
-    src/utils/stockAlertsEvents.ts
-    src/utils/storageMigration.ts
-    src/utils/storeSettings.test.ts
-    src/utils/storeSettings.ts
-    src/utils/supabase.ts
-    src/utils/supabaseError.test.ts
-    src/utils/supabaseError.ts
-    src/utils/trashBin.test.ts
-    src/utils/trashBin.ts
-    src/utils/useBarcodeScanner.test.ts
-    src/utils/useBarcodeScanner.ts
-    src/utils/userDisplayPreferences.ts
 ```
 
-Test files:
-- src/components/inventory/inventoryUiLogic.test.ts
-- src/components/inventory/productFilterLogic.test.ts
-- src/components/inventory/productImportLogic.test.ts
-- src/components/inventory/stockInventoryLogic.test.ts
-- src/components/masterDataSimilarity.test.ts
-- src/components/sidebarPinLogic.test.ts
-- src/data/demoMasterData.test.ts
-- src/data/demoStockPurchase.test.ts
-- src/data/posCatalogLogic.test.ts
-- src/data/returnLogic.test.ts
-- src/data/shopSettings.test.ts
-- src/data/stockAlertLogic.test.ts
-- src/permissions.test.ts
-- src/utils/customerDisplay.test.ts
-- src/utils/demoPreview.test.ts
-- src/utils/discount.test.ts
-- src/utils/fefo.test.ts
-- src/utils/heldBills.test.ts
-- src/utils/installPrompt.test.ts
-- src/utils/labelUtils.test.ts
-- src/utils/paymentDetails.test.ts
-- src/utils/posCustomer.test.ts
-- src/utils/printRequestEditor.test.ts
-- src/utils/printSnapshot.test.ts
-- src/utils/receipt.test.ts
-- src/utils/salesReport.test.ts
-- src/utils/shopLogo.test.ts
-- src/utils/splitPayments.test.ts
-- src/utils/storeSettings.test.ts
-- src/utils/supabaseError.test.ts
-- src/utils/trashBin.test.ts
-- src/utils/useBarcodeScanner.test.ts
-- supabase/functions/manage-users/policy.test.ts
+Test files: 33
 
 Environment variable names from .env.example files (values are not read into this block):
 - APP_URL

@@ -12,7 +12,12 @@ import {
 } from '../types/pharmacy';
 import type { PosCatalogProduct } from './posCatalogLogic';
 import { buildDemoStockPurchaseItems } from './demoStockPurchase';
-import { planDemoMasterDataChanges, type DemoMasterDataRow } from './demoMasterData';
+import {
+  planDemoMasterDataChanges,
+  summarizeDemoDataStatus,
+  type DemoDataStatus,
+  type DemoMasterDataRow,
+} from './demoMasterData';
 
 export const DEMO_DATA_CHANGED_EVENT = 'pharma-care.demoDataChanged';
 
@@ -825,60 +830,37 @@ export function getDemoPosCatalog(): PosCatalogProduct[] {
   });
 }
 
-export async function checkDemoDataStatus(): Promise<{ loaded: boolean; count: number }> {
+export async function checkDemoDataStatus(): Promise<DemoDataStatus> {
   const localLoaded = isDemoDataLoadedLocally();
   if (!supabase) {
-    return { loaded: localLoaded, count: localLoaded ? DEMO_MEDICINES.length : 0 };
+    return summarizeDemoDataStatus(localLoaded ? DEMO_MEDICINES.length : 0, false);
   }
-  const { data: demoMeds, error } = await supabase
-    .from('medicines')
-    .select('id, is_active')
-    .like('code', 'DEMO-MED-%');
-  if (error) throw new Error(`Could not check demo data status: ${error.message}`);
-  const activeDemoMeds = (demoMeds ?? []).filter((medicine) => medicine.is_active);
-  return { loaded: activeDemoMeds.length > 0, count: activeDemoMeds.length };
+  const [medicineResult, supplierResult] = await Promise.all([
+    supabase
+      .from('medicines')
+      .select('id, is_active')
+      .like('code', 'DEMO-MED-%'),
+    supabase
+      .from('suppliers')
+      .select('id, is_active')
+      .eq('name', DEMO_SUPPLIER.name)
+      .limit(1),
+  ]);
+  if (medicineResult.error) {
+    throw new Error(`Could not check demo medicines: ${medicineResult.error.message}`);
+  }
+  if (supplierResult.error) {
+    throw new Error(`Could not check the demo supplier: ${supplierResult.error.message}`);
+  }
+  const activeDemoMeds = (medicineResult.data ?? []).filter((medicine) => medicine.is_active);
+  const supplierActive = supplierResult.data?.[0]?.is_active === true;
+  return summarizeDemoDataStatus(activeDemoMeds.length, supplierActive);
 }
 
 export async function loadDemoData(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     if (supabase) {
       await ensureDemoMasterData(supabase);
-
-      const { data: existingSuppliers, error: supplierQueryError } = await supabase
-        .from('suppliers')
-        .select('id, is_active')
-        .eq('name', DEMO_SUPPLIER.name)
-        .limit(1);
-      if (supplierQueryError) throw new Error(`Could not check the demo supplier: ${supplierQueryError.message}`);
-
-      const existingSupplier = existingSuppliers?.[0];
-      if (existingSupplier && !existingSupplier.is_active) {
-        const { error } = await supabase.rpc('activate_supplier', {
-          p_supplier_id: existingSupplier.id,
-        });
-        if (error) throw new Error(`Could not activate the demo supplier: ${error.message}`);
-      }
-      if (!existingSupplier) {
-        const { error } = await supabase.rpc('save_supplier', {
-          p_supplier_id: null,
-          p_name: DEMO_SUPPLIER.name,
-          p_contact: DEMO_SUPPLIER.contact,
-          p_address: DEMO_SUPPLIER.address,
-          p_licence_or_tax_number: DEMO_SUPPLIER.licence_or_tax_number,
-          p_payment_terms: DEMO_SUPPLIER.payment_terms,
-        });
-        if (error) throw new Error(`Could not create the demo supplier: ${error.message}`);
-      }
-
-      const { data: suppliers, error: supplierReloadError } = await supabase
-        .from('suppliers')
-        .select('id')
-        .eq('name', DEMO_SUPPLIER.name)
-        .eq('is_active', true)
-        .limit(1);
-      if (supplierReloadError) throw new Error(`Could not load the demo supplier: ${supplierReloadError.message}`);
-      const supplierId = suppliers?.[0]?.id;
-      if (!supplierId) throw new Error('The demo supplier could not be resolved after saving.');
 
       const { data: existingMeds, error: medicineQueryError } = await supabase
         .from('medicines')
@@ -960,6 +942,42 @@ export async function loadDemoData(): Promise<{ success: boolean; count: number;
       }
 
       const stockItems = buildDemoStockPurchaseItems(DEMO_MEDICINES, medicineIds, units ?? [], stockByMedicine);
+
+      const { data: existingSuppliers, error: supplierQueryError } = await supabase
+        .from('suppliers')
+        .select('id, is_active')
+        .eq('name', DEMO_SUPPLIER.name)
+        .limit(1);
+      if (supplierQueryError) throw new Error(`Could not check the demo supplier: ${supplierQueryError.message}`);
+
+      const existingSupplier = existingSuppliers?.[0];
+      if (existingSupplier && !existingSupplier.is_active) {
+        const { error } = await supabase.rpc('activate_supplier', {
+          p_supplier_id: existingSupplier.id,
+        });
+        if (error) throw new Error(`Could not activate the demo supplier: ${error.message}`);
+      }
+      if (!existingSupplier) {
+        const { error } = await supabase.rpc('save_supplier', {
+          p_supplier_id: null,
+          p_name: DEMO_SUPPLIER.name,
+          p_contact: DEMO_SUPPLIER.contact,
+          p_address: DEMO_SUPPLIER.address,
+          p_licence_or_tax_number: DEMO_SUPPLIER.licence_or_tax_number,
+          p_payment_terms: DEMO_SUPPLIER.payment_terms,
+        });
+        if (error) throw new Error(`Could not create the demo supplier: ${error.message}`);
+      }
+
+      const { data: suppliers, error: supplierReloadError } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('name', DEMO_SUPPLIER.name)
+        .eq('is_active', true)
+        .limit(1);
+      if (supplierReloadError) throw new Error(`Could not load the demo supplier: ${supplierReloadError.message}`);
+      const supplierId = suppliers?.[0]?.id;
+      if (!supplierId) throw new Error('The demo supplier could not be resolved after saving.');
 
       if (stockItems.length > 0) {
         const { error } = await supabase.rpc('post_purchase', {

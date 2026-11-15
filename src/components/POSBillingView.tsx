@@ -260,7 +260,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [activeOptions]);
 
   // Checkout & Cash Tendered
-  const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'percent', value: '' });
+  const [discount, setDiscount] = useState<{ mode: DiscountMode; value: string }>({ mode: 'amount', value: '' });
   const [discountNotice, setDiscountNotice] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT' | 'SPLIT'>('CASH');
   const [tenderedAmountPKR, setTenderedAmountPKR] = useState<number | null>(null);
@@ -620,7 +620,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     setCart([]);
     setQuantityDrafts({});
     setQuantityWarnings({});
-    setDiscount({ mode: 'percent', value: '' });
+    setDiscount({ mode: 'amount', value: '' });
     setDiscountNotice('');
     setTenderedAmountPKR(null);
     setSelectedCustomerId('');
@@ -645,7 +645,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
   useEffect(() => {
     if (cart.length === 0) {
-      if (discount.value !== '' || discount.mode !== 'percent') setDiscount({ mode: 'percent', value: '' });
+      if (discount.value !== '' || discount.mode !== 'amount') setDiscount({ mode: 'amount', value: '' });
       if (discountNotice) setDiscountNotice('');
       return;
     }

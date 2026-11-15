@@ -9,6 +9,23 @@ export interface DemoMasterDataPlan {
   activateRows: DemoMasterDataRow[];
 }
 
+export interface DemoDataStatus {
+  loaded: boolean;
+  count: number;
+  supplierActive: boolean;
+}
+
+export function summarizeDemoDataStatus(
+  activeMedicineCount: number,
+  supplierActive: boolean,
+): DemoDataStatus {
+  return {
+    loaded: activeMedicineCount > 0 || supplierActive,
+    count: activeMedicineCount,
+    supplierActive,
+  };
+}
+
 export function planDemoMasterDataChanges(
   requiredNames: readonly string[],
   existingRows: readonly DemoMasterDataRow[],

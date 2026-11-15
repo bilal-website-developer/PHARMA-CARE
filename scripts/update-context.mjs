@@ -59,8 +59,6 @@ async function sourceTree() {
         const relative = displayPath(path.relative(root, path.join(directory, entry.name)));
         lines.push(`${'  '.repeat(depth)}${relative}/`);
         if (depth < 2) await addDirectory(path.join(directory, entry.name), depth + 1);
-      } else if (depth <= 2) {
-        lines.push(`${'  '.repeat(depth)}${displayPath(path.relative(root, path.join(directory, entry.name)))}`);
       }
     }
   }
@@ -68,14 +66,14 @@ async function sourceTree() {
   return lines;
 }
 
-async function testFiles() {
-  const files = [];
+async function testFileCount() {
+  let count = 0;
   await walk(root, async (filePath) => {
     if (/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(filePath)) {
-      files.push(displayPath(path.relative(root, filePath)));
+      count += 1;
     }
   });
-  return files.sort();
+  return count;
 }
 
 async function envNames() {
@@ -96,13 +94,12 @@ function bulletList(values, emptyMessage) {
 }
 
 const project = JSON.parse(await readFile(packagePath, 'utf8'));
-const scripts = Object.entries(project.scripts ?? {}).map(([name, command]) => `- \`${name}\`: \`${command}\``);
-const dependencies = [
-  ...Object.entries(project.dependencies ?? {}).map(([name, version]) => `- \`${name}\` ${version} (dependency)`),
-  ...Object.entries(project.devDependencies ?? {}).map(([name, version]) => `- \`${name}\` ${version} (devDependency)`),
-].sort((a, b) => a.localeCompare(b));
+const relevantScripts = new Set(['dev', 'lint', 'test', 'test:discount', 'build', 'preview', 'context:update']);
+const scripts = Object.entries(project.scripts ?? {})
+  .filter(([name]) => relevantScripts.has(name))
+  .map(([name, command]) => `- \`${name}\`: \`${command}\``);
 const tree = await sourceTree();
-const tests = await testFiles();
+const tests = await testFileCount();
 const variables = await envNames();
 const commitSubjects = gitOutput(['log', '-5', '--pretty=format:%s'], '')
   .split(/\r?\n/)
@@ -119,16 +116,14 @@ const generated = [
   'npm scripts:',
   bulletList(scripts, 'none'),
   '',
-  'Dependencies and versions:',
-  bulletList(dependencies, 'none'),
+  'Dependencies and versions: see `package.json`.',
   '',
-  'src/ tree (maximum two directory levels):',
+  'src/ directories (maximum two directory levels):',
   '```text',
   ...tree,
   '```',
   '',
-  'Test files:',
-  bulletList(tests, 'none found'),
+  `Test files: ${tests}`,
   '',
   'Environment variable names from .env.example files (values are not read into this block):',
   bulletList(variables, 'none found'),

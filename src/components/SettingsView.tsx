@@ -28,6 +28,7 @@ import {
   getPharmacyMemoSettingsValidationMessage,
 } from '../utils/storeSettings';
 import { checkDemoDataStatus, loadDemoData, removeDemoData } from '../data/demoDataManager';
+import type { DemoDataStatus } from '../data/demoMasterData';
 import type { ShopProfile } from '../utils/auth';
 import {
   removeCurrentShopLogo,
@@ -120,7 +121,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [settingsSaving, setSettingsSaving] = useState(false);
 
   // Demo Data State
-  const [demoStatus, setDemoStatus] = useState<{ loaded: boolean; count: number }>({ loaded: false, count: 0 });
+  const [demoStatus, setDemoStatus] = useState<DemoDataStatus>({
+    loaded: false,
+    count: 0,
+    supplierActive: false,
+  });
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoNotice, setDemoNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
@@ -181,14 +186,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setDemoNotice(null);
     try {
       const result = await loadDemoData();
+      let statusError = '';
+      try {
+        setDemoStatus(await checkDemoDataStatus());
+      } catch (error) {
+        statusError = error instanceof Error ? error.message : 'Could not refresh demo-data status.';
+      }
       if (result.success) {
-        setDemoStatus({ loaded: true, count: result.count });
         setDemoNotice({
-          text: `Demo data loaded successfully! ${result.count} popular medicines, batches, and 1 distributor supplier are ready for showcase.`,
-          error: false,
+          text: `Demo data loaded successfully! ${result.count} popular medicines, batches, and 1 distributor supplier are ready for showcase.${statusError ? ` Status refresh failed: ${statusError}` : ''}`,
+          error: Boolean(statusError),
         });
       } else {
-        setDemoNotice({ text: result.error || 'Failed to load demo data.', error: true });
+        setDemoNotice({
+          text: `${result.error || 'Failed to load demo data.'}${statusError ? ` Status refresh failed: ${statusError}` : ''}`,
+          error: true,
+        });
       }
     } catch (e) {
       setDemoNotice({ text: e instanceof Error ? e.message : 'Could not load demo data.', error: true });
@@ -203,7 +216,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const result = await removeDemoData();
       if (result.success) {
-        setDemoStatus({ loaded: false, count: 0 });
+        setDemoStatus({ loaded: false, count: 0, supplierActive: false });
         setConfirmRemoveOpen(false);
         setDemoNotice({
           text: `Demo data removed successfully (${result.deletedCount} medicines deactivated). Existing sales and purchase history are preserved.`,
@@ -798,7 +811,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {demoStatus.loaded ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Demo Data Active ({demoStatus.count} items)
+                {demoStatus.count > 0
+                  ? `Demo Data Active (${demoStatus.count} medicines${demoStatus.supplierActive ? ' + supplier' : ''})`
+                  : 'Partial Demo Data Active (supplier only)'}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
@@ -843,15 +858,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {demoBusy ? 'Loading Demo Data…' : 'Load Demo Data (12 Medicines + Supplier)'}
           </button>
 
-          {demoStatus.loaded && (
+          {canManageDemoData && (
             <button
               type="button"
-              disabled={demoBusy || !canManageDemoData}
+              disabled={demoBusy}
               onClick={() => setConfirmRemoveOpen(true)}
               className="inline-flex items-center gap-2 rounded-control border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" />
-              Remove Demo Data
+              Remove / Clean Up Demo Data
             </button>
           )}
         </div>

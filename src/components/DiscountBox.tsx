@@ -74,7 +74,7 @@ export function DiscountBox({ billPaisa, discount, maxPercent, maxPaisa, notice,
         ))}
         <button
           type="button"
-          onClick={() => onChange({ mode: 'percent', value: '' })}
+          onClick={() => onChange({ mode: 'amount', value: '' })}
           className="rounded-control border border-border px-2 py-1 font-bold text-text hover:bg-surface"
         >
           Clear

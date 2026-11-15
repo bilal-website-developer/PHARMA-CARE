@@ -57,6 +57,7 @@ test('Admin pages follow explicit grants and Super Admin is platform-only', () =
   assert.equal(canAccessPage(UserRole.ADMIN, ['purchases'], 'purchase-history'), false);
   assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchase-history'), true);
   assert.equal(canAccessPage(UserRole.ADMIN, ['purchase_history'], 'purchases'), false);
+  assert.equal(canAccessPage(UserRole.ADMIN, ['categories'], 'master-data'), true);
   assert.equal(canAccessPage(UserRole.CASHIER, ['pos'], 'manage-users'), false);
   assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'manage-users'), false);
   assert.equal(canAccessPage(UserRole.MANAGER, [], 'manage-users'), false);

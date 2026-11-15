@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { planDemoMasterDataChanges } from './demoMasterData';
+import { planDemoMasterDataChanges, summarizeDemoDataStatus } from './demoMasterData';
 
 test('plans only missing and inactive demo master data, case-insensitively', () => {
   const plan = planDemoMasterDataChanges(
@@ -19,4 +19,17 @@ test('plans only missing and inactive demo master data, case-insensitively', () 
 
 test('rejects empty required master data names', () => {
   assert.throws(() => planDemoMasterDataChanges(['  '], []), /cannot be empty/);
+});
+
+test('recognizes an active supplier left behind by a failed demo load', () => {
+  assert.deepEqual(summarizeDemoDataStatus(0, true), {
+    loaded: true,
+    count: 0,
+    supplierActive: true,
+  });
+  assert.deepEqual(summarizeDemoDataStatus(0, false), {
+    loaded: false,
+    count: 0,
+    supplierActive: false,
+  });
 });
