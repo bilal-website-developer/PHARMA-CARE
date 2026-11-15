@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import {
   MODULES,
@@ -99,11 +99,9 @@ function formatTeamTimestamp(value: string | null) {
 export function ManageUsersView({
   currentUserId,
   currentRole,
-  onChangePassword,
 }: {
   currentUserId: string;
   currentRole: UserRole;
-  onChangePassword: () => void;
 }) {
   const isSuperAdmin = currentRole === UserRole.SUPER_ADMIN;
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -442,9 +440,6 @@ export function ManageUsersView({
             : <p className="mt-1 text-sm text-muted">{currentCount} profiles across the platform. Per-shop Admin and staff limits are enforced when saving.</p>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onChangePassword} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90">
-            <KeyRound size={16} /> Change My Password
-          </button>
           {!isFormOpen && (
             <button type="button" disabled={!serviceReady} onClick={startAdd} className="inline-flex items-center gap-2 rounded-control bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
               <Plus size={17} /> Add User
@@ -750,98 +745,5 @@ export function ManageUsersView({
         </table>
       </div>
     </section>
-  );
-}
-
-export function ChangePasswordModal({
-  email,
-  mustChangePassword,
-  onClose,
-  onComplete,
-}: {
-  email: string;
-  mustChangePassword: boolean;
-  onClose: () => void;
-  onComplete: () => void;
-}) {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState(false);
-
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (newPassword.length < 8) {
-      setError(true);
-      setMessage('New password must be at least 8 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError(true);
-      setMessage('New password and confirmation do not match.');
-      return;
-    }
-    if (!supabase) {
-      setError(true);
-      setMessage('Supabase is not configured.');
-      return;
-    }
-    setSaving(true);
-    setMessage('');
-    try {
-      if (mustChangePassword) {
-        const { data, error: functionError } = await supabase.functions.invoke('manage-users', {
-          body: { action: 'complete_first_login_password', new_password: newPassword },
-        });
-        if (functionError) {
-          const context = 'context' in functionError ? functionError.context : undefined;
-          if (context instanceof Response) {
-            const responseBody: unknown = await context.json().catch(() => null);
-            if (typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody) {
-              throw new Error(String(responseBody.message));
-            }
-          }
-          throw new Error(functionError.message);
-        }
-        if (!data) throw new Error('The password service returned no confirmation.');
-        onComplete();
-      } else {
-        const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
-        if (verifyError) throw new Error('Current password is incorrect.');
-        const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-        if (updateError) throw updateError;
-      }
-      setError(false);
-      setMessage('Password changed successfully.');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (caught) {
-      setError(true);
-      setMessage(caught instanceof Error ? caught.message : 'Could not change the password.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" className="visual-modal-panel w-full max-w-md space-y-4 rounded-card bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between"><h2 id="password-dialog-title" className="text-lg font-bold text-text">{mustChangePassword ? 'Set a New Password' : 'Change My Password'}</h2>{!mustChangePassword && <button type="button" onClick={onClose} aria-label="Close" className="text-muted">×</button>}</div>
-        {mustChangePassword && <p className="text-sm text-muted">Change the temporary password to continue.</p>}
-        <form onSubmit={(event) => void submit(event)} className="space-y-3">
-          {!mustChangePassword && <label className="block text-sm font-semibold">Current password<input type="password" required autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>}
-          <label className="block text-sm font-semibold">New password<input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
-          <label className="block text-sm font-semibold">Confirm new password<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-control border border-border px-3 py-2 font-normal" /></label>
-          {message && <p role={error ? 'alert' : 'status'} className={`visual-toast text-sm ${error ? 'text-danger' : 'text-primary'}`}>{message}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            {!mustChangePassword && <button type="button" onClick={onClose} className="rounded-control border border-border px-4 py-2 text-sm font-semibold">Cancel</button>}
-            <button type="submit" disabled={saving} className="rounded-control bg-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{saving ? 'Saving…' : 'Update Password'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }

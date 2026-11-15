@@ -4,7 +4,6 @@ import {
   assignableRolesFor,
   canAssignRole,
   canAccessShopProfile,
-  canUseManagementActionDuringPasswordChange,
   canManagePlatformShops,
   canEditManagedUser,
   hasValidShopAssignment,
@@ -18,6 +17,7 @@ import {
   permissionGrantDenial,
   publicTeamMember,
   profileChangeDenial,
+  withoutLegacyPasswordChangeFlag,
 } from './policy.ts';
 
 const emptyChange = {
@@ -53,10 +53,14 @@ test('shop staff share one role-independent profile cap', () => {
   assert.equal(isShopRoleLimitReached('super_admin', 0, 1000, 10, 100), false);
 });
 
-test('first-login accounts can only call the password completion action', () => {
-  assert.equal(canUseManagementActionDuringPasswordChange('complete_first_login_password', true), true);
-  assert.equal(canUseManagementActionDuringPasswordChange('list', true), false);
-  assert.equal(canUseManagementActionDuringPasswordChange('list', false), true);
+test('legacy forced-password metadata is removed without changing other app metadata', () => {
+  assert.deepEqual(withoutLegacyPasswordChangeFlag({
+    must_change_password: true,
+    provisioning_operation_id: 'operation',
+  }), {
+    provisioning_operation_id: 'operation',
+  });
+  assert.deepEqual(withoutLegacyPasswordChangeFlag(undefined), {});
 });
 
 test('admin cannot create or manage admin users while super_admin can manage admins', () => {

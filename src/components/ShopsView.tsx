@@ -326,7 +326,7 @@ export function ShopsView() {
             <label className="space-y-1 text-sm font-semibold text-text">Admin email *
               <input required type="email" maxLength={254} value={form.admin_email} onChange={(event) => setForm({ ...form, admin_email: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 font-normal" />
             </label>
-            <label className="space-y-1 text-sm font-semibold text-text">Temporary password *
+            <label className="space-y-1 text-sm font-semibold text-text">Admin password *
               <input required type="password" autoComplete="new-password" minLength={8} value={form.admin_password} onChange={(event) => setForm({ ...form, admin_password: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 font-normal" />
             </label>
           </div>

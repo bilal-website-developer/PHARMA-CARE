@@ -86,7 +86,6 @@ const HelpSupportView = lazy(() => import('./components/HelpSupportView').then((
 const TrashBinView = lazy(() => import('./components/TrashBinView').then(({ TrashBinView: View }) => ({ default: View })));
 const ManageUsersView = lazy(() => import('./components/ManageUsersView').then(({ ManageUsersView: View }) => ({ default: View })));
 const ShopsView = lazy(() => import('./components/ShopsView').then(({ ShopsView: View }) => ({ default: View })));
-const ChangePasswordModal = lazy(() => import('./components/ManageUsersView').then(({ ChangePasswordModal: View }) => ({ default: View })));
 const MyPrintRequestsView = lazy(() => import('./components/MyPrintRequestsView').then(({ MyPrintRequestsView: View }) => ({ default: View })));
 const PrintRequestsAdminView = lazy(() => import('./components/PrintRequestsAdminView').then(({ PrintRequestsAdminView: View }) => ({ default: View })));
 const DemoRolePreview = lazy(() => import('./components/DemoRolePreview').then(({ DemoRolePreview: View }) => ({ default: View })));
@@ -163,7 +162,10 @@ export default function App() {
         if (userError) throw userError;
         if (!userData.user) throw new Error('Your session is no longer valid. Sign in again.');
         const profile = await loadWorkspaceSession(userData.user.id, userData.user.email);
-        if (!disposed) setSession(profile);
+        if (!disposed) {
+          setSession(profile);
+          setAuthMessage(profile.accountNotice ?? '');
+        }
       } catch (error) {
         if (!disposed) {
           setSession(null);
@@ -198,7 +200,7 @@ export default function App() {
         setSession((current) => current
           ? { ...updated, sidebarPreferences: current.sidebarPreferences }
           : null);
-        setAuthMessage('');
+        setAuthMessage(updated.accountNotice ?? '');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Could not verify your account.';
         setAuthMessage(message);
@@ -253,6 +255,7 @@ export default function App() {
     try {
       const authenticatedSession = await loadWorkspaceSession(userId, email);
       setSession(authenticatedSession);
+      setAuthMessage(authenticatedSession.accountNotice ?? '');
       window.history.replaceState({}, '', '/');
     } catch (error) {
       await supabase?.auth.signOut();
@@ -473,8 +476,6 @@ function PharmacyWorkspace({
     initialPath !== '/' && initialPath !== '/login' && routeToNavItem(initialPath) === null
   );
   const [accessMessage, setAccessMessage] = useState('');
-  const [mustChangePassword, setMustChangePassword] = useState(session.mustChangePassword);
-  const [showPasswordDialog, setShowPasswordDialog] = useState(session.mustChangePassword);
   const [printNotice, setPrintNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [pendingPrintCount, setPendingPrintCount] = useState(0);
 
@@ -1118,7 +1119,6 @@ function PharmacyWorkspace({
           userId={session.userId}
           activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
           compact={activeItem === 'pos'}
-          onChangePassword={() => setShowPasswordDialog(true)}
           onLogout={onLogout}
           onOpenStockInventory={(medicineId) => viewProductBatches(medicineId, 'low-stock')}
           onOpenProducts={openStockAlertProducts}
@@ -1312,7 +1312,7 @@ function PharmacyWorkspace({
 
           {activeItem === 'trash-bin' && <TrashBinView currentRole={currentRole} />}
 
-          {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} onChangePassword={() => setShowPasswordDialog(true)} />}
+          {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} />}
           {activeItem === 'shops' && currentRole === UserRole.SUPER_ADMIN && <ShopsView />}
           {activeItem === 'demo' && currentRole === UserRole.SUPER_ADMIN && <DemoRolePreview onOpenDemo={onOpenDemo} />}
           {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}
@@ -1354,21 +1354,6 @@ function PharmacyWorkspace({
             purchasesPKR={0}
             grossProfitPKR={grossProfitPKR}
             netCashInHandPKR={netCashInHandPKR}
-          />
-        </Suspense>
-      )}
-      {showPasswordDialog && (
-        <Suspense fallback={<ScreenLoading />}>
-          <ChangePasswordModal
-            email={session.email}
-            mustChangePassword={mustChangePassword}
-            onClose={() => {
-              if (!mustChangePassword) setShowPasswordDialog(false);
-            }}
-            onComplete={() => {
-              setMustChangePassword(false);
-              setShowPasswordDialog(false);
-            }}
           />
         </Suspense>
       )}

@@ -29,11 +29,11 @@ export function isShopRoleLimitReached(
   return role === 'admin' ? adminCount >= adminLimit : staffCount >= staffLimit;
 }
 
-export function canUseManagementActionDuringPasswordChange(
-  action: unknown,
-  mustChangePassword: boolean,
-): boolean {
-  return !mustChangePassword || action === 'complete_first_login_password';
+export function withoutLegacyPasswordChangeFlag(
+  appMetadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const { must_change_password: _mustChangePassword, ...remainingMetadata } = appMetadata ?? {};
+  return remainingMetadata;
 }
 
 export function canAccessShopProfile(

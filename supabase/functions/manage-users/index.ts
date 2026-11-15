@@ -3,7 +3,6 @@ import {
   assignableRolesFor,
   canAssignRole,
   canAccessShopProfile,
-  canUseManagementActionDuringPasswordChange,
   canManagePlatformShops,
   canEditManagedUser,
   hasValidShopAssignment,
@@ -18,6 +17,7 @@ import {
   publicTeamMember,
   profileChangeDenial,
   ROLES,
+  withoutLegacyPasswordChangeFlag,
 } from './policy.ts';
 import type { Role } from './policy.ts';
 
@@ -81,11 +81,12 @@ async function clearProvisioningMetadata(
 ): Promise<string | null> {
   const { data, error } = await client.auth.admin.getUserById(userId);
   if (error) return `Could not reload the first Admin Auth account: ${error.message}`;
-  const { provisioning_operation_id: _operationId, ...appMetadata } = data.user.app_metadata ?? {};
+  const { provisioning_operation_id: _operationId, ...appMetadata } =
+    withoutLegacyPasswordChangeFlag(data.user.app_metadata);
   const { error: updateError } = await client.auth.admin.updateUserById(userId, {
-    app_metadata: { ...appMetadata, must_change_password: true },
+    app_metadata: appMetadata,
   });
-  return updateError ? `Could not clear temporary provisioning metadata: ${updateError.message}` : null;
+  return updateError ? `Could not clear provisioning metadata: ${updateError.message}` : null;
 }
 
 function validRole(value: unknown): value is Role {
@@ -255,6 +256,19 @@ Deno.serve(async (request) => {
     }
 
     const action = payload.action;
+    if (action === 'clear_legacy_password_change') {
+      if (authData.user.app_metadata?.must_change_password !== true) {
+        return response(200, { message: 'No legacy password setup flag needs clearing.' });
+      }
+      const { error: metadataError } = await adminClient.auth.admin.updateUserById(authData.user.id, {
+        app_metadata: withoutLegacyPasswordChangeFlag(authData.user.app_metadata),
+      });
+      if (metadataError) {
+        return response(500, { message: `Could not clear obsolete password setup metadata: ${metadataError.message}` });
+      }
+      return response(200, { message: 'Obsolete password setup metadata cleared.' });
+    }
+
     if (callerRole === 'admin' && callerShopId !== null) {
       const { data: ownShop, error: ownShopError } = await adminClient
         .from('shops')
@@ -267,32 +281,6 @@ Deno.serve(async (request) => {
       }
     }
 
-    if (!canUseManagementActionDuringPasswordChange(
-      action,
-      authData.user.app_metadata?.must_change_password === true,
-    )) {
-      return response(403, { message: 'Change the temporary password before using account-management actions.' });
-    }
-
-    if (action === 'complete_first_login_password') {
-      if (authData.user.app_metadata?.must_change_password !== true) {
-        return response(409, { message: 'A forced first-login password change is not pending.' });
-      }
-      const newPassword = typeof payload.new_password === 'string' ? payload.new_password : '';
-      if (newPassword.length < 8) {
-        return response(400, { message: 'Password must be at least 8 characters.' });
-      }
-      const { provisioning_operation_id: _operationId, must_change_password: _mustChange, ...appMetadata } =
-        authData.user.app_metadata ?? {};
-      const { error: passwordChangeError } = await adminClient.auth.admin.updateUserById(authData.user.id, {
-        password: newPassword,
-        app_metadata: appMetadata,
-      });
-      if (passwordChangeError) {
-        return response(400, { message: `Could not change the password: ${passwordChangeError.message}` });
-      }
-      return response(200, { message: 'Password changed successfully.' });
-    }
     if (!canUseManageUsers(callerRole, callerPermissions)) {
       return response(403, { message: 'An active admin or super_admin account is required.' });
     }
@@ -446,15 +434,17 @@ Deno.serve(async (request) => {
           const { data: completedAuthUser, error: completedAuthLookupError } =
             await adminClient.auth.admin.getUserById(operation.auth_user_id);
           if (completedAuthLookupError) throw completedAuthLookupError;
-          const { provisioning_operation_id: _completedOperationId, ...completedMetadata } =
-            completedAuthUser.user.app_metadata ?? {};
+          const {
+            provisioning_operation_id: _completedOperationId,
+            ...completedMetadata
+          } = withoutLegacyPasswordChangeFlag(completedAuthUser.user.app_metadata);
           const { error: completedMetadataError } = await adminClient.auth.admin.updateUserById(
             operation.auth_user_id,
-            { app_metadata: { ...completedMetadata, must_change_password: true } },
+            { app_metadata: completedMetadata },
           );
           if (completedMetadataError) {
             return response(500, {
-              message: `Shop exists, but first-login Auth metadata cleanup needs owner review. Ref: ${operationId}`,
+              message: `Shop exists, but Auth metadata cleanup needs owner review. Ref: ${operationId}`,
             });
           }
         }
@@ -553,10 +543,7 @@ Deno.serve(async (request) => {
             email: adminEmail,
             password: adminPassword,
             email_confirm: true,
-            app_metadata: {
-              must_change_password: true,
-              provisioning_operation_id: operationId,
-            },
+            app_metadata: { provisioning_operation_id: operationId },
           });
           if (createAuthError || !createdAuth.user) {
             const { error: failedOperationError } = await adminClient
@@ -713,7 +700,7 @@ Deno.serve(async (request) => {
         });
       }
       return response(201, {
-        message: 'Shop and first Admin provisioned. The Admin must change the temporary password at first login.',
+        message: 'Shop and first Admin provisioned. The Admin can sign in using the password set during creation.',
         shop_id: (finalized as { shop_id?: string } | null)?.shop_id ?? null,
       });
     }
@@ -1115,7 +1102,6 @@ Deno.serve(async (request) => {
         email,
         password,
         email_confirm: true,
-        app_metadata: { must_change_password: true },
       });
       if (createAuthError || !createdAuth.user) {
         const detail = createAuthError?.message ?? 'No auth user was returned.';

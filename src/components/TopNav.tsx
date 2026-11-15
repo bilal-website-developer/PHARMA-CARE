@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ChevronDown, KeyRound, LogOut } from 'lucide-react';
+import { ChevronDown, LogOut } from 'lucide-react';
 import { ROLE_LABELS, UserRole } from '../types/pharmacy';
 import PharmaLogo from './PharmaLogo';
 import { StockAlertBell } from './StockAlertBell';
@@ -17,7 +17,6 @@ interface TopNavProps {
   username: string;
   userId: string;
   activeTitle: string;
-  onChangePassword: () => void;
   onLogout: () => void;
   onOpenStockInventory: (medicineId: string | null) => void;
   onOpenProducts: (searchText: string | null) => void;
@@ -31,7 +30,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   username,
   userId,
   activeTitle,
-  onChangePassword,
   onLogout,
   onOpenStockInventory,
   onOpenProducts,
@@ -164,15 +162,6 @@ export const TopNav: React.FC<TopNavProps> = ({
                 <div className="truncate text-xs font-bold text-text">{username}</div>
                 <div className="text-[10px] font-semibold uppercase text-muted">{ROLE_LABELS[currentRole]}</div>
               </div>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runProfileAction(onChangePassword)}
-                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-left text-xs font-semibold text-text hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <KeyRound aria-hidden="true" className="h-4 w-4 text-muted" />
-                Change Password
-              </button>
               <button
                 type="button"
                 role="menuitem"
