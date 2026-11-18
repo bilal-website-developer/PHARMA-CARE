@@ -33,6 +33,12 @@ const ALL_ROLES = [
   UserRole.CASHIER,
   UserRole.ACCOUNTANT,
 ] as const;
+const SHOP_ROLES = [
+  UserRole.ADMIN,
+  UserRole.MANAGER,
+  UserRole.CASHIER,
+  UserRole.ACCOUNTANT,
+] as const;
 const ADMIN_ROLES = [UserRole.ADMIN] as const;
 const PLATFORM_ROLES = [UserRole.SUPER_ADMIN] as const;
 
@@ -54,7 +60,7 @@ export const SIDEBAR_PAGES: readonly SidebarPage[] = [
   { key: 'customer-ledger', label: 'Customer Ledger', icon: FileText, route: '/customer-ledger', category: 'Sales & Customers', allowedRoles: ALL_ROLES, module: 'customers' },
   { key: 'whatsapp-reminders', label: 'WhatsApp Reminders', icon: MessageSquare, route: '/whatsapp-reminders', category: 'Sales & Customers', allowedRoles: ALL_ROLES, module: 'customers' },
   { key: 'sales-history', label: 'Sales History', icon: History, route: '/sales-history', category: 'Sales & Customers', allowedRoles: ALL_ROLES, module: 'sales_history' },
-  { key: 'my-print-requests', label: 'My print requests', icon: BellRing, route: '/my-print-requests', category: 'Sales & Customers', allowedRoles: ALL_ROLES },
+  { key: 'my-print-requests', label: 'My print requests', icon: BellRing, route: '/my-print-requests', category: 'Sales & Customers', allowedRoles: SHOP_ROLES },
   { key: 'suppliers', label: 'Suppliers', icon: Truck, route: '/suppliers', category: 'Procurement', allowedRoles: ALL_ROLES, module: 'suppliers' },
   { key: 'purchases', label: 'Purchases', icon: ShoppingBag, route: '/purchases', category: 'Procurement', allowedRoles: ALL_ROLES, module: 'purchases' },
   { key: 'purchase-history', label: 'Purchase History', icon: Receipt, route: '/purchase-history', category: 'Procurement', allowedRoles: ALL_ROLES, module: 'purchase_history' },

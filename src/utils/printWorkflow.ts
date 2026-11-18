@@ -14,6 +14,7 @@ import {
   type PrintRequestType,
   type PrintSnapshot,
 } from './printSnapshot';
+import { getOrCreateReceiptQrLink } from './receiptLinks';
 
 export type { PrintRequestType, PrintSnapshot } from './printSnapshot';
 export { buildPrintSnapshot, canPrintReceipt } from './printSnapshot';
@@ -135,13 +136,37 @@ export async function printReceipt(
   const printSnapshot = options.approvedRequestId
     ? snapshotWithDuplicateLabel(snapshot)
     : snapshot;
+  let receiptQr: { svg: string; placement: 'footer' | 'after_totals' | 'below_header' } | undefined;
+  if (type === 'sale' && printSnapshot.data.kind === 'SALE' && printSnapshot.saleId) {
+    try {
+      const link = await getOrCreateReceiptQrLink(printSnapshot.saleId);
+      if (link) {
+        const QRCode = await import('qrcode');
+        receiptQr = {
+          svg: await QRCode.toString(link.publicUrl, {
+            type: 'svg',
+            errorCorrectionLevel: 'M',
+            margin: 4,
+            width: 512,
+            color: { dark: '#000000', light: '#ffffff' },
+          }),
+          placement: link.placement,
+        };
+      }
+    } catch (error) {
+      access.onNotice(
+        `Receipt QR could not be generated; printing will continue without it. ${error instanceof Error ? error.message : ''}`.trim(),
+        true,
+      );
+    }
+  }
   let html: string;
   try {
     html = printSnapshot.template === 'pharmacy-memo'
-      ? renderPharmacyMemo(printSnapshot.data, printSnapshot.settings, printSnapshot.format)
-      : renderReceipt(printSnapshot.template, printSnapshot.format, classicReceiptData(printSnapshot));
+      ? renderPharmacyMemo(printSnapshot.data, printSnapshot.settings, printSnapshot.format, receiptQr)
+      : renderReceipt(printSnapshot.template, printSnapshot.format, classicReceiptData(printSnapshot), receiptQr);
   } catch (error) {
-    html = renderReceipt('classic', printSnapshot.format, classicReceiptData(printSnapshot));
+    html = renderReceipt('classic', printSnapshot.format, classicReceiptData(printSnapshot), receiptQr);
     access.onNotice(
       `Pharmacy Memo could not be rendered; the existing Classic receipt was used instead. ${error instanceof Error ? error.message : ''}`,
       true,

@@ -5,6 +5,7 @@ import {
   CompletedSale,
   PaymentMethod,
   LedgerEntry,
+  ROLE_LABELS,
   UserRole,
 } from './types/pharmacy';
 import {
@@ -69,6 +70,19 @@ import {
   isInstallPromptDismissed,
   rememberInstallPromptDismissed,
 } from './utils/installPrompt';
+import { parseDemoPreviewRole } from './utils/demoPreview';
+import {
+  clearDemoAccountEntry,
+  clearDemoAccountMarker,
+  clearRoleDemoSession,
+  consumeDemoAccountEntry,
+  markDemoAccountEntry,
+  readDemoAccountMarker,
+  ROLE_DEMO_ROLE_KEY,
+  writeDemoAccountMarker,
+} from './utils/roleDemoStorage';
+import { PublicReceiptPage } from './components/PublicReceiptPage';
+import { DemoReceiptsPage } from './components/DemoReceiptsPage';
 
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
 const CustomerDisplayView = lazy(() => import('./components/CustomerDisplayView').then(({ CustomerDisplayView: View }) => ({ default: View })));
@@ -99,6 +113,23 @@ function routeToNavItem(pathname: string): NavItemKey | null {
   return sidebarPageForRoute(pathname)?.key ?? null;
 }
 
+function clearDemoAccountBrowserState(): string | null {
+  const warnings: string[] = [];
+  try {
+    const warning = clearDemoAccountMarker(window.localStorage);
+    if (warning) warnings.push(warning);
+  } catch (error) {
+    warnings.push(`The saved demo account link could not be cleared. ${error instanceof Error ? error.message : ''}`.trim());
+  }
+  try {
+    const warning = clearDemoAccountEntry(window.sessionStorage);
+    if (warning) warnings.push(warning);
+  } catch (error) {
+    warnings.push(`The saved demo account entry could not be cleared. ${error instanceof Error ? error.message : ''}`.trim());
+  }
+  return warnings.length ? warnings.join(' ') : null;
+}
+
 interface WorkspaceSession extends AuthSession {
   sidebarPreferences: Awaited<ReturnType<typeof loadSidebarPreferences>>;
 }
@@ -114,6 +145,7 @@ export default function App() {
   const [session, setSession] = useState<WorkspaceSession | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const [demoAccountLoginRole, setDemoAccountLoginRole] = useState<UserRole | null>(null);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [installPromptDismissed, setInstallPromptDismissed] = useState(isInstallPromptDismissed);
 
@@ -157,7 +189,11 @@ export default function App() {
         const { data: authData, error: authError } = await client.auth.getSession();
         if (authError) throw authError;
         if (!authData.session) {
-          if (!disposed) setSession(null);
+          if (!disposed) {
+            const warning = clearDemoAccountBrowserState();
+            if (warning) console.error(warning);
+            setSession(null);
+          }
           return;
         }
         const { data: userData, error: userError } = await client.auth.getUser();
@@ -177,6 +213,8 @@ export default function App() {
     void restoreSession();
     const { data: authListener } = client.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT' && !disposed) {
+        const warning = clearDemoAccountBrowserState();
+        if (warning) console.error(warning);
         setSession(null);
         setSessionChecked(true);
       }
@@ -253,10 +291,56 @@ export default function App() {
     setAuthMessage('');
     try {
       const authenticatedSession = await loadWorkspaceSession(userId, email);
+      const warning = clearDemoAccountBrowserState();
       setSession(authenticatedSession);
+      if (warning) setAuthMessage(warning);
       window.history.replaceState({}, '', '/');
     } catch (error) {
       await supabase?.auth.signOut();
+      throw error;
+    }
+  };
+
+  const handleDemoAccountLogin = async (
+    userId: string,
+    email: string,
+    selectedRole: UserRole,
+  ) => {
+    setAuthMessage('');
+    try {
+      const authenticatedSession = await loadWorkspaceSession(userId, email);
+      const notices: string[] = [];
+      if (authenticatedSession.role === UserRole.SUPER_ADMIN) {
+        notices.push('This sign-in belongs to a Super Admin, not a demo-shop account. The signed-in account role remains in effect.');
+      } else {
+        try {
+          const markerWarning = writeDemoAccountMarker(window.localStorage, {
+            userId: authenticatedSession.userId,
+            role: authenticatedSession.role,
+          });
+          if (markerWarning) notices.push(markerWarning);
+          const entryWarning = markDemoAccountEntry(window.sessionStorage, authenticatedSession.userId);
+          if (entryWarning) notices.push(entryWarning);
+        } catch (error) {
+          notices.push(`Demo account session details could not be saved. ${error instanceof Error ? error.message : ''}`.trim());
+        }
+      }
+      if (authenticatedSession.role !== selectedRole) {
+        notices.push(`This login is assigned the ${ROLE_LABELS[authenticatedSession.role]} role; the account's assigned permissions remain in effect.`);
+      }
+      setAuthMessage(notices.join(' '));
+      setSession(authenticatedSession);
+      setDemoAccountLoginRole(null);
+      window.history.replaceState({}, '', '/');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not verify the demo account.';
+      const { error: signOutError } = await supabase?.auth.signOut()
+        ?? { error: new Error('Supabase is not configured.') };
+      if (signOutError) {
+        console.error('Could not clear the unverified demo account session:', signOutError);
+      }
+      setSession(null);
+      setAuthMessage(message);
       throw error;
     }
   };
@@ -268,9 +352,19 @@ export default function App() {
       window.alert(`Could not end the session: ${error.message}`);
       return;
     }
+    const warning = clearDemoAccountBrowserState();
+    if (warning) console.error(warning);
     setSession(null);
     window.history.replaceState({}, '', '/login');
   };
+
+  const receiptRoute = window.location.pathname.match(/^\/r\/([A-Za-z0-9_-]{22,128})\/?$/);
+  if (window.location.pathname === '/r' || window.location.pathname.startsWith('/r/')) {
+    return <PublicReceiptPage token={receiptRoute?.[1] ?? null} />;
+  }
+  if (window.location.pathname.replace(/\/+$/, '') === '/demo/receipts') {
+    return <DemoReceiptsPage />;
+  }
 
   if (!sessionChecked) {
     return <div className="app-loading flex min-h-screen items-center justify-center bg-surface"><PharmaLogo size={12} /></div>;
@@ -296,6 +390,22 @@ export default function App() {
     );
   }
 
+  if (demoAccountLoginRole) {
+    return (
+      <LoginView
+        heading={`Sign in to Demo ${ROLE_LABELS[demoAccountLoginRole]}`}
+        subtitle="Use an account from your dedicated demo shop. This device keeps the Supabase session for quick re-entry; your password is not saved."
+        onLogin={(userId, email) => handleDemoAccountLogin(userId, email, demoAccountLoginRole)}
+        onCancel={() => {
+          setDemoAccountLoginRole(null);
+          setAuthMessage('');
+        }}
+        cancelLabel="Back to Demo Hub"
+        initialError={authMessage}
+      />
+    );
+  }
+
   if (!session) {
     if (window.location.pathname !== '/login') window.history.replaceState({}, '', '/login');
     return (
@@ -313,6 +423,10 @@ export default function App() {
           key={session.userId}
           session={session}
           onLogout={handleLogout}
+          onRequestDemoAccountLogin={(role) => {
+            setAuthMessage('');
+            setDemoAccountLoginRole(role);
+          }}
           authMessage={authMessage}
           onShopProfileChange={(shopProfile) => {
             setSession((current) => current
@@ -331,19 +445,100 @@ export default function App() {
 function PharmacyApp({
   session,
   onLogout,
+  onRequestDemoAccountLogin,
   authMessage,
   onShopProfileChange,
 }: {
   session: WorkspaceSession;
   onLogout: () => void;
+  onRequestDemoAccountLogin: (role: UserRole) => void;
   authMessage: string;
   onShopProfileChange: (shopProfile: AuthSession['shopProfile']) => void;
 }) {
-  const [demoRole, setDemoRole] = useState<UserRole | null>(null);
+  const [demoRole, setDemoRole] = useState<UserRole | null>(() => {
+    if (session.role !== UserRole.SUPER_ADMIN) return null;
+    try {
+      return parseDemoPreviewRole(window.sessionStorage.getItem(ROLE_DEMO_ROLE_KEY));
+    } catch (error) {
+      console.warn('Could not restore the Role Demo session:', error);
+      return null;
+    }
+  });
+  const [demoAccountState] = useState(() => {
+    try {
+      return readDemoAccountMarker(window.localStorage);
+    } catch (error) {
+      return {
+        marker: null,
+        warning: `Saved demo account details could not be read. ${error instanceof Error ? error.message : ''}`.trim(),
+      };
+    }
+  });
+  const savedDemoAccount = demoAccountState.marker?.userId === session.userId
+    && demoAccountState.marker.role === session.role
+    ? demoAccountState.marker
+    : null;
+  const [demoAccountNotice, setDemoAccountNotice] = useState(demoAccountState.warning ?? '');
+  const [demoAccountRouteReady, setDemoAccountRouteReady] = useState(!savedDemoAccount);
+  const [showDemoHub, setShowDemoHub] = useState(false);
+  const [demoAccountLoginRole, setDemoAccountLoginRole] = useState<UserRole | null>(null);
+
+  useEffect(() => {
+    if (session.role === UserRole.SUPER_ADMIN) return;
+    try {
+      const warning = clearRoleDemoSession(window.sessionStorage);
+      if (warning) console.error(warning);
+    } catch (error) {
+      console.error('Could not clear the stale Role Demo session:', error);
+    }
+  }, [session.role]);
+
+  useEffect(() => {
+    if (!savedDemoAccount) {
+      if (demoAccountState.marker) {
+        const warning = clearDemoAccountBrowserState();
+        if (warning) setDemoAccountNotice(warning);
+      }
+      setShowDemoHub(false);
+      setDemoAccountRouteReady(true);
+      return;
+    }
+    try {
+      const result = consumeDemoAccountEntry(window.sessionStorage, session.userId);
+      if (result.warning) setDemoAccountNotice(result.warning);
+      setShowDemoHub(!result.shouldEnter);
+    } catch (error) {
+      setDemoAccountNotice(`The saved demo account entry could not be restored. ${error instanceof Error ? error.message : ''}`.trim());
+      setShowDemoHub(true);
+    }
+    setDemoAccountRouteReady(true);
+  }, [demoAccountState.marker, savedDemoAccount, session.userId]);
 
   const exitDemo = () => {
+    try {
+      const warning = clearRoleDemoSession(window.sessionStorage);
+      if (warning) console.error(warning);
+    } catch (error) {
+      console.error('Could not clear the Role Demo session:', error);
+    }
     setDemoRole(null);
     window.history.replaceState({}, '', '/');
+  };
+
+  const openDemo = (role: UserRole) => {
+    if (session.role !== UserRole.SUPER_ADMIN) return;
+    setDemoRole(role);
+  };
+
+  const openDemoAccount = (role: UserRole) => {
+    if (role === UserRole.SUPER_ADMIN) return;
+    if (session.role !== UserRole.SUPER_ADMIN && !savedDemoAccount) return;
+    setDemoAccountNotice('');
+    if (savedDemoAccount && session.role === role) {
+      setShowDemoHub(false);
+      return;
+    }
+    onRequestDemoAccountLogin(role);
   };
 
   if (demoRole) {
@@ -354,13 +549,38 @@ function PharmacyApp({
     );
   }
 
+  if (!demoAccountRouteReady) {
+    return <div className="app-loading flex min-h-screen items-center justify-center bg-surface"><PharmaLogo size={12} /></div>;
+  }
+
+  if (savedDemoAccount && showDemoHub) {
+    return (
+      <Suspense fallback={<ScreenLoading />}>
+        <main className="min-h-screen bg-surface px-4 py-6 font-inter text-text sm:px-8 sm:py-10">
+          <DemoRolePreview
+            onOpenDemoAccount={openDemoAccount}
+            savedDemoAccount={{ role: session.role, email: session.email }}
+            notice={demoAccountNotice}
+            onSignOut={onLogout}
+          />
+        </main>
+      </Suspense>
+    );
+  }
+
   return (
     <PermissionsProvider role={session.role} permissions={session.permissions}>
       <PharmacyWorkspace
         session={session}
-        onLogout={onLogout}
+        onLogout={savedDemoAccount ? () => setShowDemoHub(true) : onLogout}
+        logoutLabel={savedDemoAccount ? 'Return to Demo Hub' : undefined}
         authMessage={authMessage}
-        onOpenDemo={setDemoRole}
+        onOpenDemo={openDemo}
+        onOpenDemoAccount={openDemoAccount}
+        savedDemoAccount={savedDemoAccount
+          ? { role: session.role, email: session.email }
+          : undefined}
+        demoAccountNotice={demoAccountNotice}
         onShopProfileChange={onShopProfileChange}
       />
     </PermissionsProvider>
@@ -370,14 +590,22 @@ function PharmacyApp({
 function PharmacyWorkspace({
   session,
   onLogout,
+  logoutLabel,
   authMessage,
   onOpenDemo,
+  onOpenDemoAccount,
+  savedDemoAccount,
+  demoAccountNotice,
   onShopProfileChange,
 }: {
   session: WorkspaceSession;
   onLogout: () => void;
+  logoutLabel?: string;
   authMessage: string;
   onOpenDemo: (role: UserRole) => void;
+  onOpenDemoAccount: (role: UserRole) => void;
+  savedDemoAccount?: { role: UserRole; email: string };
+  demoAccountNotice: string;
   onShopProfileChange: (shopProfile: AuthSession['shopProfile']) => void;
 }) {
   const { can, canPage } = usePermissions();
@@ -1118,6 +1346,7 @@ function PharmacyWorkspace({
         {memoMigrationToast && <div role="status" className="fixed right-4 top-4 z-[60] rounded-control border border-primary/30 bg-surface px-4 py-3 text-sm font-semibold text-text shadow-lg">Pharmacy Memo is now your default receipt template. You can change it in Settings.</div>}
         {printNotice && <div role={printNotice.error ? 'alert' : 'status'} className={`visual-toast fixed bottom-4 right-4 z-[60] max-w-md rounded-control border px-4 py-3 text-sm shadow-lg ${printNotice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-primary/30 bg-white text-text'}`}>{printNotice.text}</div>}
         {authMessage && <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{authMessage}</p>}
+        {demoAccountNotice && <p role="status" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">{demoAccountNotice}</p>}
         {shopSettingsError && activeItem !== 'settings' && (
           <p role="alert" className="border-b border-warning bg-warning/15 px-4 py-2 text-sm font-semibold text-text">
             Shared shop settings: {shopSettingsError}
@@ -1133,6 +1362,7 @@ function PharmacyWorkspace({
           activeTitle={isPageNotFound ? 'PAGE NOT FOUND' : getPageTitle(activeItem)}
           compact={activeItem === 'pos'}
           onLogout={onLogout}
+          logoutLabel={logoutLabel}
           onOpenStockInventory={(medicineId) => viewProductBatches(medicineId, 'low-stock')}
           onOpenProducts={openStockAlertProducts}
         />
@@ -1307,6 +1537,12 @@ function PharmacyWorkspace({
                     && canPage('purchases')
                     && (!supabase || can('categories'))}
                   canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
+                  canEditReceiptQrSettings={Boolean(supabase)
+                    && (currentRole === UserRole.ADMIN || currentRole === UserRole.MANAGER)
+                    && canPage('settings')}
+                  canRegenerateReceiptQr={Boolean(supabase)
+                    && (currentRole === UserRole.ADMIN || currentRole === UserRole.MANAGER)
+                    && canPage('sales_history')}
                   operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>
                     updateBillingPreferences({ ...billingPreferences, template })
@@ -1342,7 +1578,13 @@ function PharmacyWorkspace({
 
           {activeItem === 'manage-users' && <ManageUsersView currentUserId={session.userId} currentRole={currentRole} />}
           {activeItem === 'shops' && currentRole === UserRole.SUPER_ADMIN && <ShopsView />}
-          {activeItem === 'demo' && currentRole === UserRole.SUPER_ADMIN && <DemoRolePreview onOpenDemo={onOpenDemo} />}
+          {activeItem === 'demo' && currentRole === UserRole.SUPER_ADMIN && (
+            <DemoRolePreview
+              onOpenDemo={onOpenDemo}
+              onOpenDemoAccount={onOpenDemoAccount}
+              savedDemoAccount={savedDemoAccount}
+            />
+          )}
           {activeItem === 'my-print-requests' && <MyPrintRequestsView userId={session.userId} />}
           {activeItem === 'print-requests' && <PrintRequestsAdminView onPrintReceipt={handlePrintReceipt} />}
           </>

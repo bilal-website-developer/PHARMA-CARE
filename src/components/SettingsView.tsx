@@ -13,6 +13,7 @@ import {
   Trash2,
   CheckCircle2,
   MessageSquare,
+  QrCode,
 } from 'lucide-react';
 import {
   BillingTemplate,
@@ -36,6 +37,14 @@ import {
 } from '../data/shopProfile';
 import type { ShopProfileUpdate } from '../data/shopProfile';
 import { shopLogoFileError } from '../utils/shopLogo';
+import {
+  getReceiptQrSettings,
+  normalizeReceiptBaseUrl,
+  regenerateReceiptQrForInvoice,
+  updateReceiptQrSettings,
+  type ReceiptQrLink,
+  type ReceiptQrSettings,
+} from '../utils/receiptLinks';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
 const DEFAULT_DEBT_TEMPLATE =
@@ -76,6 +85,8 @@ interface SettingsViewProps {
   canManageDemoData: boolean;
   canLoadDemoData: boolean;
   canEditOperationalSettings: boolean;
+  canEditReceiptQrSettings: boolean;
+  canRegenerateReceiptQr: boolean;
   operationalSettingsError: string;
   onTemplateChange: (template: BillingTemplate) => void;
   onOpenTemplatePreview: (template: BillingTemplate) => void;
@@ -96,6 +107,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   canManageDemoData,
   canLoadDemoData,
   canEditOperationalSettings,
+  canEditReceiptQrSettings,
+  canRegenerateReceiptQr,
   operationalSettingsError,
   onTemplateChange,
   onOpenTemplatePreview,
@@ -119,6 +132,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [receiptQrSettings, setReceiptQrSettings] = useState<ReceiptQrSettings | null>(null);
+  const [receiptQrError, setReceiptQrError] = useState('');
+  const [receiptQrBusy, setReceiptQrBusy] = useState(false);
+  const [receiptInvoice, setReceiptInvoice] = useState('');
+  const [regeneratedReceiptLink, setRegeneratedReceiptLink] = useState<ReceiptQrLink | null>(null);
 
   // Demo Data State
   const [demoStatus, setDemoStatus] = useState<DemoDataStatus>({
@@ -133,6 +151,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     setMemoSettings(savedMemoSettings);
   }, [savedMemoSettings]);
+
+  useEffect(() => {
+    if (!canEditReceiptQrSettings) return;
+    let active = true;
+    void getReceiptQrSettings().then((settings) => {
+      if (active) {
+        setReceiptQrSettings(settings);
+        setReceiptQrError('');
+      }
+    }).catch((error: unknown) => {
+      if (active) setReceiptQrError(error instanceof Error ? error.message : 'Could not load receipt QR settings.');
+    });
+    return () => { active = false; };
+  }, [canEditReceiptQrSettings]);
 
   useEffect(() => {
     if (!shopProfile) return;
@@ -207,6 +239,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setDemoNotice({ text: e instanceof Error ? e.message : 'Could not load demo data.', error: true });
     } finally {
       setDemoBusy(false);
+    }
+  };
+
+  const handleSaveReceiptQrSettings = async () => {
+    if (!receiptQrSettings) return;
+    setReceiptQrBusy(true);
+    setReceiptQrError('');
+    try {
+      const baseUrl = receiptQrSettings.qrBaseUrl.trim();
+      if (receiptQrSettings.publicReceiptsEnabled) normalizeReceiptBaseUrl(baseUrl);
+      const saved = await updateReceiptQrSettings({ ...receiptQrSettings, qrBaseUrl: baseUrl });
+      setReceiptQrSettings(saved);
+      setReceiptQrError('Receipt QR settings saved.');
+    } catch (error) {
+      setReceiptQrError(error instanceof Error ? error.message : 'Could not save receipt QR settings.');
+    } finally {
+      setReceiptQrBusy(false);
+    }
+  };
+
+  const handleRegenerateReceiptQr = async () => {
+    if (!receiptInvoice.trim()) return;
+    setReceiptQrBusy(true);
+    setReceiptQrError('');
+    setRegeneratedReceiptLink(null);
+    try {
+      const link = await regenerateReceiptQrForInvoice(receiptInvoice);
+      setRegeneratedReceiptLink(link);
+      setReceiptQrError(`A new QR link was created. The previous link is revoked. Expires ${new Date(link.expiresAt).toLocaleDateString()}.`);
+    } catch (error) {
+      setReceiptQrError(error instanceof Error ? error.message : 'Could not regenerate this receipt QR.');
+    } finally {
+      setReceiptQrBusy(false);
     }
   };
 
@@ -412,6 +477,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       logoUrl: canEditShopProfile ? logoUrl : memoSettings.logoUrl,
       printLogo: memoSettings.printLogo !== false,
     };
+
     const validationMessage = getPharmacyMemoSettingsValidationMessage(nextMemoSettings);
     if (validationMessage) {
       setSaveNotice({ text: validationMessage, error: true });
@@ -770,6 +836,140 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {memoPreview.warning && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-text">{memoPreview.warning}</p>}
           <iframe title="Live Pharmacy Memo preview" srcDoc={memoPreview.html} className="h-[520px] w-full rounded-control border border-border bg-white" />
         </>}
+      </section>
+
+      <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
+        <div className="flex items-start gap-3 border-b border-border pb-3">
+          <QrCode className="mt-0.5 h-5 w-5 text-primary" />
+          <div>
+            <h3 className="text-sm font-black text-text">Receipt QR codes</h3>
+            <p className="mt-1 text-xs text-muted">
+              Public links are off by default. Anyone with an enabled link can view the sanitized receipt until it expires or is revoked.
+            </p>
+          </div>
+        </div>
+        {!canEditReceiptQrSettings && (
+          <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+            Receipt QR settings are available to Admins and Managers with Settings access.
+          </p>
+        )}
+        {canEditReceiptQrSettings && !receiptQrSettings && !receiptQrError && (
+          <p role="status" className="text-xs text-muted">Loading receipt QR settings…</p>
+        )}
+        {receiptQrError && (
+          <p role="status" className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-text">
+            {receiptQrError}
+          </p>
+        )}
+        {canEditReceiptQrSettings && receiptQrSettings && (
+          <>
+            <fieldset disabled={receiptQrBusy} className="grid gap-3 sm:grid-cols-2 disabled:opacity-70">
+              <label className="flex items-center gap-2 text-xs font-semibold text-text sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={receiptQrSettings.publicReceiptsEnabled}
+                  onChange={(event) => setReceiptQrSettings({
+                    ...receiptQrSettings,
+                    publicReceiptsEnabled: event.target.checked,
+                  })}
+                  className="accent-[var(--primary)]"
+                />
+                Enable public receipt links for this shop
+              </label>
+              <label className="text-xs font-semibold text-text">
+                Public app URL (HTTPS origin)
+                <input
+                  type="url"
+                  value={receiptQrSettings.qrBaseUrl}
+                  placeholder="https://your-pharmacy-app.example"
+                  onChange={(event) => setReceiptQrSettings({
+                    ...receiptQrSettings,
+                    qrBaseUrl: event.target.value,
+                  })}
+                  className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-text">
+                Link lifetime (days)
+                <input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  step="1"
+                  value={receiptQrSettings.linkLifetimeDays}
+                  onChange={(event) => setReceiptQrSettings({
+                    ...receiptQrSettings,
+                    linkLifetimeDays: Number(event.target.value),
+                  })}
+                  className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-text">
+                QR placement
+                <select
+                  value={receiptQrSettings.qrPlacement}
+                  onChange={(event) => setReceiptQrSettings({
+                    ...receiptQrSettings,
+                    qrPlacement: event.target.value as ReceiptQrSettings['qrPlacement'],
+                  })}
+                  className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm"
+                >
+                  <option value="footer">Receipt footer (recommended)</option>
+                  <option value="after_totals">After totals</option>
+                  <option value="below_header">Below shop header</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-text sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={receiptQrSettings.showMedicineNames}
+                  onChange={(event) => setReceiptQrSettings({
+                    ...receiptQrSettings,
+                    showMedicineNames: event.target.checked,
+                  })}
+                  className="accent-[var(--primary)]"
+                />
+                Show medicine names on public receipts
+              </label>
+            </fieldset>
+            <button
+              type="button"
+              disabled={receiptQrBusy}
+              onClick={() => { void handleSaveReceiptQrSettings(); }}
+              className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Save className="mr-1 inline h-3.5 w-3.5" /> Save receipt QR settings
+            </button>
+          </>
+        )}
+        {canRegenerateReceiptQr && (
+          <div className="space-y-2 border-t border-border pt-3">
+            <h4 className="text-xs font-bold text-text">Regenerate a receipt QR</h4>
+            <p className="text-xs text-muted">Enter the invoice number. The old QR link will stop working immediately.</p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="text"
+                value={receiptInvoice}
+                onChange={(event) => setReceiptInvoice(event.target.value)}
+                placeholder="Invoice number"
+                className="min-w-52 flex-1 rounded-control border border-border bg-surface px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                disabled={receiptQrBusy || !receiptInvoice.trim()}
+                onClick={() => { void handleRegenerateReceiptQr(); }}
+                className="rounded-control border border-primary px-3 py-2 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <QrCode className="mr-1 inline h-3.5 w-3.5" /> Regenerate QR
+              </button>
+            </div>
+            {regeneratedReceiptLink && (
+              <p className="break-all rounded-control bg-surface px-3 py-2 text-xs text-text">
+                New receipt link: <a className="text-primary underline" href={regeneratedReceiptLink.publicUrl}>{regeneratedReceiptLink.publicUrl}</a>
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
 

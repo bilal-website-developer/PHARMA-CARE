@@ -106,6 +106,11 @@ interface POSBillingViewProps {
   memoSettings: PharmacyMemoSettings;
   onPrintReceipt: PrintReceiptHandler;
   onSaleComplete: (sale: CompletedSale) => void;
+  demoCatalog?: PosCatalogProduct[];
+  onPostSale?: (input: PostSaleInput) => Promise<CompletedSale>;
+  disableCustomerDisplay?: boolean;
+  disablePersistentHeldBills?: boolean;
+  disableLiveReturns?: boolean;
 }
 
 export const POSBillingView: React.FC<POSBillingViewProps> = ({
@@ -119,6 +124,11 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   memoSettings,
   onPrintReceipt,
   onSaleComplete,
+  demoCatalog,
+  onPostSale,
+  disableCustomerDisplay = false,
+  disablePersistentHeldBills = false,
+  disableLiveReturns = false,
 }) => {
   const [products, setProducts] = useState<PosCatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -165,7 +175,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [displayNotice, setDisplayNotice] = useState('');
   const [displayThankYou, setDisplayThankYou] = useState(false);
   const [showDisplayAlternatives, setShowDisplayAlternatives] = useState(() =>
-    readCustomerDisplayAlternatives(currentUserId)
+    disableCustomerDisplay ? false : readCustomerDisplayAlternatives(currentUserId)
   );
   const [activeOptions, setActiveOptions] = useState<{
     lineIndex: number;
@@ -189,9 +199,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
   useEffect(() => {
     setHeldBills([]);
-    setHeldBillsUserId('');
+    setHeldBillsUserId(disablePersistentHeldBills ? currentUserId : '');
     setHeldBillsError('');
     setShowHeldBills(false);
+    if (disablePersistentHeldBills) return;
     try {
       setHeldBills(readHeldBills(currentUserId));
       setHeldBillsUserId(currentUserId);
@@ -199,7 +210,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       setHeldBillsError(error instanceof Error ? error.message : 'Could not load held bills.');
       setHeldBillsUserId(currentUserId);
     }
-  }, [currentUserId]);
+  }, [currentUserId, disablePersistentHeldBills]);
 
   useEffect(() => {
     if (!showHeldBills || heldBills.length === 0) return;
@@ -251,9 +262,13 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   }, [showCustomerDetails]);
 
   useEffect(() => {
+    if (disableCustomerDisplay) {
+      setShowDisplayAlternatives(false);
+      return undefined;
+    }
     setShowDisplayAlternatives(readCustomerDisplayAlternatives(currentUserId));
     return subscribeCustomerDisplayAlternatives(currentUserId, setShowDisplayAlternatives);
-  }, [currentUserId]);
+  }, [currentUserId, disableCustomerDisplay]);
 
   useEffect(() => {
     activeOptionsRef.current = activeOptions;
@@ -277,7 +292,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   const [saleError, setSaleError] = useState('');
   const [printNotice, setPrintNotice] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
-  const { lastScanned, resetScan } = useBarcodeScanner({ enabled: activeTopTab === 'barcode' });
+  const [returnsPanelOpen, setReturnsPanelOpen] = useState(false);
+  const { lastScanned, resetScan } = useBarcodeScanner({
+    enabled: activeTopTab === 'barcode' && !returnsPanelOpen,
+  });
 
   // Modals — declared here so the effects below can reference showCheckoutModal
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -346,7 +364,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       const requestId = ++requestSequence;
       setCatalogLoading(true);
       setCatalogError('');
-      void loadPosCatalog()
+      void (demoCatalog ? Promise.resolve(demoCatalog) : loadPosCatalog())
         .then((catalog) => {
           if (active && requestId === requestSequence) setProducts(catalog);
         })
@@ -370,7 +388,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
       window.removeEventListener(STOCK_CHANGED_EVENT, handleStockChanged);
       window.removeEventListener(DEMO_DATA_CHANGED_EVENT, handleStockChanged);
     };
-  }, [currentUserId, catalogRetry]);
+  }, [currentUserId, catalogRetry, demoCatalog]);
 
   const categories = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.category)))], [products]);
   const brands = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.company)))], [products]);
@@ -1057,6 +1075,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
           ...memoSettings,
           storeName: memoSettings.storeName || companyName,
         }, receiptFormat, billingTemplate);
+      snapshot.saleId = sale.id;
       const result = await onPrintReceipt('sale', snapshot, { autoPrint });
       setPrintNotice('');
       return result === 'printed' || result === 'requested';
@@ -1217,7 +1236,7 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
 
     isPostingSaleRef.current = true;
     setIsPostingSale(true);
-    void postSale(saleInput).then((sale) => {
+    void (onPostSale ? onPostSale(saleInput) : postSale(saleInput)).then((sale) => {
       onSaleComplete(sale);
       setShowCheckoutModal(false);
       setSaleCompleteModal(sale);
@@ -1243,6 +1262,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
     if (heldBillsUserId !== currentUserId || heldBillsError) {
       setHeldBillsError(heldBillsError || 'Held bills are still loading. Try again in a moment.');
       return false;
+    }
+    if (disablePersistentHeldBills) {
+      setHeldBills(nextBills);
+      return true;
     }
     try {
       writeHeldBills(currentUserId, nextBills);
@@ -1337,6 +1360,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
   };
 
   const openCustomerDisplay = () => {
+    if (disableCustomerDisplay) {
+      setDisplayNotice('Customer display is disabled in the demo sandbox.');
+      return;
+    }
     if (!canAccessCustomerDisplay(currentRole, permissions)) {
       setDisplayNotice('POS access is required to open the customer display.');
       return;
@@ -1401,12 +1428,25 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <span>Sale</span>
               </button>
 
-              <SaleReturnsPanel
-                canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
-                  && permissions.includes('sales_history')}
-                canRestock={permissions.includes('stock_inventory')}
-                triggerClassName="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-muted hover:bg-surface-2 border-0 bg-transparent shadow-none"
-              />
+              {disableLiveReturns ? (
+                <button
+                  type="button"
+                  onClick={() => setDisplayNotice('Demo returns are available from Sales History.')}
+                  title="Demo returns are available from Sales History"
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-muted hover:bg-surface-2 border-0 bg-transparent shadow-none"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                  <span>Returns</span>
+                </button>
+              ) : (
+                <SaleReturnsPanel
+                  canReview={(currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN)
+                    && permissions.includes('sales_history')}
+                  canRestock={permissions.includes('stock_inventory')}
+                  onOpenChange={setReturnsPanelOpen}
+                  triggerClassName="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-muted hover:bg-surface-2 border-0 bg-transparent shadow-none"
+                />
+              )}
 
               <button
                 type="button"
@@ -1736,9 +1776,10 @@ export const POSBillingView: React.FC<POSBillingViewProps> = ({
                 <button
                   type="button"
                   onClick={openCustomerDisplay}
+                  disabled={disableCustomerDisplay}
                   aria-label="Open customer display"
-                  title="Open customer display"
-                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-slate-300 px-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                  title={disableCustomerDisplay ? 'Customer display is disabled in the demo sandbox' : 'Open customer display'}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-slate-300 px-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Monitor className="h-3.5 w-3.5" />
                   <span>Display</span>

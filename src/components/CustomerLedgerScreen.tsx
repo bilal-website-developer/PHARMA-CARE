@@ -35,6 +35,7 @@ interface CustomerLedgerScreenProps {
   currentUserName: string;
   currentRole: UserRole;
   onPrintReceipt: PrintReceiptHandler;
+  externalActionsDisabled?: boolean;
 }
 
 export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
@@ -47,6 +48,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   currentUserName,
   currentRole,
   onPrintReceipt,
+  externalActionsDisabled = false,
 }) => {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(customers[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,6 +56,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   const [paymentAmountPKR, setPaymentAmountPKR] = useState<number>(0);
   const [paymentNote, setPaymentNote] = useState('Cash received on counter');
   const [paymentPrintNotice, setPaymentPrintNotice] = useState('');
+  const [whatsappNotice, setWhatsappNotice] = useState('');
   const [customerSaveError, setCustomerSaveError] = useState('');
   const [savingCustomer, setSavingCustomer] = useState(false);
 
@@ -136,6 +139,10 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
 
   const sendWhatsAppReminder = (c: Customer, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (externalActionsDisabled) {
+      setWhatsappNotice(`Demo only: a WhatsApp reminder for ${c.name} was not sent.`);
+      return;
+    }
     const rawPhone = c.phone.replace(/[^0-9]/g, '');
     const formattedPhone = rawPhone.startsWith('0') ? `92${rawPhone.slice(1)}` : rawPhone;
     const duePKR = (c.currentBalancePaisa / 100).toFixed(0);
@@ -160,6 +167,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
   return (
     <div className="space-y-4">
       {paymentPrintNotice && <p role="status" className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-text">{paymentPrintNotice}</p>}
+      {whatsappNotice && <p role="status" className="rounded-control border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-text">{whatsappNotice}</p>}
 
       {/* ── Top Row: Search Field & "+ Add" Customer Button ── */}
       <section className="flex flex-wrap items-center justify-between gap-3 bg-surface p-3 rounded-card border border-border shadow-xs">

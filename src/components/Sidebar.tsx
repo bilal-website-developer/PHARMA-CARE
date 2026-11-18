@@ -221,7 +221,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         } ${activeItem === key ? 'bg-primary font-bold text-white shadow-md' : 'text-slate-300 hover:bg-white/10'}`}
       >
         <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-        {!isCollapsed && <span>{page.label}</span>}
+        {!isCollapsed && (
+          <span className={key === 'whatsapp-reminders' ? 'whitespace-nowrap text-[11px]' : undefined}>
+            {page.label}
+          </span>
+        )}
         {key === 'print-requests' && pendingPrintCount > 0 && !isCollapsed && (
           <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-black text-white">
             {pendingPrintCount > 99 ? '99+' : pendingPrintCount}
@@ -235,7 +239,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       data-collapsed={isCollapsed}
-      className={`pharma-sidebar sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 text-white transition-none ${isCollapsed ? 'w-16' : 'w-64'}`}
+      className={`pharma-sidebar sticky top-0 flex h-screen shrink-0 select-none flex-col border-r border-white/10 text-white transition-none ${isCollapsed ? 'w-16' : 'w-52'}`}
     >
       <div className={`flex min-h-[72px] items-center border-b border-white/10 p-4 ${isCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
         <div className="pharma-brand flex min-w-0 items-center">

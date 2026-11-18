@@ -148,6 +148,15 @@ function isSaleForReturn(value: unknown): value is SaleForReturn {
     && value.items.every(isSaleItem);
 }
 
+export async function resolveSaleForReturnByReceiptToken(token: string): Promise<SaleForReturn> {
+  return callSupabaseRpc(
+    'resolve_receipt_link',
+    { p_token: token },
+    'Could not resolve this receipt in your shop.',
+    isSaleForReturn,
+  );
+}
+
 function isPendingReturnItem(value: unknown): value is PendingReturnItem {
   return isRecord(value)
     && isString(value.id)

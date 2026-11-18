@@ -64,6 +64,8 @@ test('Admin pages follow explicit grants and Super Admin is platform-only', () =
   assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'settings'), false);
   assert.equal(canAccessPage(UserRole.MANAGER, ['manage_users'], 'trash-bin'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'my-print-requests'), true);
+  assert.equal(canAccessPage(UserRole.ADMIN, [], 'my-print-requests'), true);
+  assert.equal(canAccessPage(UserRole.SUPER_ADMIN, [], 'my-print-requests'), false);
   assert.equal(canAccessPage(UserRole.CASHIER, [], 'print-requests'), false);
   assert.equal(canAccessPage(UserRole.ADMIN, [], 'print-requests'), true);
   assert.equal(canAccessPage(UserRole.SUPER_ADMIN, ['manage_users'], 'print-requests'), false);

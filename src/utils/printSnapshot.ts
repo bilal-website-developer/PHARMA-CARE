@@ -10,6 +10,7 @@ import { UserRole } from '../types/pharmacy';
 export type PrintRequestType = 'sale' | 'payment';
 
 export type PrintSnapshot = {
+  saleId?: string;
   data: MemoData;
   settings: Pick<
     PharmacyMemoSettings,
@@ -145,6 +146,7 @@ export function parsePrintSnapshot(value: unknown): PrintSnapshot {
   }
 
   return {
+    ...(value.saleId === undefined ? {} : { saleId: requiredString(value.saleId, 'sale ID') }),
     data: cleanMemoData(value.data),
     settings: {
       storeName: settings.storeName,

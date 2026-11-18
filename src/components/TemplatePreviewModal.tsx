@@ -9,8 +9,13 @@ import {
   renderPharmacyMemo,
   renderReceipt,
   withReceiptTheme,
+  type ReceiptQrMarkup,
 } from '../utils/receipt';
 import { APP_NAME } from '../constants/brand';
+import {
+  getReceiptQrSettings,
+} from '../utils/receiptLinks';
+import { buildDemoReceiptUrl } from '../utils/demoReceipt';
 
 interface TemplatePreviewModalProps {
   companyName: string;
@@ -116,7 +121,47 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
   const [template, setTemplate] = useState(initialTemplate);
   const [loading, setLoading] = useState(true);
   const [previewWarning, setPreviewWarning] = useState('');
+  const [qrWarning, setQrWarning] = useState('');
+  const [demoQrUrl, setDemoQrUrl] = useState('');
   const [receiptHtml, setReceiptHtml] = useState('');
+  const [previewQr, setPreviewQr] = useState<ReceiptQrMarkup | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    const makeDemoQr = async () => {
+      let baseUrl = window.location.origin;
+      let placement: ReceiptQrMarkup['placement'] = 'footer';
+      try {
+        const settings = await getReceiptQrSettings();
+        if (settings.qrBaseUrl.trim()) baseUrl = settings.qrBaseUrl;
+        placement = settings.qrPlacement;
+      } catch {
+        if (active) setQrWarning('Shop URL settings are unavailable; using this website address for the demo QR.');
+      }
+      try {
+        const url = buildDemoReceiptUrl(baseUrl);
+        const QRCode = await import('qrcode');
+        const svg = await QRCode.toString(url, {
+          type: 'svg',
+          errorCorrectionLevel: 'M',
+          margin: 4,
+          width: 512,
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+        if (active) {
+          setPreviewQr({ svg, placement, caption: 'DEMO QR - opens sample sales' });
+          setDemoQrUrl(url);
+        }
+      } catch (error) {
+        if (active) {
+          setPreviewQr(undefined);
+          setQrWarning(error instanceof Error ? error.message : 'Could not create the demo QR code.');
+        }
+      }
+    };
+    void makeDemoQr();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -133,14 +178,15 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         ? renderPharmacyMemo(
           { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
           { ...memoSettings, storeName: memoSettings.storeName || companyName },
-          format
+          format,
+          previewQr
         )
-        : renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl })));
+        : renderReceipt(template, format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl }, previewQr)));
     } catch (error) {
       setPreviewWarning(`Pharmacy Memo preview failed; showing the existing Classic receipt instead. ${error instanceof Error ? error.message : ''}`);
-      setReceiptHtml(withReceiptTheme(renderReceipt('classic', format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl })));
+      setReceiptHtml(withReceiptTheme(renderReceipt('classic', format, { ...SAMPLE_RECEIPT, storeName: companyName, logoUrl: memoSettings.logoUrl }, previewQr)));
     }
-  }, [companyName, memoSettings, template, format]);
+  }, [companyName, memoSettings, template, format, previewQr]);
 
   return (
     <div
@@ -247,6 +293,13 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
               </div>
             </div>
 
+            <div className="space-y-1.5 rounded-card border border-primary/20 bg-primary/5 p-3.5 text-xs">
+              <h3 className="font-bold text-text">Demo QR code</h3>
+              <p className="text-muted">Scan the QR in the preview to open synthetic sample sales. It is not a real receipt.</p>
+              {demoQrUrl && <a className="block break-all font-semibold text-primary underline" href={demoQrUrl} target="_blank" rel="noreferrer">{demoQrUrl}</a>}
+              {qrWarning && <p role="status" className="text-warning">{qrWarning}</p>}
+            </div>
+
             <div className="flex gap-2 rounded-card border border-border bg-surface p-3 text-xs text-text">
               <Lightbulb aria-hidden="true" size={17} className="shrink-0 text-primary" />
               <p>The printed layout adjusts to the paper size selected for your printer.</p>
@@ -273,7 +326,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
           </div>
 
           <div className="relative flex min-h-[420px] items-start justify-center overflow-auto bg-surface p-4 sm:p-6 md:min-h-0">
-            {previewWarning && <p role="status" className="absolute left-3 right-3 top-3 z-20 rounded-control border border-warning/40 bg-surface px-3 py-2 text-xs text-text">{previewWarning}</p>}
+            {(previewWarning || qrWarning) && <p role="status" className="absolute left-3 right-3 top-3 z-20 rounded-control border border-warning/40 bg-surface px-3 py-2 text-xs text-text">{previewWarning || qrWarning}</p>}
             {loading && (
               <div className="visual-skeleton absolute inset-0 z-10 flex items-center justify-center bg-surface/80">
                 <span className="animate-pulse text-sm font-semibold text-muted">Preparing receipt preview…</span>

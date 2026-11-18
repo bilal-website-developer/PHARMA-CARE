@@ -13,6 +13,8 @@
     "lint": "tsc --noEmit",
     "test:fefo": "tsx --test src/utils/fefo.test.ts",
     "test:receipt": "tsx --test src/utils/receipt.test.ts",
+    "test:receipt-qr": "tsx --test src/utils/receiptLinks.test.ts src/utils/receipt.test.ts supabase/functions/get-public-receipt/logic.test.ts",
+    "test:demo-receipt": "tsx --test src/utils/demoReceipt.test.ts",
     "test:inventory-ui": "tsx --test src/components/inventory/inventoryUiLogic.test.ts",
     "test:stock-inventory": "tsx --test src/components/inventory/stockInventoryLogic.test.ts",
     "test:inventory-products": "tsx --test src/components/inventory/productImportLogic.test.ts",
@@ -40,7 +42,7 @@
     "test:sidebar": "tsx --test src/components/sidebarPinLogic.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
     "test:customer-display": "tsx --test src/utils/customerDisplay.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-data && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:receipt-qr && npm run test:demo-receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-data && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
@@ -53,6 +55,7 @@
     "jsbarcode": "3.12.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "qrcode": "1.5.4",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^8.3.0"
@@ -60,6 +63,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/qrcode": "1.5.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",

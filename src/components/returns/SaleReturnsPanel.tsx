@@ -4,6 +4,7 @@ import {
   getReturnPolicySettings,
   loadPendingSaleReturns,
   loadSaleForReturn,
+  resolveSaleForReturnByReceiptToken,
   processSaleReturn,
   rejectSaleReturn,
   requestSaleReturn,
@@ -15,11 +16,14 @@ import {
 } from '../../data/saleReturns';
 import { getRestockEligibilityReason, type ReturnDisposition } from '../../data/returnLogic';
 import { STOCK_CHANGED_EVENT } from '../../utils/stockAlertsEvents';
+import { parseReceiptScan } from '../../utils/receiptLinks';
+import { useBarcodeScanner } from '../../utils/useBarcodeScanner';
 
 interface SaleReturnsPanelProps {
   canReview: boolean;
   canRestock: boolean;
   triggerClassName?: string;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface DecisionDraft {
@@ -40,7 +44,12 @@ function defaultDecision(reason: string): DecisionDraft {
   return { disposition: 'QUARANTINE', sealedIntact: false, restockUnitId: '', reason };
 }
 
-export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, canRestock, triggerClassName }) => {
+export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({
+  canReview,
+  canRestock,
+  triggerClassName,
+  onOpenChange,
+}) => {
   const [open, setOpen] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [sale, setSale] = useState<SaleForReturn | null>(null);
@@ -52,6 +61,14 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { lastScanned, resetScan } = useBarcodeScanner({
+    enabled: open,
+    maxScanDurationMs: 5000,
+  });
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   const requestedItems = useMemo<SaleReturnRequestItem[]>(() => {
     if (!sale) return [];
@@ -116,19 +133,58 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
 
   const findSale = async (event: React.FormEvent) => {
     event.preventDefault();
+    const scan = parseReceiptScan(invoiceNumber);
+    if (!scan) {
+      setError('Enter an invoice number or scan a valid receipt URL.');
+      return;
+    }
     setBusy(true);
     setError('');
     setNotice('');
     setSale(null);
     setQuantities({});
     try {
-      setSale(await loadSaleForReturn(invoiceNumber.trim()));
+      const found = scan.kind === 'link'
+        ? await resolveSaleForReturnByReceiptToken(scan.token)
+        : await loadSaleForReturn(scan.invoiceNumber);
+      setInvoiceNumber(found.invoiceNumber);
+      setSale(found);
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : 'Could not find the sale.');
     } finally {
       setBusy(false);
     }
   };
+
+  const findScannedSale = async (value: string) => {
+    const scan = parseReceiptScan(value);
+    if (!scan) {
+      setError('This scan is not a valid receipt URL or invoice number.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    setSale(null);
+    setQuantities({});
+    try {
+      const found = scan.kind === 'link'
+        ? await resolveSaleForReturnByReceiptToken(scan.token)
+        : await loadSaleForReturn(scan.invoiceNumber);
+      setInvoiceNumber(found.invoiceNumber);
+      setSale(found);
+    } catch (scanError) {
+      setError(scanError instanceof Error ? scanError.message : 'Could not find the sale for this scan.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lastScanned || !open) return;
+    void findScannedSale(lastScanned);
+    resetScan();
+  }, [lastScanned, open, resetScan]);
 
   const submitRequest = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -276,7 +332,7 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({ canReview, c
                   id="return-invoice-number"
                   value={invoiceNumber}
                   onChange={(event) => setInvoiceNumber(event.target.value)}
-                  placeholder="Invoice number (for example INV-...)"
+                  placeholder="Invoice number or scan receipt QR"
                   className="min-w-0 flex-1 rounded-control border border-border bg-surface px-3 py-2 text-text"
                   required
                 />

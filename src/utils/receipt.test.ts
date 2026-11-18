@@ -71,6 +71,46 @@ for (const template of templates) {
   }
 }
 
+test('places one safe QR on 58 mm, 80 mm, and A4 receipt variants', () => {
+  const data = receiptDataFromSale(sale, { storeName: 'Pharma Test' });
+  const memoData = buildMemoData(sale);
+  const qr = {
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#000"/></svg>',
+    placement: 'footer' as const,
+  };
+  for (const format of formats) {
+    const classic = renderReceipt('classic', format, data, qr);
+    const memo = renderPharmacyMemo(memoData, memoSettings, format, qr);
+    assert.equal(classic.split('class="receipt-qr"').length - 1, 1);
+    assert.equal(memo.split('class="receipt-qr"').length - 1, 1);
+    assert.match(classic, new RegExp(`width:${format === 'thermal58' ? '18mm' : format === 'thermal80' ? '20mm' : '24mm'}`));
+  }
+});
+
+test('drops unsafe QR SVG markup instead of injecting it into a receipt', () => {
+  const data = receiptDataFromSale(sale, { storeName: 'Pharma Test' });
+  const html = renderReceipt('classic', 'thermal80', data, {
+    svg: '<svg onload="alert(1)"><script>alert(1)</script></svg>',
+    placement: 'footer',
+  });
+  assert.doesNotMatch(html, /onload=|<script>alert/);
+  assert.doesNotMatch(html, /qr-footer/);
+});
+
+test('labels preview QR distinctly and escapes the QR caption', () => {
+  const data = receiptDataFromSale(sale, { storeName: 'Pharma Test' });
+  const qr = {
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>',
+    placement: 'footer' as const,
+    caption: 'DEMO QR - opens sample sales',
+  };
+  const html = renderReceipt('classic', 'thermal80', data, qr);
+  assert.match(html, /DEMO QR - opens sample sales/);
+  const escaped = renderReceipt('classic', 'thermal80', data, { ...qr, caption: '<script>no</script>' });
+  assert.doesNotMatch(escaped, /<small><script>/);
+  assert.match(escaped, /&lt;script&gt;no&lt;\/script&gt;/);
+});
+
 test('escapes user-provided receipt fields', () => {
   const data = receiptDataFromSale(sale, { storeName: '<script>alert(1)</script>' });
   const html = renderReceipt('modern', 'a4', data);

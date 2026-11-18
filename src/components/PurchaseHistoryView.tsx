@@ -131,7 +131,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
       });
       if (queryError) throw queryError;
       const result = data as PurchaseHistoryResult;
-      if (result.rows.length === 0 && isDemoDataLoadedLocally()) {
+      if (!supabase && result.rows.length === 0 && isDemoDataLoadedLocally()) {
         const demoPurchase: PurchaseRow = {
           id: 'demo-pr-1',
           pr_no: 'PO-2026-0001',
@@ -199,7 +199,7 @@ export function PurchaseHistoryView({ currentRole }: { currentRole: UserRole }) 
         setSummary(result);
       }
     } catch (caught) {
-      if (isDemoDataLoadedLocally()) {
+      if (!supabase && isDemoDataLoadedLocally()) {
         const demoPurchase: PurchaseRow = {
           id: 'demo-pr-1',
           pr_no: 'PO-2026-0001',

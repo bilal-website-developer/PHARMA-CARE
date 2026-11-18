@@ -18,6 +18,7 @@ interface TopNavProps {
   userId: string;
   activeTitle: string;
   onLogout: () => void;
+  logoutLabel?: string;
   onOpenStockInventory: (medicineId: string | null) => void;
   onOpenProducts: (searchText: string | null) => void;
   compact?: boolean;
@@ -31,6 +32,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   userId,
   activeTitle,
   onLogout,
+  logoutLabel = 'Log out',
   onOpenStockInventory,
   onOpenProducts,
   compact = false,
@@ -169,7 +171,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-left text-xs font-semibold text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <LogOut aria-hidden="true" className="h-4 w-4" />
-                Log out
+                {logoutLabel}
               </button>
             </div>
           )}

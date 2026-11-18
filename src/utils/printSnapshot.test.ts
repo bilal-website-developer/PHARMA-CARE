@@ -38,6 +38,18 @@ test('receipt snapshots contain only explicitly allowed receipt fields', () => {
   assert.equal(isPrintSnapshotSafe(benignProductName), true);
 });
 
+test('preserves the sale ID needed to create or reuse receipt QR links on reprints', () => {
+  const snapshot = buildPrintSnapshot(
+    PHARMACY_MEMO_TEST_FIXTURE,
+    DEFAULT_PHARMACY_MEMO_SETTINGS,
+    'thermal80',
+  );
+  const withSaleId = parsePrintSnapshot({ ...snapshot, saleId: 'sale-uuid' });
+  assert.equal(withSaleId.saleId, 'sale-uuid');
+  assert.equal(parsePrintSnapshot(snapshot).saleId, undefined);
+  assert.throws(() => parsePrintSnapshot({ ...snapshot, saleId: 123 }));
+});
+
 test('admin duplicate snapshots always enable the duplicate label', () => {
   const original = buildPrintSnapshot(
     PHARMACY_MEMO_TEST_FIXTURE,

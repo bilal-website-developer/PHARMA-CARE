@@ -7,9 +7,20 @@ import { APP_NAME } from '../constants/brand';
 interface LoginViewProps {
   onLogin: (userId: string, email: string) => Promise<void>;
   initialError?: string;
+  heading?: string;
+  subtitle?: string;
+  onCancel?: () => void;
+  cancelLabel?: string;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin, initialError = '' }) => {
+export const LoginView: React.FC<LoginViewProps> = ({
+  onLogin,
+  initialError = '',
+  heading,
+  subtitle,
+  onCancel,
+  cancelLabel = 'Back',
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -42,11 +53,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, initialError = ''
       <div className="w-full max-w-md">
         <header className="mb-3 space-y-1.5 text-center">
           <PharmaLogo size={9} className="mx-auto" />
-          <p className="text-xs text-muted">Sign in to {APP_NAME}</p>
+          <p className="text-xs text-muted">{subtitle ?? `Sign in to ${APP_NAME}`}</p>
         </header>
         <section className="overflow-hidden rounded-card border border-border bg-white shadow-lg">
           <div className="h-1.5 bg-primary" />
           <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5 p-4 sm:p-5">
+            {heading && <h1 className="text-center text-lg font-black text-text">{heading}</h1>}
             <div>
               <label htmlFor="email" className="mb-1.5 block text-xs font-bold tracking-wide">
                 EMAIL
@@ -101,6 +113,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, initialError = ''
               {loading ? 'Signing in…' : 'Sign In to System'}
             </button>
             <p className="text-center text-xs text-muted">Forgot your password? Contact your administrator.</p>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="w-full rounded-control border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {cancelLabel}
+              </button>
+            )}
           </form>
         </section>
       </div>
