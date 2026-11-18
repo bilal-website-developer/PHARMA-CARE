@@ -138,7 +138,7 @@ export const CustomerLedgerScreen: React.FC<CustomerLedgerScreenProps> = ({
     if (e) e.stopPropagation();
     const rawPhone = c.phone.replace(/[^0-9]/g, '');
     const formattedPhone = rawPhone.startsWith('0') ? `92${rawPhone.slice(1)}` : rawPhone;
-    const duePKR = (c.currentBalancePaisa / 100).toFixed(0);
+    const duePKR = (c.currentBalancePaisa / 100).toFixed(2);
 
     const message = encodeURIComponent(
       `Assalam-o-Alaikum ${c.name},\n\n` +

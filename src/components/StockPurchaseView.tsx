@@ -76,15 +76,19 @@ function parsePaisa(value: string): number | null {
 }
 
 function paisaInput(value: number) {
-  const rupees = Math.floor(value / 100);
-  const paisa = String(value % 100).padStart(2, '0');
-  return `${rupees}.${paisa}`;
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  const rupees = Math.floor(abs / 100);
+  const paisa = String(abs % 100).padStart(2, '0');
+  return `${sign}${rupees}.${paisa}`;
 }
 
 function money(value: number) {
-  const rupees = Math.floor(value / 100);
-  const paisa = String(Math.abs(value % 100)).padStart(2, '0');
-  return `Rs ${rupees.toLocaleString('en-PK')}.${paisa}`;
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  const rupees = Math.floor(abs / 100);
+  const paisa = String(abs % 100).padStart(2, '0');
+  return `${sign}Rs ${rupees.toLocaleString('en-PK')}.${paisa}`;
 }
 
 function draftKey(userId: string) {

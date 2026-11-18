@@ -11,6 +11,19 @@ import {
 } from 'lucide-react';
 import { CashTransaction } from '../types/pharmacy';
 
+export const PREDEFINED_EXPENSE_CATEGORIES = [
+  'Staff & Refreshments',
+  'Utilities (Electricity, Water, Gas, Net)',
+  'Cleaning & Sanitation',
+  'Packaging & Shopping Bags',
+  'Store Maintenance & Repairs',
+  'Rent & Premises',
+  'Courier & Delivery',
+  'Printing & Stationery',
+  'Government / Municipal Fees',
+  'Miscellaneous / Other',
+] as const;
+
 interface CashBookScreenProps {
   transactions: CashTransaction[];
   onAddTransaction: (tx: CashTransaction) => void;
@@ -21,6 +34,8 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
   onAddTransaction,
 }) => {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseCategory, setExpenseCategory] = useState<string>(PREDEFINED_EXPENSE_CATEGORIES[0]);
+  const [customCategory, setCustomCategory] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmountPKR, setExpenseAmountPKR] = useState<number>(0);
   const [search, setSearch] = useState('');
@@ -42,7 +57,7 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
   }, [transactions]);
 
   const expectedDrawerPaisa = totalInflowsPaisa - totalOutflowsPaisa;
-  const actualDrawerPaisa = actualDrawerCashPKR * 100;
+  const actualDrawerPaisa = Math.round(actualDrawerCashPKR * 100);
   const discrepancyPaisa = actualDrawerPaisa - expectedDrawerPaisa;
 
   const filteredTransactions = useMemo(() => {
@@ -52,20 +67,31 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
       (t) =>
         t.description.toLowerCase().includes(q) ||
         t.type.toLowerCase().includes(q) ||
+        (t.category && t.category.toLowerCase().includes(q)) ||
         t.handledBy.toLowerCase().includes(q)
     );
   }, [transactions, search]);
 
   const handleCreateExpense = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!expenseDesc || expenseAmountPKR <= 0) return;
+    if (expenseAmountPKR <= 0) return;
+
+    const chosenCategory =
+      expenseCategory === 'Miscellaneous / Other' && customCategory.trim()
+        ? customCategory.trim()
+        : expenseCategory;
+
+    const finalDescription = expenseDesc.trim()
+      ? expenseDesc.trim()
+      : chosenCategory;
 
     const newTx: CashTransaction = {
       id: `tx-${Date.now()}`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       type: 'EXPENSE',
-      description: expenseDesc,
-      amountPaisa: expenseAmountPKR * 100,
+      category: chosenCategory,
+      description: finalDescription,
+      amountPaisa: Math.round(expenseAmountPKR * 100),
       isOutflow: true,
       handledBy: 'Active Cashier',
     };
@@ -73,6 +99,8 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
     onAddTransaction(newTx);
     setShowExpenseModal(false);
     setExpenseDesc('');
+    setExpenseCategory(PREDEFINED_EXPENSE_CATEGORIES[0]);
+    setCustomCategory('');
     setExpenseAmountPKR(0);
   };
 
@@ -195,7 +223,14 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
                         {t.type}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-text font-medium">{t.description}</td>
+                    <td className="py-2 px-3 text-text font-medium">
+                      {t.category && (
+                        <span className="inline-block px-1.5 py-0.5 mr-1.5 rounded text-[10px] font-semibold bg-surface-muted text-muted border border-border">
+                          {t.category}
+                        </span>
+                      )}
+                      <span>{t.description}</span>
+                    </td>
                     <td className="py-2 px-3 text-muted text-[11px]">{t.handledBy}</td>
                     <td
                       className={`py-2 px-3 text-right font-mono font-bold whitespace-nowrap ${
@@ -303,14 +338,42 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
 
             <div className="space-y-2.5 text-xs">
               <div>
-                <label className="block font-semibold text-text mb-1">Expense Description *</label>
+                <label className="block font-semibold text-text mb-1">Expense Category *</label>
+                <select
+                  value={expenseCategory}
+                  onChange={(e) => setExpenseCategory(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-border bg-surface rounded-control text-xs text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                >
+                  {PREDEFINED_EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {expenseCategory === 'Miscellaneous / Other' && (
+                <div>
+                  <label className="block font-semibold text-text mb-1">Custom Category Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. License renewal, marketing"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-border bg-surface rounded-control text-xs text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-text mb-1">Description / Notes (Optional)</label>
                 <input
                   type="text"
-                  placeholder="e.g. Electricity bill, cleaning supplies, tea"
+                  placeholder="e.g. Tea for visitors, Bill #1234, vendor name"
                   value={expenseDesc}
                   onChange={(e) => setExpenseDesc(e.target.value)}
                   className="w-full px-3 py-1.5 border border-border bg-surface rounded-control text-xs text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                  required
+
                   autoFocus
                 />
               </div>
@@ -324,6 +387,9 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
                   onChange={(e) => setExpenseAmountPKR(Number(e.target.value))}
                   className="w-full px-3 py-1.5 border border-border bg-surface rounded-control text-xs font-mono font-bold text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                   required
+                  step="0.01"
+                  min="0.01"
+
                 />
               </div>
             </div>
@@ -331,7 +397,13 @@ export const CashBookScreen: React.FC<CashBookScreenProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
               <button
                 type="button"
-                onClick={() => setShowExpenseModal(false)}
+                onClick={() => {
+                  setShowExpenseModal(false);
+                  setExpenseCategory(PREDEFINED_EXPENSE_CATEGORIES[0]);
+                  setCustomCategory('');
+                  setExpenseDesc('');
+                  setExpenseAmountPKR(0);
+                }}
                 className="px-3 py-1.5 text-xs font-semibold text-muted hover:text-text rounded-control"
               >
                 Cancel

@@ -144,7 +144,7 @@ function isCompletedSale(value: unknown): value is CompletedSale {
     && isNonNegativeInteger(value.subtotalPaisa)
     && isNonNegativeInteger(value.discountPaisa)
     && isNonNegativeInteger(value.totalPaisa)
-    && isNonNegativeInteger(value.roundingPaisa)
+    && Number.isSafeInteger(value.roundingPaisa)
     && isPaymentMethod(value.paymentMethod)
     && isNonNegativeInteger(value.amountTenderedPaisa)
     && isNonNegativeInteger(value.changePaisa);

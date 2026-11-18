@@ -160,7 +160,8 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 
 ## Changelog
 
-- 2026-11-07 — Prepared owner-run S1 current-only inventory, `backup_20261107` data/selected-definition/ACL/sequence snapshot, guarded data restore, snapshot cleanup, and row-count smoke test. Added the owner's no-staging rollout and Developer Shop/account-boundary decisions to the multi-shop plans. Static review only; no database or deployment actions.
+- 2026-11-18 — Added predefined expense categories with dropdown selection to CashBookScreen expense voucher modal; audited and fixed calculation logic (sales.ts roundingPaisa, CashBookScreen float rounding, StockPurchaseView/PurchaseHistoryView negative money formatting, DashboardView monthly sales KPI, customer WhatsApp balance precision).
+- 2026-11-07 — Prepared owner-run S1 current-only inventory, backup snapshot, restore, and smoke tests; redesigned POS customer display; added SPA rewrite in vercel.json.
 - 2026-11-07 — Redesigned the POS customer display with Clean Classic screens and an animated Pill Rain thank-you screen; updated its guide, added a dismissible display notice and bottom-right install notification on each reload, and compacted the cart unit selector. Added early install-event capture and a network-only service worker for Chrome's in-app prompt. Vercel deployment protection may block PWA files; the public app URL must expose its manifest and worker. No offline caching. Data flow, logo, permissions, and channel behavior are unchanged.
 - 2026-11-07 — Fast-forwarded `feature/team-view-manage-users` into `main` and pushed customer-display/manage-users changes, S1/Track A preparation, and docs to GitHub. Test suite and production build passed.
 - 2026-11-07 — Added root `vercel.json` rewrite for direct Vite SPA routes; Vite build and JSON validation passed, then live homepage and `/customer-display` both returned HTTP 200.
@@ -170,10 +171,10 @@ Confirmed multi-tenant target: Super Admin is platform-only (`shop_id = NULL`), 
 - 2026-11-05 — Confirmed task checkout root `D:/PHARMA CARE WEBSITE` and branch `feature/team-view-manage-users`; prior `E:\PHARMCYYYY1` checkout is absent on this machine. No work was performed outside the available checkout.
 - 2026-11-05 — Extended the same-computer customer display locally with payment summary, welcome/thank-you states, safe same-generic/strength in-stock alternatives, cashier line swap/hide controls, and an exact channel payload allowlist. Focused tests (7), full suite (134), TypeScript check, and production build passed. Dosage form is absent from the current POS catalog and therefore not matched. No role, SQL, database, deployment, merge, or push changes.
 - 2026-11-04 — Owner deployed `manage-users` to the configured production Supabase project (`itdetfyxrwixhxsfydfz`). CLI output confirmed successful upload of the function entrypoint and policy module; Docker warning was non-blocking. Waiting for UI refresh/runtime verification.
-- 2026-11-03 — Diagnosed the Manage Users API-version warning, added Supabase CLI, and documented PATH limitations; direct executable paths worked. No database or deployment action was taken.
+
 - 2026-11-03 — Prepared the Track A SQL hardening package under `supabase/fresh/trackA/` with the 001 lock-down, rollback, test, optional 002 default-privilege files, smoke checklist, and run order README. No SQL was run or deployed; branch remains `feature/team-view-manage-users`.
 - 2026-10-29/11-01 — Audited supplied PDFs and drafted Part B SQL Editor preflight/README; completed Task 1 Admin team/access controls and the approved same-device customer display. Tests/build pass; Team policy 18/18; authenticated UI and live display sync unverified. PDF 4 has no production source maps; approved named-version cleanup removes local test-file paths. Production Vercel variables were saved by owner; Preview variables skipped due no test Supabase project. PDF 2 Track A A0 read-only queries provided; awaiting owner results before creating any SQL files. No SQL run, merge, push, or deployment. PDF 1 Part A's four requested additions remain unbuilt; Track B remains off.
-- 2026-10-21/23 — Recorded owner-supplied read-only DB inventory and DBCode connection guidance; no SQL migration or DBCode query was run. Exact earlier counts and setup details are historical and must not be treated as current.
+
 - 2026-10-10/19 — Earlier work covered POS/barcode features, alerts/returns, Admin team controls, UI redesigns, performance, ACL proposals, and project-context tooling. Tests and live/deployment status are documented in the relevant plans and current source; historical staging gates have been superseded by S1-S6.
 
 History: Earlier work delivered Products and Master Data redesigns, Pharmacy Memo rendering and print approvals, role/permission UI, and Stock Inventory. See `docs/REDESIGN_PROGRESS.md` and recent Git history for details; that progress document contains some status entries older than the current source.
@@ -192,15 +193,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-07T14:28:08.695Z
+Generated at (UTC): 2026-11-18T05:04:54.627Z
 Git branch: main
 
 Last 5 commit subjects:
+- web app
 - fixxx
 - coustmer display page
 - coustmer displayy
 - Document customer display frontend
-- versal fix bug
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

@@ -174,7 +174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-3">
             <span className="text-[11px] font-medium text-slate-500 block">Monthly Sales (Rs)</span>
             <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
-              Rs. {monthlySales.reduce((sum, sale) => sum + sale.totalPaisa, 0) / 100}
+              Rs. {(monthlySales.reduce((sum, sale) => sum + sale.totalPaisa, 0) / 100).toFixed(0)}
             </span>
           </div>
         </div>

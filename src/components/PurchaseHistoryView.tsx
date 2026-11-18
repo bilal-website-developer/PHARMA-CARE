@@ -64,9 +64,11 @@ interface PurchaseDetail extends PurchaseRow {
 const PAGE_SIZE = 25;
 
 function money(paisa: number) {
-  const rupees = Math.floor(paisa / 100);
-  const cents = String(Math.abs(paisa % 100)).padStart(2, '0');
-  return `Rs ${rupees.toLocaleString('en-PK')}.${cents}`;
+  const sign = paisa < 0 ? '-' : '';
+  const abs = Math.abs(paisa);
+  const rupees = Math.floor(abs / 100);
+  const cents = String(abs % 100).padStart(2, '0');
+  return `${sign}Rs ${rupees.toLocaleString('en-PK')}.${cents}`;
 }
 
 function karachiDate(value: string) {

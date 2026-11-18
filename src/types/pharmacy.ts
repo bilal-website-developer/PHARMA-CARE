@@ -160,6 +160,7 @@ export interface CashTransaction {
   id: string;
   time: string;
   type: 'SALE' | 'CREDIT_RECOVERY' | 'EXPENSE' | 'OPENING_FLOAT';
+  category?: string;
   description: string;
   amountPaisa: number;
   isOutflow: boolean;
