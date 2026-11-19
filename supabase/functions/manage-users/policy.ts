@@ -1,12 +1,23 @@
 export const ROLES = ['cashier', 'manager', 'accountant', 'admin', 'super_admin'] as const;
 export type Role = (typeof ROLES)[number];
 export const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
+export const SETTINGS_SECTION_PERMISSION_KEYS = [
+  'settings_shop_profile',
+  'settings_receipt_memo',
+  'settings_receipt_qr',
+  'settings_operations',
+  'settings_demo_data',
+  'settings_whatsapp_templates',
+] as const;
 
 export function normalizePermissions(permissions: readonly string[]): string[] {
   const unique = [...new Set(permissions)];
-  return unique.includes('pos')
+  const withSettingsSections = unique.includes('settings')
     ? unique
-    : unique.filter((permission) => !POS_PRINT_PERMISSION_KEYS.includes(permission as typeof POS_PRINT_PERMISSION_KEYS[number]));
+    : unique.filter((permission) => !SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number]));
+  return withSettingsSections.includes('pos')
+    ? withSettingsSections
+    : withSettingsSections.filter((permission) => !POS_PRINT_PERMISSION_KEYS.includes(permission as typeof POS_PRINT_PERMISSION_KEYS[number]));
 }
 
 export function canUseManageUsers(callerRole: Role, callerPermissions: readonly string[]): boolean {
@@ -99,6 +110,21 @@ export function permissionGrantDenial(
   requestedPermissions: readonly string[],
   currentPermissions: readonly string[] = []
 ): string | null {
+  const requestedSettingsSections = requestedPermissions.filter((permission) =>
+    SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number])
+  );
+  const currentSettingsSections = currentPermissions.filter((permission) =>
+    SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number])
+  );
+  const settingsSectionsChanged = SETTINGS_SECTION_PERMISSION_KEYS.some((permission) =>
+    requestedSettingsSections.includes(permission) !== currentSettingsSections.includes(permission)
+  );
+  if (requestedSettingsSections.length > 0 && !requestedPermissions.includes('settings')) {
+    return 'Admin settings section grants require the Settings page grant.';
+  }
+  if (settingsSectionsChanged && callerRole !== 'super_admin') {
+    return 'Only super_admin may change Admin settings section access.';
+  }
   if (callerRole === 'super_admin') return null;
   if (callerRole !== 'admin') return 'Only admin or super_admin may manage users.';
   if (requestedPermissions.includes('manage_users')) return 'Only super_admin may grant Manage Users.';
@@ -194,6 +220,11 @@ export function profileChangeDenial(change: ProfileChangePolicy): string | null 
     const nextPermissions = change.nextPermissions ?? [];
     const nextActive = change.nextActive;
     if (!nextRole || nextActive === undefined) return 'Profile role and active status are required.';
+    if (nextRole !== 'admin' && nextPermissions.some((permission) =>
+      SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number])
+    )) {
+      return 'Admin settings section access can only be assigned to Admin accounts.';
+    }
     if (isSelf && (
       nextRole !== change.targetRole
       || !samePermissions(nextPermissions, change.targetPermissions)

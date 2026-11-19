@@ -14,7 +14,7 @@ export async function updateCurrentShopSettings(
   settings: ShopOperationalSettings,
 ): Promise<ShopOperationalSettings> {
   if (!supabase) throw new Error('Supabase is not configured; shop settings could not be saved.');
-  const { data, error } = await supabase.rpc('update_current_shop_settings', {
+  const { data, error } = await supabase.rpc('update_current_shop_settings_v2', {
     p_settings: toShopSettingsRpcPayload(settings),
   });
   if (error) throw new Error(`Could not save shop settings: ${error.message}`);

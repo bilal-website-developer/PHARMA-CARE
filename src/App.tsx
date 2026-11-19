@@ -44,7 +44,13 @@ import { filterSalesBetween } from './utils/salesReport';
 import type { ProductFilter } from './components/InventoryScreen';
 import { AuthSession, loadAuthSession } from './utils/auth';
 import { supabase } from './utils/supabase';
-import { canAccessPage, isAdminRole, PermissionsProvider, usePermissions } from './permissions';
+import {
+  canAccessPage,
+  canEditSettingsSection,
+  isAdminRole,
+  PermissionsProvider,
+  usePermissions,
+} from './permissions';
 import {
   BillingPreferences,
   BillingTemplate,
@@ -1128,7 +1134,8 @@ function PharmacyWorkspace({
           memo: {
             notes: settings.notes,
             terminalName: settings.terminalName,
-            showBatchExpiry: settings.showBatchExpiry,
+            showBatchNumber: settings.showBatchNumber,
+            showExpiryDate: settings.showExpiryDate,
             roundNet: settings.roundNet,
             printTax: settings.printTax,
             duplicateLabel: settings.duplicateLabel,
@@ -1152,6 +1159,18 @@ function PharmacyWorkspace({
     if (!savePharmacyMemoSettings(settings)) return false;
     setMemoSettings(settings);
     return true;
+  };
+
+  const updateOperationalLimits = async (
+    limits: Pick<ShopOperationalSettings, 'maxDiscountPaisa' | 'roleDiscountPercentCap' | 'expiryWarningDays'>,
+  ): Promise<boolean> => {
+    try {
+      await persistShopSettingsPatch(limits);
+      return true;
+    } catch (error) {
+      setShopSettingsError(error instanceof Error ? error.message : 'Could not save operational limits.');
+      return false;
+    }
   };
 
   const openTemplatePreview = (template: BillingTemplate) => {
@@ -1525,23 +1544,38 @@ function PharmacyWorkspace({
               {canPage('settings') && (
                 <SettingsView
                   activeTemplate={billingPreferences.template}
-                  canEditShopProfile={currentRole === UserRole.ADMIN && canPage('settings')}
+                  canEditShopProfile={currentRole === UserRole.ADMIN
+                    && (!supabase || canEditSettingsSection(currentRole, session.permissions, 'settings_shop_profile'))}
                   isShopAdmin={currentRole === UserRole.ADMIN}
                   canManageDemoData={currentRole === UserRole.ADMIN
+                    && (!supabase || canEditSettingsSection(currentRole, session.permissions, 'settings_demo_data'))
                     && canPage('products')
                     && canPage('suppliers')
                     && canPage('purchases')}
                   canLoadDemoData={currentRole === UserRole.ADMIN
+                    && (!supabase || canEditSettingsSection(currentRole, session.permissions, 'settings_demo_data'))
                     && canPage('products')
                     && canPage('suppliers')
                     && canPage('purchases')
                     && (!supabase || can('categories'))}
-                  canEditOperationalSettings={!supabase || (shopSettingsLoaded && shopSettings !== null)}
+                  canEditOperationalSettings={(!supabase || (shopSettingsLoaded && shopSettings !== null))
+                    && (!supabase || canEditSettingsSection(currentRole, session.permissions, 'settings_receipt_memo'))}
+                  canEditOperationalLimits={Boolean(supabase)
+                    && shopSettingsLoaded
+                    && shopSettings !== null
+                    && canEditSettingsSection(currentRole, session.permissions, 'settings_operations')}
+                  operationalLimits={shopSettings ? {
+                    maxDiscountPaisa: shopSettings.maxDiscountPaisa,
+                    roleDiscountPercentCap: shopSettings.roleDiscountPercentCap,
+                    expiryWarningDays: shopSettings.expiryWarningDays,
+                  } : null}
+                  onOperationalLimitsChange={updateOperationalLimits}
                   canEditReceiptQrSettings={Boolean(supabase)
-                    && (currentRole === UserRole.ADMIN || currentRole === UserRole.MANAGER)
-                    && canPage('settings')}
+                    && canEditSettingsSection(currentRole, session.permissions, 'settings_receipt_qr')}
+                  canEditWhatsAppTemplates={!supabase
+                    || canEditSettingsSection(currentRole, session.permissions, 'settings_whatsapp_templates')}
                   canRegenerateReceiptQr={Boolean(supabase)
-                    && (currentRole === UserRole.ADMIN || currentRole === UserRole.MANAGER)
+                    && canEditSettingsSection(currentRole, session.permissions, 'settings_receipt_qr')
                     && canPage('sales_history')}
                   operationalSettingsError={shopSettingsError}
                   onTemplateChange={(template: BillingTemplate) =>
@@ -1602,7 +1636,12 @@ function PharmacyWorkspace({
             initialTemplate={previewTemplate}
             initialFormat={billingPreferences.format}
             memoSettings={memoSettings}
-            canApply={isAdminRole(currentRole)}
+            canApply={currentRole === UserRole.ADMIN
+              && (!supabase || canEditSettingsSection(
+                currentRole,
+                session.permissions,
+                'settings_receipt_memo',
+              ))}
             onApply={(template: BillingTemplate, format: ReceiptFormat) => {
               updateBillingPreferences({ template, format });
               setShowTemplatePreview(false);

@@ -26,7 +26,15 @@ const MODULE_KEYS = [
   'purchase_history', 'purchases', 'expenses', 'stock_inventory', 'reports', 'manage_users', 'settings',
 ] as const;
 const POS_PRINT_PERMISSION_KEYS = ['pos_print_sale', 'pos_print_payment'] as const;
-const PERMISSION_KEYS = [...MODULE_KEYS, ...POS_PRINT_PERMISSION_KEYS] as const;
+const SETTINGS_SECTION_PERMISSION_KEYS = [
+  'settings_shop_profile',
+  'settings_receipt_memo',
+  'settings_receipt_qr',
+  'settings_operations',
+  'settings_demo_data',
+  'settings_whatsapp_templates',
+] as const;
+const PERMISSION_KEYS = [...MODULE_KEYS, ...POS_PRINT_PERMISSION_KEYS, ...SETTINGS_SECTION_PERMISSION_KEYS] as const;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -288,12 +296,43 @@ Deno.serve(async (request) => {
       if (!canManagePlatformShops(callerRole)) {
         return response(403, { message: 'Only the platform Super Admin may manage shops.' });
       }
-      const { data: shops, error: shopsError } = await adminClient
-        .from('shops')
-        .select('id,name,phone,address,logo_path,status,admin_limit,staff_limit')
-        .order('name', { ascending: true });
-      if (shopsError) throw shopsError;
-      return response(200, { shops: shops ?? [] });
+      const [
+        { data: shops, error: shopsError },
+        { data: operationalSettings, error: operationalSettingsError },
+        { data: receiptQrSettings, error: receiptQrSettingsError },
+      ] = await Promise.all([
+        adminClient.from('shops')
+          .select('id,name,phone,address,logo_path,status,admin_limit,staff_limit')
+          .order('name', { ascending: true }),
+        adminClient.from('shop_settings').select('shop_id,settings'),
+        adminClient.from('shop_receipt_qr_settings')
+          .select('shop_id,public_receipts_enabled,link_lifetime_days,show_medicine_names,qr_placement,qr_base_url'),
+      ]);
+      if (shopsError || operationalSettingsError || receiptQrSettingsError) {
+        throw shopsError ?? operationalSettingsError ?? receiptQrSettingsError;
+      }
+      const settingsByShop = new Map((operationalSettings ?? []).map((row) => [row.shop_id, row.settings]));
+      const qrSettingsByShop = new Map((receiptQrSettings ?? []).map((row) => [row.shop_id, row]));
+      const missingSettings = (shops ?? []).some((shop) => !settingsByShop.has(shop.id));
+      if (missingSettings) {
+        return response(503, { message: 'One or more shops do not have initialized settings. Apply the reviewed shop settings package first.' });
+      }
+      return response(200, {
+        shops: (shops ?? []).map((shop) => {
+          const qr = qrSettingsByShop.get(shop.id);
+          return {
+            ...shop,
+            operational_settings: settingsByShop.get(shop.id),
+            receipt_qr_settings: {
+              publicReceiptsEnabled: qr?.public_receipts_enabled ?? false,
+              linkLifetimeDays: qr?.link_lifetime_days ?? 90,
+              showMedicineNames: qr?.show_medicine_names ?? true,
+              qrPlacement: qr?.qr_placement ?? 'footer',
+              qrBaseUrl: qr?.qr_base_url ?? '',
+            },
+          };
+        }),
+      });
     }
 
     if (action === 'update_shop') {
@@ -332,6 +371,26 @@ Deno.serve(async (request) => {
         return response(statusCode, { message: `Could not update shop: ${updateError.message}` });
       }
       return response(200, { message: 'Shop updated successfully.' });
+    }
+
+    if (action === 'update_shop_settings') {
+      if (!canManagePlatformShops(callerRole)) {
+        return response(403, { message: 'Only the platform Super Admin may update shop settings.' });
+      }
+      const shopId = typeof payload.id === 'string' ? payload.id : '';
+      if (!validUuid(shopId)) return response(400, { message: 'A valid target shop id is required.' });
+      const { error: settingsError } = await adminClient.rpc('platform_update_shop_settings', {
+        p_actor_id: authData.user.id,
+        p_shop_id: shopId,
+        p_settings: payload.settings,
+        p_receipt_qr_settings: payload.receipt_qr_settings,
+      });
+      if (settingsError) {
+        const statusCode = settingsError.code === 'P0001' ? 409
+          : settingsError.code === '42501' ? 403 : 400;
+        return response(statusCode, { message: `Could not update shop settings: ${settingsError.message}` });
+      }
+      return response(200, { message: 'Shop settings updated successfully.' });
     }
 
     if (action === 'get_admin_note' || action === 'save_admin_note') {
@@ -374,9 +433,12 @@ Deno.serve(async (request) => {
       const adminUsername = typeof payload.admin_username === 'string' ? payload.admin_username.trim() : '';
       const adminEmail = typeof payload.admin_email === 'string' ? payload.admin_email.trim().toLowerCase() : '';
       const adminPassword = typeof payload.admin_password === 'string' ? payload.admin_password : '';
-      const adminPermissions = normalizePermissions(
-        validPermissions(payload.admin_permissions) ? payload.admin_permissions : [],
-      );
+      if (!validPermissions(payload.admin_permissions)) {
+        return response(400, { message: 'Admin permissions contain an invalid permission key.' });
+      }
+      const settingsGrantDenial = permissionGrantDenial('super_admin', [], payload.admin_permissions);
+      if (settingsGrantDenial) return response(400, { message: settingsGrantDenial });
+      const adminPermissions = normalizePermissions(payload.admin_permissions);
       if (!validUuid(operationId) || !name || name.length > 120 || phone.length > 40 || address.length > 240
         || !adminFullName || adminFullName.length > 120
         || !adminUsername || adminUsername.length > 80 || !validEmail(adminEmail)
@@ -922,7 +984,7 @@ Deno.serve(async (request) => {
         shops = shopRows ?? [];
       }
       return response(200, {
-        api_version: 5,
+        api_version: 6,
         users: orderedUsers,
         currentCount: globalCount ?? 0,
         team_count: teamCount,
@@ -1037,9 +1099,14 @@ Deno.serve(async (request) => {
         return response(400, { message: 'Shop assignment is managed by the server.' });
       }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
-      const normalizedPermissions = normalizePermissions(payload.permissions);
-      const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, normalizedPermissions);
+      if (role !== 'admin' && payload.permissions.some((permission) =>
+        SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number])
+      )) {
+        return response(400, { message: 'Settings section grants can only be assigned to Admin accounts.' });
+      }
+      const permissionDenial = permissionGrantDenial(callerRole, callerPermissions, payload.permissions);
       if (permissionDenial) return response(403, { message: permissionDenial });
+      const normalizedPermissions = normalizePermissions(payload.permissions);
       if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
         return response(400, { message: 'Active status must be true or false.' });
       }
@@ -1374,6 +1441,18 @@ Deno.serve(async (request) => {
         return response(403, { message: 'Super Admins may edit Admin accounts; use the Admin team controls for staff access.' });
       }
       if (!validPermissions(payload.permissions)) return response(400, { message: 'Permissions contain an invalid permission key.' });
+      if (role !== 'admin' && payload.permissions.some((permission) =>
+        SETTINGS_SECTION_PERMISSION_KEYS.includes(permission as typeof SETTINGS_SECTION_PERMISSION_KEYS[number])
+      )) {
+        return response(400, { message: 'Settings section grants can only be assigned to Admin accounts.' });
+      }
+      const permissionDenial = permissionGrantDenial(
+        callerRole,
+        callerPermissions,
+        payload.permissions,
+        target.permissions ?? [],
+      );
+      if (permissionDenial) return response(403, { message: permissionDenial });
       const normalizedPermissions = normalizePermissions(payload.permissions);
       if (typeof payload.is_active !== 'boolean') return response(400, { message: 'Active status is required.' });
       if (payload.password !== undefined) return response(400, { message: 'Use the password reset action to set a new password.' });

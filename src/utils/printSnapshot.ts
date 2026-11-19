@@ -19,6 +19,8 @@ export type PrintSnapshot = {
     | 'phone'
     | 'notes'
     | 'terminalName'
+    | 'showBatchNumber'
+    | 'showExpiryDate'
     | 'showBatchExpiry'
     | 'roundNet'
     | 'printTax'
@@ -131,8 +133,14 @@ export function parsePrintSnapshot(value: unknown): PrintSnapshot {
     || !settings.notes.every((note) => typeof note === 'string')) {
     throw new Error('Receipt snapshot must contain three note lines.');
   }
-  if (typeof settings.showBatchExpiry !== 'boolean'
-    || typeof settings.printTax !== 'boolean'
+  const legacyShowBatchExpiry = optionalBoolean(settings.showBatchExpiry, 'batch and expiry visibility');
+  const showBatchNumber = optionalBoolean(settings.showBatchNumber, 'batch number visibility')
+    ?? legacyShowBatchExpiry
+    ?? true;
+  const showExpiryDate = optionalBoolean(settings.showExpiryDate, 'expiry visibility')
+    ?? legacyShowBatchExpiry
+    ?? true;
+  if (typeof settings.printTax !== 'boolean'
     || typeof settings.duplicateLabel !== 'boolean'
     || !['none', '1', '5', '10'].includes(String(settings.roundNet))) {
     throw new Error('Receipt snapshot has invalid print settings.');
@@ -154,7 +162,9 @@ export function parsePrintSnapshot(value: unknown): PrintSnapshot {
       phone: settings.phone,
       notes: [settings.notes[0], settings.notes[1], settings.notes[2]],
       terminalName: settings.terminalName,
-      showBatchExpiry: settings.showBatchExpiry,
+      showBatchNumber,
+      showExpiryDate,
+      showBatchExpiry: showBatchNumber && showExpiryDate,
       roundNet: settings.roundNet as PharmacyMemoSettings['roundNet'],
       printTax: settings.printTax,
       duplicateLabel: settings.duplicateLabel,

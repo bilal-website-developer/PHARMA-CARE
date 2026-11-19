@@ -32,7 +32,7 @@ const SAMPLE_RECEIPT: ReceiptData = {
   invoiceNo: 'INV-240810',
   dateTime: '07/10/2026, 12:15 pm',
   cashierName: 'Sample Pharmacist',
-  customerName: 'Walk-in Customer',
+  customerName: '',
   paymentMode: 'CASH',
   status: 'PAID',
   items: [

@@ -51,7 +51,10 @@ export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): Ph
     if (typeof parsed !== 'object' || parsed === null) {
       return { ...defaults, address: fallbackAddress, phone: fallbackPhone, logoUrl: profileLogo };
     }
-    const value = parsed as Partial<PharmacyMemoSettings>;
+    const value = parsed as Partial<PharmacyMemoSettings> & { showBatchExpiry?: unknown };
+    const legacyShowBatchExpiry = typeof value.showBatchExpiry === 'boolean'
+      ? value.showBatchExpiry
+      : defaults.showBatchNumber;
     const roundNet: MemoRounding = ['none', '1', '5', '10'].includes(String(value.roundNet))
       ? value.roundNet as MemoRounding
       : defaults.roundNet;
@@ -64,7 +67,8 @@ export function readPharmacyMemoSettings(companyName = DEFAULT_COMPANY_NAME): Ph
       phone: typeof value.phone === 'string' && value.phone.trim() ? value.phone : fallbackPhone,
       notes,
       terminalName: typeof value.terminalName === 'string' ? value.terminalName : defaults.terminalName,
-      showBatchExpiry: typeof value.showBatchExpiry === 'boolean' ? value.showBatchExpiry : defaults.showBatchExpiry,
+      showBatchNumber: typeof value.showBatchNumber === 'boolean' ? value.showBatchNumber : legacyShowBatchExpiry,
+      showExpiryDate: typeof value.showExpiryDate === 'boolean' ? value.showExpiryDate : legacyShowBatchExpiry,
       roundNet,
       printTax: typeof value.printTax === 'boolean' ? value.printTax : defaults.printTax,
       duplicateLabel: typeof value.duplicateLabel === 'boolean' ? value.duplicateLabel : defaults.duplicateLabel,

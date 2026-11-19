@@ -45,8 +45,13 @@ import {
   type ReceiptQrLink,
   type ReceiptQrSettings,
 } from '../utils/receiptLinks';
+import type { ShopOperationalSettings } from '../utils/shopSettings';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
+type OperationalLimits = Pick<
+  ShopOperationalSettings,
+  'maxDiscountPaisa' | 'roleDiscountPercentCap' | 'expiryWarningDays'
+>;
 const DEFAULT_DEBT_TEMPLATE =
   'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!';
 
@@ -85,7 +90,11 @@ interface SettingsViewProps {
   canManageDemoData: boolean;
   canLoadDemoData: boolean;
   canEditOperationalSettings: boolean;
+  canEditOperationalLimits: boolean;
+  operationalLimits: OperationalLimits | null;
+  onOperationalLimitsChange: (limits: OperationalLimits) => Promise<boolean>;
   canEditReceiptQrSettings: boolean;
+  canEditWhatsAppTemplates: boolean;
   canRegenerateReceiptQr: boolean;
   operationalSettingsError: string;
   onTemplateChange: (template: BillingTemplate) => void;
@@ -107,7 +116,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   canManageDemoData,
   canLoadDemoData,
   canEditOperationalSettings,
+  canEditOperationalLimits,
+  operationalLimits,
+  onOperationalLimitsChange,
   canEditReceiptQrSettings,
+  canEditWhatsAppTemplates,
   canRegenerateReceiptQr,
   operationalSettingsError,
   onTemplateChange,
@@ -132,6 +145,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [operationalLimitsDraft, setOperationalLimitsDraft] = useState<OperationalLimits>(
+    operationalLimits ?? {
+      maxDiscountPaisa: 20000,
+      roleDiscountPercentCap: { admin: 30, manager: 15, cashier: 10, accountant: 0 },
+      expiryWarningDays: 90,
+    },
+  );
   const [receiptQrSettings, setReceiptQrSettings] = useState<ReceiptQrSettings | null>(null);
   const [receiptQrError, setReceiptQrError] = useState('');
   const [receiptQrBusy, setReceiptQrBusy] = useState(false);
@@ -151,6 +171,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     setMemoSettings(savedMemoSettings);
   }, [savedMemoSettings]);
+
+  useEffect(() => {
+    if (operationalLimits) setOperationalLimitsDraft(operationalLimits);
+  }, [operationalLimits]);
 
   useEffect(() => {
     if (!canEditReceiptQrSettings) return;
@@ -402,20 +426,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           logoPath: logoFile ? uploadedLogoUrl : logoUrl,
         });
 
-        try {
-          globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
-            urduFooter,
-            debtTemplate,
-          }));
-        } catch {
-          setSavedSuccess(false);
-          setSaveNotice({
-            text: 'Shop details were saved, but the Urdu footer and debt reminder could not be saved in this browser.',
-            error: true,
-          });
-          return;
-        }
-
         setShopName(savedProfile.name);
         setPhone(savedProfile.phone);
         setCity(savedProfile.address);
@@ -441,6 +451,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             return;
           }
         }
+      }
+      if (canEditShopProfile || canEditWhatsAppTemplates) {
+        const nextSavedShopProfile = {
+          urduFooter: canEditShopProfile ? urduFooter : savedShopProfile.urduFooter,
+          debtTemplate: canEditWhatsAppTemplates ? debtTemplate : savedShopProfile.debtTemplate,
+        };
+        try {
+          globalThis.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(nextSavedShopProfile));
+        } catch {
+          setSavedSuccess(false);
+          setSaveNotice({
+            text: 'Server settings were saved, but browser-local settings could not be saved on this device.',
+            error: true,
+          });
+          return;
+        }
+        setSavedShopProfile(nextSavedShopProfile);
       }
       if (canEditOperationalSettings && !await onMemoSettingsChange(memoSettingsToSave)) {
         setSavedSuccess(false);
@@ -491,6 +518,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         return;
       }
       setMemoSettings(nextMemoSettings);
+      setSaveNotice(null);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleSaveOperationalLimits = async () => {
+    if (!operationalLimits || !canEditOperationalLimits) return;
+    const { maxDiscountPaisa, expiryWarningDays, roleDiscountPercentCap } = operationalLimitsDraft;
+    if (!Number.isInteger(maxDiscountPaisa) || maxDiscountPaisa < 0 || maxDiscountPaisa > 20000
+      || !Number.isInteger(expiryWarningDays) || expiryWarningDays < 1 || expiryWarningDays > 365
+      || !Number.isFinite(roleDiscountPercentCap.admin) || roleDiscountPercentCap.admin < 0 || roleDiscountPercentCap.admin > 30
+      || !Number.isFinite(roleDiscountPercentCap.manager) || roleDiscountPercentCap.manager < 0 || roleDiscountPercentCap.manager > 15
+      || !Number.isFinite(roleDiscountPercentCap.cashier) || roleDiscountPercentCap.cashier < 0 || roleDiscountPercentCap.cashier > 10
+      || roleDiscountPercentCap.accountant !== 0) {
+      setSaveNotice({ text: 'Operational limits are outside the allowed ranges.', error: true });
+      setSavedSuccess(false);
+      return;
+    }
+
+    setSettingsSaving(true);
+    try {
+      if (!await onOperationalLimitsChange(operationalLimitsDraft)) {
+        setSaveNotice({ text: 'Operational limits could not be saved. Review the error and try again.', error: true });
+        setSavedSuccess(false);
+        return;
+      }
       setSaveNotice(null);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
@@ -737,13 +793,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
           <div>
             <h3 className="text-sm font-black text-text">Pharmacy Memo slip</h3>
-            <p className="mt-1 text-xs text-muted">Configure the cash-memo header, notes, and print behavior for this browser.</p>
+            <p className="mt-1 text-xs text-muted">Configure the shared cash-memo header, notes, and print behavior for this shop.</p>
           </div>
           <button type="button" onClick={() => onOpenTemplatePreview('pharmacy-memo')} className="rounded-control border border-border px-3 py-2 text-xs font-bold text-primary hover:bg-surface">
             <Eye className="mr-1 inline h-3.5 w-3.5" /> Open full preview
           </button>
         </div>
-        {!canEditOperationalSettings && <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">Shared shop settings are unavailable until they load, or your account does not have the Settings permission.</p>}
+        {!canEditOperationalSettings && <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">Shared settings are unavailable until they load, or your account does not have the Receipt and Memo section grant.</p>}
         <fieldset disabled={!canEditOperationalSettings || settingsSaving} className="space-y-4 disabled:opacity-70">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-text">Memo store name
@@ -772,7 +828,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid gap-2 sm:grid-cols-2">
             {[
               ['printLogo', 'Print shop logo on slips'],
-              ['showBatchExpiry', 'Print batch and expiry'],
+              ['showBatchNumber', 'Print batch number'],
+              ['showExpiryDate', 'Print expiry date'],
               ['printTax', 'Print sales tax row'],
               ['duplicateLabel', 'Label reprints as DUPLICATE'],
               ['autoPrint', 'Auto-print after completing a sale'],
@@ -839,18 +896,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </section>
 
       <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
+        <div className="border-b border-border pb-3">
+          <h3 className="text-sm font-black text-text">Operational limits</h3>
+          <p className="mt-1 text-xs text-muted">Control discount limits by role and the stock expiry warning period.</p>
+        </div>
+        {!operationalLimits ? (
+          <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+            Shared operational limits are still loading or unavailable.
+          </p>
+        ) : !canEditOperationalLimits ? (
+          <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+            You do not have the Operational Limits section grant.
+          </p>
+        ) : null}
+        <fieldset disabled={!canEditOperationalLimits || !operationalLimits || settingsSaving} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 disabled:opacity-70">
+          <label className="text-xs font-semibold text-text">Maximum discount (Rs)
+            <input type="number" min={0} max={200} step={0.01} className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={operationalLimitsDraft.maxDiscountPaisa / 100} onChange={(event) => setOperationalLimitsDraft((current) => ({ ...current, maxDiscountPaisa: Math.round(Number(event.target.value) * 100) }))} />
+          </label>
+          <label className="text-xs font-semibold text-text">Expiry warning (days)
+            <input type="number" min={1} max={365} step={1} className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm" value={operationalLimitsDraft.expiryWarningDays} onChange={(event) => setOperationalLimitsDraft((current) => ({ ...current, expiryWarningDays: Number(event.target.value) }))} />
+          </label>
+          {(['admin', 'manager', 'cashier', 'accountant'] as const).map((role) => (
+            <label key={role} className="text-xs font-semibold capitalize text-text">{role} discount cap (%)
+              <input type="number" disabled={role === 'accountant'} min={0} max={role === 'admin' ? 30 : role === 'manager' ? 15 : role === 'cashier' ? 10 : 0} step={0.1} className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60" value={operationalLimitsDraft.roleDiscountPercentCap[role]} onChange={(event) => setOperationalLimitsDraft((current) => ({
+                ...current,
+                roleDiscountPercentCap: { ...current.roleDiscountPercentCap, [role]: Number(event.target.value) },
+              }))} />
+            </label>
+          ))}
+        </fieldset>
+        <button type="button" disabled={!canEditOperationalLimits || !operationalLimits || settingsSaving} onClick={() => void handleSaveOperationalLimits()} className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <Save className="mr-1 inline h-3.5 w-3.5" /> Save operational limits
+        </button>
+      </section>
+
+      <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
         <div className="flex items-start gap-3 border-b border-border pb-3">
           <QrCode className="mt-0.5 h-5 w-5 text-primary" />
           <div>
             <h3 className="text-sm font-black text-text">Receipt QR codes</h3>
             <p className="mt-1 text-xs text-muted">
-              Public links are off by default. Anyone with an enabled link can view the sanitized receipt until it expires or is revoked.
+              Public links are off by default. Anyone with an enabled link can view the receipt, including allocated Batch No. and Expiry, until it expires or is revoked.
             </p>
           </div>
         </div>
         {!canEditReceiptQrSettings && (
           <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
-            Receipt QR settings are available to Admins and Managers with Settings access.
+            Managers with Settings access and Admins granted the Receipt QR section can edit these settings.
           </p>
         )}
         {canEditReceiptQrSettings && !receiptQrSettings && !receiptQrError && (
@@ -880,6 +972,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Public app URL (HTTPS origin)
                 <input
                   type="url"
+                  maxLength={255}
                   value={receiptQrSettings.qrBaseUrl}
                   placeholder="https://your-pharmacy-app.example"
                   onChange={(event) => setReceiptQrSettings({
@@ -914,7 +1007,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   })}
                   className="mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm"
                 >
-                  <option value="footer">Receipt footer (recommended)</option>
+                  <option value="footer">Above footer line (recommended)</option>
                   <option value="after_totals">After totals</option>
                   <option value="below_header">Below shop header</option>
                 </select>
@@ -989,7 +1082,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             rows={3}
             value={debtTemplate}
             onChange={(e) => setDebtTemplate(e.target.value)}
-            disabled={!canEditShopProfile}
+            disabled={!canEditWhatsAppTemplates}
             className="w-full rounded-control border border-border bg-surface px-3 py-2 text-text disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
@@ -1109,7 +1202,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </span>
           ) : savedSuccess ? (
             <span className="flex items-center gap-1 font-bold text-primary">
-              <Check className="w-4 h-4" /> {canEditOperationalSettings ? 'Shared settings saved successfully.' : 'Shop profile saved in this browser.'}
+              <Check className="w-4 h-4" />
+              {canEditOperationalSettings || canEditOperationalLimits
+                ? 'Shared settings saved successfully.'
+                : canEditShopProfile
+                  ? 'Shop profile saved successfully.'
+                  : 'Browser-local settings saved.'}
             </span>
           ) : (
             'Make changes and click Update Profile.'
@@ -1118,7 +1216,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <button
           type="submit"
-          disabled={settingsSaving || (!canEditShopProfile && !canEditOperationalSettings)}
+          disabled={settingsSaving || (!canEditShopProfile && !canEditOperationalSettings && !canEditWhatsAppTemplates)}
           className="flex items-center gap-1.5 rounded-control bg-primary px-6 py-2.5 text-xs font-black text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Save className="w-4 h-4" /> Update Profile

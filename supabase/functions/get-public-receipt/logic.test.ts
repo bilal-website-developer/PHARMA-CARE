@@ -29,6 +29,10 @@ const source: PublicReceiptSource = {
     price_paisa_per_unit: 12500,
     line_total_paisa: 25000,
     returned_base_units: 10,
+    allocations: [
+      { batch_number: 'BATCH-123', expiry_date: '2027-08-31' },
+      { batch_number: 'BATCH-456', expiry_date: '2028-08-31' },
+    ],
   }],
   credit_due_paisa: 9000,
   has_credit: true,
@@ -42,6 +46,10 @@ test('public receipt only returns the approved allowlist and item return state',
     quantity: 2,
     pricePaisa: 12500,
     lineTotalPaisa: 25000,
+    batchDetails: [
+      { batchNumber: 'BATCH-123', expiryDate: '2027-08-31' },
+      { batchNumber: 'BATCH-456', expiryDate: '2028-08-31' },
+    ],
     returnStatus: 'partially_returned',
   });
   assert.deepEqual(Object.keys(receipt).sort(), [
@@ -50,9 +58,9 @@ test('public receipt only returns the approved allowlist and item return state',
   ]);
   assert.deepEqual(Object.keys(receipt.shop).sort(), ['address', 'name', 'phone']);
   assert.deepEqual(Object.keys(receipt.items[0]).sort(), [
-    'lineTotalPaisa', 'name', 'pricePaisa', 'quantity', 'returnStatus', 'unit',
+    'batchDetails', 'lineTotalPaisa', 'name', 'pricePaisa', 'quantity', 'returnStatus', 'unit',
   ]);
-  assert.doesNotMatch(JSON.stringify(receipt), /customer|supplier|batch|expiry|cost|margin|profit|staff|email|internalid/i);
+  assert.doesNotMatch(JSON.stringify(receipt), /customer|supplier|cost|margin|profit|staff|email|internalid|allocationId|batchId/i);
 });
 
 test('hiding medicine names emits generic lines and cash receipts expose no credit due', () => {

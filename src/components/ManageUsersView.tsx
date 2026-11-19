@@ -5,8 +5,10 @@ import {
   MODULES,
   hasPosPrintToggles,
   PermissionKey,
+  SETTINGS_SECTION_PERMISSIONS,
   setModulePermission,
   setPosPrintPermission,
+  setSettingsSectionPermission,
 } from '../permissions';
 import { supabase } from '../utils/supabase';
 
@@ -142,7 +144,7 @@ export function ManageUsersView({
       } | null>(
         { action: 'list' }
       );
-      const hasRoleData = result?.api_version === 5
+      const hasRoleData = result?.api_version === 6
         && Array.isArray(result?.users)
         && Array.isArray(result?.assignable_roles)
         && Array.isArray(result?.grantable_permissions)
@@ -558,6 +560,34 @@ export function ManageUsersView({
                   );
                 })}
                 <p className="text-xs text-muted">Sale and receiving-money receipt printing require explicit approval.</p>
+              </div>
+            )}
+            {isSuperAdmin && form.role === UserRole.ADMIN && form.permissions.includes('settings') && (
+              <div className="mt-4 space-y-3 border-t border-border pt-4">
+                <p className="text-sm font-bold text-text">Settings sections this Admin may edit</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {SETTINGS_SECTION_PERMISSIONS.filter(({ key }) =>
+                    grantablePermissions.includes(key) || form.permissions.includes(key)
+                  ).map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-text">
+                      <input
+                        type="checkbox"
+                        checked={form.permissions.includes(key)}
+                        onChange={(event) => setForm({
+                          ...form,
+                          permissions: setSettingsSectionPermission(
+                            form.permissions,
+                            key,
+                            event.target.checked,
+                          ),
+                        })}
+                        className="h-4 w-4 accent-green-700"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted">Only Super Admin can change these Admin-level settings grants.</p>
               </div>
             )}
           </fieldset>

@@ -4,8 +4,10 @@ import {
   hasPosPrintToggles,
   MODULES,
   POS_PRINT_PERMISSION_KEYS,
+  SETTINGS_SECTION_PERMISSIONS,
   setModulePermission,
   setPosPrintPermission,
+  setSettingsSectionPermission,
   type ModuleKey,
   type PermissionKey,
 } from '../permissions';
@@ -15,6 +17,12 @@ import {
   shopLogoFileExtension,
   shopLogoStoragePath,
 } from '../utils/shopLogo';
+import {
+  parseShopOperationalSettings,
+  toShopSettingsRpcPayload,
+  type ShopOperationalSettings,
+} from '../utils/shopSettings';
+import { parseReceiptQrSettings, type ReceiptQrSettings } from '../utils/receiptLinks';
 import { supabase, supabaseUrl } from '../utils/supabase';
 
 interface ShopRecord {
@@ -26,6 +34,8 @@ interface ShopRecord {
   status: 'active' | 'suspended' | 'provisioning' | 'deleted';
   admin_limit: number;
   staff_limit: number;
+  operational_settings: ShopOperationalSettings;
+  receipt_qr_settings: ReceiptQrSettings;
 }
 
 interface ProvisionForm {
@@ -100,14 +110,23 @@ export function ShopsView() {
     setLoading(true);
     try {
       const [shopResult, userResult] = await Promise.all([
-        invokePlatformAction<{ shops: ShopRecord[] }>({ action: 'shops_list' }),
+        invokePlatformAction<{
+          shops: Array<Omit<ShopRecord, 'operational_settings' | 'receipt_qr_settings'> & {
+            operational_settings: unknown;
+            receipt_qr_settings: unknown;
+          }>;
+        }>({ action: 'shops_list' }),
         invokePlatformAction<{ api_version?: number; users?: ManagedAdmin[] }>({ action: 'list' }),
       ]);
       if (!Array.isArray(shopResult.shops)) throw new Error('The shop service returned an invalid response.');
-      if (userResult.api_version !== 5 || !Array.isArray(userResult.users)) {
+      if (userResult.api_version !== 6 || !Array.isArray(userResult.users)) {
         throw new Error('The user service is out of date. Deploy the compatible manage-users function.');
       }
-      setShops(shopResult.shops);
+      setShops(shopResult.shops.map((shop) => ({
+        ...shop,
+        operational_settings: parseShopOperationalSettings(shop.operational_settings),
+        receipt_qr_settings: parseReceiptQrSettings(shop.receipt_qr_settings),
+      })));
       setAdmins(userResult.users.filter((user) => user.role === 'admin' && typeof user.shop_id === 'string'));
       setNotice(null);
       return true;
@@ -266,6 +285,38 @@ export function ShopsView() {
     }
   };
 
+  const updatePlatformSettings = async (
+    shop: ShopRecord,
+    settings: ShopOperationalSettings,
+    receiptQrSettings: ReceiptQrSettings,
+  ) => {
+    if (saving) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      await invokePlatformAction<{ message: string }>({
+        action: 'update_shop_settings',
+        id: shop.id,
+        settings: toShopSettingsRpcPayload(settings),
+        receipt_qr_settings: parseReceiptQrSettings(receiptQrSettings),
+      });
+      const refreshed = await refresh();
+      setNotice({
+        text: refreshed
+          ? `Settings saved for ${shop.name}.`
+          : 'Settings were saved, but the directory could not be refreshed. Use Refresh to verify them.',
+        error: !refreshed,
+      });
+    } catch (error) {
+      setNotice({
+        text: error instanceof Error ? error.message : `Could not update ${shop.name} settings.`,
+        error: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const changeShopStatus = async (shop: ShopRecord) => {
     const nextStatus: ShopRecord['status'] = shop.status === 'active' ? 'suspended' : 'active';
     await updateShop(shop, {
@@ -282,6 +333,13 @@ export function ShopsView() {
     setForm((current) => ({
       ...current,
       admin_permissions: setModulePermission(current.admin_permissions, permission, checked),
+    }));
+  };
+
+  const updateSettingsSection = (permission: typeof SETTINGS_SECTION_PERMISSIONS[number]['key'], checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      admin_permissions: setSettingsSectionPermission(current.admin_permissions, permission, checked),
     }));
   };
 
@@ -340,6 +398,23 @@ export function ShopsView() {
                 </label>
               ))}
             </div>
+            {form.admin_permissions.includes('settings') && (
+              <div className="space-y-2 border-t border-border pt-3">
+                <p className="text-xs font-bold text-text">Settings sections this Admin may edit</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {SETTINGS_SECTION_PERMISSIONS.map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-text">
+                      <input
+                        type="checkbox"
+                        checked={form.admin_permissions.includes(key)}
+                        onChange={(event) => updateSettingsSection(key, event.target.checked)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-muted">Grants are explicit; no business pages are enabled automatically.</p>
           </fieldset>
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
@@ -361,6 +436,7 @@ export function ShopsView() {
             editing={editingShopId === shop.id}
             onToggleEdit={() => setEditingShopId((current) => current === shop.id ? null : shop.id)}
             onSave={updateShop}
+            onSaveSettings={updatePlatformSettings}
             onSaveAdminPermissions={updateAdminPermissions}
             onChangeStatus={changeShopStatus}
           />
@@ -388,6 +464,7 @@ function ShopRow({
   editing,
   onToggleEdit,
   onSave,
+  onSaveSettings,
   onSaveAdminPermissions,
   onChangeStatus,
 }: {
@@ -397,12 +474,19 @@ function ShopRow({
   editing: boolean;
   onToggleEdit: () => void;
   onSave: (shop: ShopRecord, draft: ShopDraft, logoFile?: File | null) => Promise<void>;
+  onSaveSettings: (
+    shop: ShopRecord,
+    settings: ShopOperationalSettings,
+    receiptQrSettings: ReceiptQrSettings,
+  ) => Promise<void>;
   onSaveAdminPermissions: (admin: ManagedAdmin, permissions: PermissionKey[]) => Promise<void>;
   onChangeStatus: (shop: ShopRecord) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(() => shopDraft(shop));
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [permissionDraft, setPermissionDraft] = useState<PermissionKey[]>([]);
+  const [settingsDraft, setSettingsDraft] = useState<ShopOperationalSettings>(shop.operational_settings);
+  const [receiptQrDraft, setReceiptQrDraft] = useState<ReceiptQrSettings>(shop.receipt_qr_settings);
   const [selectedAdminId, setSelectedAdminId] = useState('');
   const editable = shop.status !== 'deleted' && shop.status !== 'provisioning';
   const selectedAdmin = admins.find((admin) => admin.id === selectedAdminId) ?? null;
@@ -410,6 +494,8 @@ function ShopRow({
   useEffect(() => {
     setDraft(shopDraft(shop));
     setLogoFile(null);
+    setSettingsDraft(shop.operational_settings);
+    setReceiptQrDraft(shop.receipt_qr_settings);
   }, [shop]);
 
   useEffect(() => {
@@ -428,6 +514,33 @@ function ShopRow({
 
   const updatePrintPermission = (permission: typeof POS_PRINT_PERMISSION_KEYS[number], enabled: boolean) => {
     setPermissionDraft((current) => setPosPrintPermission(current, permission, enabled));
+  };
+
+  const updateSettingsSection = (
+    permission: typeof SETTINGS_SECTION_PERMISSIONS[number]['key'],
+    enabled: boolean,
+  ) => {
+    setPermissionDraft((current) => setSettingsSectionPermission(current, permission, enabled));
+  };
+
+  const updateMemoSettings = (patch: Partial<ShopOperationalSettings['memo']>) => {
+    setSettingsDraft((current) => ({ ...current, memo: { ...current.memo, ...patch } }));
+  };
+
+  const updateMemoNote = (index: number, value: string) => {
+    const notes = [...settingsDraft.memo.notes] as [string, string, string];
+    notes[index] = value;
+    updateMemoSettings({ notes });
+  };
+
+  const updateDiscountCap = (
+    role: keyof ShopOperationalSettings['roleDiscountPercentCap'],
+    value: number,
+  ) => {
+    setSettingsDraft((current) => ({
+      ...current,
+      roleDiscountPercentCap: { ...current.roleDiscountPercentCap, [role]: value },
+    }));
   };
 
   const shopSummary = [shop.phone, shop.address].filter(Boolean).join(' · ');
@@ -539,6 +652,122 @@ function ShopRow({
             </div>
           </form>
 
+          <section className="space-y-4 border-t border-border pt-4">
+            <div>
+              <h5 className="font-bold text-text">Shop settings</h5>
+              <p className="text-xs text-muted">Super Admin platform changes apply to this shop and are recorded in the audit log.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="space-y-1 text-xs font-semibold text-text">Billing template
+                <select value={settingsDraft.template} onChange={(event) => setSettingsDraft({
+                  ...settingsDraft,
+                  template: event.target.value as ShopOperationalSettings['template'],
+                })} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
+                  {['simple', 'classic', 'professional', 'modern', 'pharmacy-memo'].map((template) => (
+                    <option key={template} value={template}>{template}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-semibold text-text">Receipt paper
+                <select value={settingsDraft.format} onChange={(event) => setSettingsDraft({
+                  ...settingsDraft,
+                  format: event.target.value as ShopOperationalSettings['format'],
+                })} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal">
+                  <option value="thermal58">58 mm</option>
+                  <option value="thermal80">80 mm</option>
+                  <option value="a4">A4</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-semibold text-text">Maximum discount (Rs)
+                <input type="number" min={0} max={200} step={0.01} value={settingsDraft.maxDiscountPaisa / 100} onChange={(event) => setSettingsDraft({
+                  ...settingsDraft,
+                  maxDiscountPaisa: Math.round(Number(event.target.value) * 100),
+                })} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal" />
+              </label>
+              <label className="space-y-1 text-xs font-semibold text-text">Expiry warning (days)
+                <input type="number" min={1} max={365} step={1} value={settingsDraft.expiryWarningDays} onChange={(event) => setSettingsDraft({
+                  ...settingsDraft,
+                  expiryWarningDays: Number(event.target.value),
+                })} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal" />
+              </label>
+              {(['admin', 'manager', 'cashier', 'accountant'] as const).map((role) => (
+                <label key={role} className="space-y-1 text-xs font-semibold capitalize text-text">{role} discount cap (%)
+                  <input type="number" disabled={role === 'accountant'} min={0} max={role === 'admin' ? 30 : role === 'manager' ? 15 : role === 'cashier' ? 10 : 0} step={0.1} value={settingsDraft.roleDiscountPercentCap[role]} onChange={(event) => updateDiscountCap(role, Number(event.target.value))} className="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-normal disabled:opacity-60" />
+                </label>
+              ))}
+            </div>
+
+            <fieldset className="space-y-3 rounded-card border border-border bg-white p-3">
+              <legend className="px-1 text-xs font-bold text-text">Pharmacy Memo</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-xs font-semibold text-text">Terminal name
+                  <input value={settingsDraft.memo.terminalName} maxLength={80} onChange={(event) => updateMemoSettings({ terminalName: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-text">Net rounding
+                  <select value={settingsDraft.memo.roundNet} onChange={(event) => updateMemoSettings({ roundNet: event.target.value as ShopOperationalSettings['memo']['roundNet'] })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal">
+                    <option value="none">None</option><option value="1">Rs 1</option><option value="5">Rs 5</option><option value="10">Rs 10</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-text">Memo number digits
+                  <input type="number" min={1} max={20} step={1} value={settingsDraft.memo.numberDigits} onChange={(event) => updateMemoSettings({ numberDigits: Number(event.target.value) })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal" />
+                </label>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([
+                  ['showBatchNumber', 'Print Batch No.'],
+                  ['showExpiryDate', 'Print Expiry'],
+                  ['printTax', 'Print tax row'],
+                  ['printLogo', 'Print shop logo'],
+                  ['duplicateLabel', 'Mark duplicate receipts'],
+                  ['autoPrint', 'Auto-print receipts'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-xs font-medium text-text">
+                    <input type="checkbox" checked={settingsDraft.memo[key]} onChange={(event) => updateMemoSettings({ [key]: event.target.checked })} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div className="grid gap-2">
+                {settingsDraft.memo.notes.map((note, index) => (
+                  <label key={index} className="space-y-1 text-xs font-semibold text-text">Memo note {index + 1}
+                    <input value={note} maxLength={200} onChange={(event) => updateMemoNote(index, event.target.value)} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal" />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-3 rounded-card border border-border bg-white p-3">
+              <legend className="px-1 text-xs font-bold text-text">Receipt QR</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-xs font-semibold text-text sm:col-span-2">Public app URL (HTTPS origin only)
+                  <input type="url" maxLength={255} value={receiptQrDraft.qrBaseUrl} onChange={(event) => setReceiptQrDraft({ ...receiptQrDraft, qrBaseUrl: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-text">Link lifetime (days)
+                  <input type="number" min={1} max={3650} step={1} value={receiptQrDraft.linkLifetimeDays} onChange={(event) => setReceiptQrDraft({ ...receiptQrDraft, linkLifetimeDays: Number(event.target.value) })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal" />
+                </label>
+                <label className="space-y-1 text-xs font-semibold text-text">QR placement
+                  <select value={receiptQrDraft.qrPlacement} onChange={(event) => setReceiptQrDraft({ ...receiptQrDraft, qrPlacement: event.target.value as ReceiptQrSettings['qrPlacement'] })} className="w-full rounded-control border border-border px-3 py-2 text-sm font-normal">
+                    <option value="footer">Above footer line</option>
+                    <option value="after_totals">After totals</option>
+                    <option value="below_header">Below shop header</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs font-medium text-text">
+                  <input type="checkbox" checked={receiptQrDraft.publicReceiptsEnabled} onChange={(event) => setReceiptQrDraft({ ...receiptQrDraft, publicReceiptsEnabled: event.target.checked })} />
+                  Enable public receipt links
+                </label>
+                <label className="flex items-center gap-2 text-xs font-medium text-text">
+                  <input type="checkbox" checked={receiptQrDraft.showMedicineNames} onChange={(event) => setReceiptQrDraft({ ...receiptQrDraft, showMedicineNames: event.target.checked })} />
+                  Show medicine names
+                </label>
+              </div>
+              <p className="text-xs text-muted">Public QR receipts include allocated Batch No. and Expiry. Anyone holding a link can view them until expiry, revocation, or shop suspension.</p>
+            </fieldset>
+            <button type="button" disabled={saving || !editable} onClick={() => void onSaveSettings(shop, settingsDraft, receiptQrDraft)} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <Save size={15} /> {saving ? 'Saving…' : 'Save shop settings'}
+            </button>
+          </section>
+
           <section className="space-y-3 border-t border-border pt-4">
             <div>
               <h5 className="font-bold text-text">Admin page access</h5>
@@ -571,6 +800,23 @@ function ShopRow({
                       {key === 'pos_print_sale' ? 'Print sale receipts' : 'Print payment receipts'}
                     </label>
                   ))}
+                  {permissionDraft.includes('settings') && (
+                    <div className="space-y-2 border-t border-border pt-3 sm:col-span-2 lg:col-span-3">
+                      <p className="text-xs font-bold text-text">Settings sections this Admin may edit</p>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {SETTINGS_SECTION_PERMISSIONS.map(({ key, label }) => (
+                          <label key={key} className="flex items-center gap-2 text-sm text-text">
+                            <input
+                              type="checkbox"
+                              checked={permissionDraft.includes(key)}
+                              onChange={(event) => updateSettingsSection(key, event.target.checked)}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </fieldset>
                 <button
                   type="button"

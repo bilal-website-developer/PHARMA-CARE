@@ -12,6 +12,7 @@ interface PublicReceipt {
     quantity: number;
     pricePaisa: number;
     lineTotalPaisa: number;
+    batchDetails: Array<{ batchNumber: string; expiryDate: string }>;
     returnStatus: 'not_returned' | 'partially_returned' | 'returned';
   }>;
   discountPaisa: number;
@@ -48,15 +49,23 @@ function parsePublicReceipt(value: unknown): PublicReceipt {
     if (!isRecord(item) || !isText(item.name) || !isText(item.unit)
       || typeof item.quantity !== 'number' || !Number.isFinite(item.quantity)
       || !isMoney(item.pricePaisa) || !isMoney(item.lineTotalPaisa)
+      || !Array.isArray(item.batchDetails)
       || !['not_returned', 'partially_returned', 'returned'].includes(String(item.returnStatus))) {
       throw new Error('The receipt response is invalid.');
     }
+    const batchDetails = item.batchDetails.map((batch) => {
+      if (!isRecord(batch) || !isText(batch.batchNumber) || !isText(batch.expiryDate)) {
+        throw new Error('The receipt response is invalid.');
+      }
+      return { batchNumber: batch.batchNumber, expiryDate: batch.expiryDate };
+    });
     return {
       name: item.name,
       unit: item.unit,
       quantity: item.quantity,
       pricePaisa: item.pricePaisa,
       lineTotalPaisa: item.lineTotalPaisa,
+      batchDetails,
       returnStatus: item.returnStatus as PublicReceipt['items'][number]['returnStatus'],
     };
   });
@@ -158,6 +167,19 @@ export function PublicReceiptPage({ token }: PublicReceiptPageProps) {
                       <p className="mt-1 text-xs text-muted">
                         {item.quantity} {item.unit} × {formatMoney(item.pricePaisa)}
                       </p>
+                      {item.batchDetails.length > 0 && (
+                        <div className="mt-2 space-y-1" aria-label="Batch and expiry details">
+                          {item.batchDetails.map((batch, batchIndex) => (
+                            <div
+                              key={`${batch.batchNumber}-${batch.expiryDate}-${batchIndex}`}
+                              className="grid min-w-0 grid-cols-2 gap-2 rounded-control bg-surface px-2 py-1 text-[11px] leading-relaxed text-muted"
+                            >
+                              <span className="min-w-0 break-words"><strong className="text-text">Batch No.:</strong> {batch.batchNumber}</span>
+                              <span className="min-w-0 break-words"><strong className="text-text">Expiry:</strong> {batch.expiryDate}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <p className="mt-1 text-[11px] font-medium text-muted">
                         {item.returnStatus === 'returned'
                           ? 'Returned'

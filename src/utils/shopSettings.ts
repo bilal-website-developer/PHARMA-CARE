@@ -19,7 +19,8 @@ export interface ShopOperationalSettings extends BillingPreferences {
     PharmacyMemoSettings,
     | 'notes'
     | 'terminalName'
-    | 'showBatchExpiry'
+    | 'showBatchNumber'
+    | 'showExpiryDate'
     | 'roundNet'
     | 'printTax'
     | 'duplicateLabel'
@@ -72,10 +73,15 @@ export function parseShopOperationalSettings(value: unknown): ShopOperationalSet
   }
 
   const memo = value.memo;
+  const legacyShowBatchExpiry = isRecord(memo) && typeof memo.showBatchExpiry === 'boolean'
+    ? memo.showBatchExpiry
+    : true;
   if (!isRecord(memo) || !Array.isArray(memo.notes) || memo.notes.length !== 3
     || !memo.notes.every((note) => typeof note === 'string' && note.trim().length > 0 && note.length <= 200)
     || typeof memo.terminalName !== 'string' || !memo.terminalName.trim() || memo.terminalName.length > 80
-    || typeof memo.showBatchExpiry !== 'boolean'
+    || (memo.showBatchNumber !== undefined && typeof memo.showBatchNumber !== 'boolean')
+    || (memo.showExpiryDate !== undefined && typeof memo.showExpiryDate !== 'boolean')
+    || (memo.showBatchExpiry !== undefined && typeof memo.showBatchExpiry !== 'boolean')
     || !isOneOf<MemoRounding>(memo.roundNet, ['none', '1', '5', '10'])
     || typeof memo.printTax !== 'boolean'
     || typeof memo.duplicateLabel !== 'boolean'
@@ -98,7 +104,8 @@ export function parseShopOperationalSettings(value: unknown): ShopOperationalSet
     memo: {
       notes: memo.notes as [string, string, string],
       terminalName: memo.terminalName,
-      showBatchExpiry: memo.showBatchExpiry,
+      showBatchNumber: typeof memo.showBatchNumber === 'boolean' ? memo.showBatchNumber : legacyShowBatchExpiry,
+      showExpiryDate: typeof memo.showExpiryDate === 'boolean' ? memo.showExpiryDate : legacyShowBatchExpiry,
       roundNet: memo.roundNet,
       printTax: memo.printTax,
       duplicateLabel: memo.duplicateLabel,
@@ -119,7 +126,9 @@ export function toShopSettingsRpcPayload(settings: ShopOperationalSettings): Rec
     memo: {
       notes: [...settings.memo.notes],
       terminalName: settings.memo.terminalName,
-      showBatchExpiry: settings.memo.showBatchExpiry,
+      showBatchNumber: settings.memo.showBatchNumber,
+      showExpiryDate: settings.memo.showExpiryDate,
+      showBatchExpiry: settings.memo.showBatchNumber && settings.memo.showExpiryDate,
       roundNet: settings.memo.roundNet,
       printTax: settings.memo.printTax,
       duplicateLabel: settings.memo.duplicateLabel,

@@ -83,8 +83,32 @@ test('places one safe QR on 58 mm, 80 mm, and A4 receipt variants', () => {
     const memo = renderPharmacyMemo(memoData, memoSettings, format, qr);
     assert.equal(classic.split('class="receipt-qr"').length - 1, 1);
     assert.equal(memo.split('class="receipt-qr"').length - 1, 1);
+    assert.ok(classic.indexOf('class="receipt-qr"') < classic.indexOf('<footer>'));
+    assert.ok(memo.indexOf('class="receipt-qr"') < memo.indexOf('<footer>'));
     assert.match(classic, new RegExp(`width:${format === 'thermal58' ? '18mm' : format === 'thermal80' ? '20mm' : '24mm'}`));
   }
+});
+
+test('hides generic walk-in names and independently controls batch and expiry output', () => {
+  const genericSale = { ...sale, customerName: ' Walk-in Customer ' } as CompletedSale;
+  const data = receiptDataFromSale(genericSale);
+  const classic = renderReceipt('classic', 'a4', {
+    ...data,
+    showBatchNumber: true,
+    showExpiryDate: false,
+  });
+  assert.equal(data.customerName, '');
+  assert.doesNotMatch(classic, /Walk-in Customer|Customer:/);
+  assert.match(classic, /Batch No\.: P500-A/);
+  assert.doesNotMatch(classic, /Expiry: 2027-08-31/);
+
+  const memo = memoHtml(memoFixture, {
+    ...memoSettings,
+    showBatchNumber: false,
+    showExpiryDate: true,
+  });
+  assert.doesNotMatch(memo, /Batch No\.: B2411/);
+  assert.match(memo, /Expiry: 08\/2027/);
 });
 
 test('drops unsafe QR SVG markup instead of injecting it into a receipt', () => {

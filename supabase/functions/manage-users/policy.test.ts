@@ -344,3 +344,31 @@ test('does not block removing an inactive admin when another active admin remain
       ['pos', 'pos_print_sale', 'pos_print_payment'],
     );
   });
+
+  test('Admin settings section grants are Super-Admin-only and require the Settings module', () => {
+    const section = 'settings_receipt_memo';
+    assert.equal(permissionGrantDenial('super_admin', [], ['settings', section]), null);
+    assert.equal(
+      permissionGrantDenial('super_admin', [], [section]),
+      'Admin settings section grants require the Settings page grant.',
+    );
+    assert.equal(
+      permissionGrantDenial('admin', ['settings', section], ['settings', section], ['settings', section]),
+      null,
+    );
+    assert.equal(
+      permissionGrantDenial('admin', ['settings', section], ['settings'], ['settings', section]),
+      'Only super_admin may change Admin settings section access.',
+    );
+    assert.deepEqual(normalizePermissions([section, 'pos']), ['pos']);
+    assert.deepEqual(normalizePermissions(['settings', section]), ['settings', section]);
+    assert.equal(profileChangeDenial({
+      ...emptyChange,
+      action: 'update',
+      callerRole: 'super_admin',
+      targetRole: 'cashier',
+      nextRole: 'cashier',
+      nextPermissions: ['settings', section],
+      nextActive: true,
+    }), 'Admin settings section access can only be assigned to Admin accounts.');
+  });

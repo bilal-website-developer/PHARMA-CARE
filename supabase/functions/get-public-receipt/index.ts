@@ -171,6 +171,25 @@ Deno.serve(async (request) => {
       throw new Error('Receipt data query returned an incomplete result.');
     }
 
+    const allocationsByItem = new Map<string, Array<{ batch_number: string; expiry_date: string }>>();
+    if (rawItems.length > 0) {
+      const { data: allocations, error: allocationsError } = await service
+        .from('sale_item_batch_allocations')
+        .select('sale_item_id,batch_number,expiry_date')
+        .eq('shop_id', link.shop_id)
+        .in('sale_item_id', rawItems.map((item) => item.id));
+      if (allocationsError) throw allocationsError;
+      if (allocations === null) throw new Error('Receipt batch query returned an incomplete result.');
+      for (const allocation of allocations) {
+        const itemAllocations = allocationsByItem.get(allocation.sale_item_id) ?? [];
+        itemAllocations.push({
+          batch_number: allocation.batch_number,
+          expiry_date: allocation.expiry_date,
+        });
+        allocationsByItem.set(allocation.sale_item_id, itemAllocations);
+      }
+    }
+
     const returnedByItem = new Map<string, number>();
     for (const row of returnedRows) {
       returnedByItem.set(row.sale_item_id, (returnedByItem.get(row.sale_item_id) ?? 0) + row.quantity_base_units);
@@ -183,6 +202,7 @@ Deno.serve(async (request) => {
       price_paisa_per_unit: item.price_paisa_per_unit,
       line_total_paisa: item.line_total_paisa,
       returned_base_units: returnedByItem.get(item.id) ?? 0,
+      allocations: allocationsByItem.get(item.id) ?? [],
     }));
     const creditDue = creditEntries.reduce(
       (total, entry) => total + entry.debit_paisa - entry.credit_paisa,

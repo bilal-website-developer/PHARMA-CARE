@@ -86,6 +86,8 @@ function classicReceiptData(snapshot: PrintSnapshot): ReceiptData {
     balanceDue: balanceDuePaisa,
     footerEnglish: settings.notes.join(' '),
     footerUrdu: '',
+    showBatchNumber: settings.showBatchNumber,
+    showExpiryDate: settings.showExpiryDate,
   };
 }
 

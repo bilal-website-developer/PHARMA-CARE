@@ -6,6 +6,10 @@ export interface PublicReceiptItemSource {
   price_paisa_per_unit: number;
   line_total_paisa: number;
   returned_base_units: number;
+  allocations: Array<{
+    batch_number: string;
+    expiry_date: string;
+  }>;
 }
 
 export interface PublicReceiptSource {
@@ -59,6 +63,10 @@ export function buildPublicReceipt(source: PublicReceiptSource, showMedicineName
         quantity: item.quantity_in_unit,
         pricePaisa: item.price_paisa_per_unit,
         lineTotalPaisa: item.line_total_paisa,
+        batchDetails: item.allocations.map((allocation) => ({
+          batchNumber: allocation.batch_number,
+          expiryDate: allocation.expiry_date,
+        })),
         returnStatus: returned === 0
           ? 'not_returned'
           : returned >= item.quantity_base_units

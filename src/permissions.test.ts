@@ -4,11 +4,14 @@ import { UserRole } from './types/pharmacy';
 import {
   canAccessModule,
   canAccessPage,
+  canEditSettingsSection,
   hasPosPrintToggles,
   MODULES,
+  SETTINGS_SECTION_PERMISSIONS,
   normalizePermissionSelection,
   setModulePermission,
   setPosPrintPermission,
+  setSettingsSectionPermission,
 } from './permissions';
 
 test('all business modules, including Settings, require explicit grants', () => {
@@ -18,6 +21,25 @@ test('all business modules, including Settings, require explicit grants', () => 
     }
   }
   assert.ok(MODULES.some(({ key }) => key === 'settings'));
+});
+
+test('only Super Admin grants let Admins edit named Settings sections', () => {
+  const withSettings = setModulePermission([], 'settings', true);
+  const withReceiptGrant = setSettingsSectionPermission(
+    withSettings,
+    'settings_receipt_memo',
+    true,
+  );
+  assert.equal(SETTINGS_SECTION_PERMISSIONS.length, 6);
+  assert.equal(canEditSettingsSection(UserRole.ADMIN, withSettings, 'settings_receipt_memo'), false);
+  assert.equal(canEditSettingsSection(UserRole.ADMIN, withReceiptGrant, 'settings_receipt_memo'), true);
+  assert.equal(canEditSettingsSection(UserRole.ADMIN, withReceiptGrant, 'settings_shop_profile'), false);
+  const withOperationsGrant = setSettingsSectionPermission(withSettings, 'settings_operations', true);
+  assert.equal(canEditSettingsSection(UserRole.ADMIN, withOperationsGrant, 'settings_operations'), true);
+  assert.equal(canEditSettingsSection(UserRole.ADMIN, withOperationsGrant, 'settings_receipt_memo'), false);
+  assert.equal(canEditSettingsSection(UserRole.MANAGER, ['settings'], 'settings_receipt_qr'), true);
+  assert.equal(canEditSettingsSection(UserRole.MANAGER, ['settings'], 'settings_shop_profile'), false);
+  assert.deepEqual(setModulePermission(withReceiptGrant, 'settings', false), []);
 });
 
 test('POS print toggles are visible only with POS Billing and are never defaulted', () => {
