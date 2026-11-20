@@ -107,13 +107,11 @@ export function ManageUsersView({
 }) {
   const isSuperAdmin = currentRole === UserRole.SUPER_ADMIN;
   const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminTeamMembers, setAdminTeamMembers] = useState<AdminTeamMember[]>([]);
   const [adminTeamCount, setAdminTeamCount] = useState(0);
   const [adminTeamLoading, setAdminTeamLoading] = useState(false);
   const [adminPrivateNote, setAdminPrivateNote] = useState('');
   const [privateNoteSaving, setPrivateNoteSaving] = useState(false);
-  const [teamCount, setTeamCount] = useState(0);
   const [currentCount, setCurrentCount] = useState(0);
   const [assignableRoles, setAssignableRoles] = useState<UserRole[]>([]);
   const [grantablePermissions, setGrantablePermissions] = useState<PermissionKey[]>([]);
@@ -127,6 +125,7 @@ export function ManageUsersView({
   const [serviceReady, setServiceReady] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const teamRequestVersion = useRef(0);
+  const visibleUsers = users.filter((user) => user.id !== currentUserId);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -136,8 +135,6 @@ export function ManageUsersView({
         api_version?: number;
         users?: ManagedUser[];
         currentCount?: number;
-        team_count?: number;
-        team_members?: TeamMember[];
         assignable_roles?: UserRole[];
         grantable_permissions?: PermissionKey[];
         shops?: ShopOption[];
@@ -148,13 +145,9 @@ export function ManageUsersView({
         && Array.isArray(result?.users)
         && Array.isArray(result?.assignable_roles)
         && Array.isArray(result?.grantable_permissions)
-        && typeof result?.currentCount === 'number'
-        && typeof result?.team_count === 'number'
-        && Array.isArray(result?.team_members);
+        && typeof result?.currentCount === 'number';
       if (!hasRoleData) {
         setUsers([]);
-        setTeamMembers([]);
-        setTeamCount(0);
         setCurrentCount(0);
         setAssignableRoles([]);
         setGrantablePermissions([]);
@@ -171,16 +164,12 @@ export function ManageUsersView({
       setNotice(null);
       setUsers(Array.isArray(result?.users) ? result.users : []);
       setCurrentCount(typeof result?.currentCount === 'number' ? result.currentCount : 0);
-      setTeamCount(typeof result?.team_count === 'number' ? result.team_count : 0);
-      setTeamMembers(Array.isArray(result?.team_members) ? result.team_members : []);
       setAssignableRoles(Array.isArray(result?.assignable_roles) ? result.assignable_roles : []);
       setGrantablePermissions(Array.isArray(result?.grantable_permissions) ? result.grantable_permissions : []);
       setShops(Array.isArray(result?.shops) ? result.shops : []);
     } catch (error) {
       setServiceReady(false);
       setUsers([]);
-      setTeamMembers([]);
-      setTeamCount(0);
       setCurrentCount(0);
       setAssignableRoles([]);
       setGrantablePermissions([]);
@@ -437,9 +426,11 @@ export function ManageUsersView({
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-white p-5 shadow-sm">
         <div>
           <h2 className="text-xl font-black text-text">Users</h2>
-          {currentRole === UserRole.ADMIN
-            ? <p className="mt-1 text-sm text-muted">Your team: {teamCount} accounts, including removed accounts. This shop has {currentCount} profiles; per-shop Admin and staff limits are enforced when saving.</p>
-            : <p className="mt-1 text-sm text-muted">{currentCount} profiles across the platform. Per-shop Admin and staff limits are enforced when saving.</p>}
+          <p className="mt-1 text-sm text-muted">
+            {currentRole === UserRole.ADMIN
+              ? 'Manage accounts for this shop.'
+              : 'Manage platform Admin accounts and shop access.'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {!isFormOpen && (
@@ -704,45 +695,6 @@ export function ManageUsersView({
         </form>
       )}
 
-      {currentRole === UserRole.ADMIN && (
-        <section className="space-y-3 rounded-card border border-border bg-white p-5 shadow-sm">
-          <div>
-            <h3 className="text-base font-bold text-text">My Team</h3>
-            <p className="mt-1 text-sm text-muted">Read-only account history. Legacy accounts without creator attribution are not assigned to a team.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-border bg-surface text-[11px] font-bold uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-4 py-3">Username</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Account created</th>
-                  <th className="px-4 py-3">Last sign-in</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading
-                  ? <tr><td colSpan={5} className="px-4 py-6 text-center text-muted">Loading team…</td></tr>
-                  : teamMembers.length === 0
-                    ? <tr><td colSpan={5} className="px-4 py-6 text-center text-muted">No team accounts have been attributed to you.</td></tr>
-                    : teamMembers.map((member) => (
-                      <tr key={`${member.username}-${member.created_at}`}>
-                        <td className="px-4 py-3 font-semibold text-text">{member.username}</td>
-                        <td className="px-4 py-3 capitalize">{member.role === 'unknown'
-                          ? 'Unknown'
-                          : ROLE_LABELS[member.role as UserRole] ?? member.role}</td>
-                        <td className="px-4 py-3 capitalize">{member.status}</td>
-                        <td className="px-4 py-3">{formatTeamTimestamp(member.created_at)}</td>
-                        <td className="px-4 py-3">{formatTeamTimestamp(member.last_sign_in_at)}</td>
-                      </tr>
-                    ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
       <div className="overflow-x-auto rounded-card border border-border bg-white shadow-sm">
         <table className={`w-full ${isSuperAdmin ? 'min-w-[820px]' : 'min-w-[680px]'} text-left text-sm`}>
           <thead className="border-b border-border bg-surface text-[11px] font-bold uppercase tracking-wide text-muted">
@@ -750,11 +702,11 @@ export function ManageUsersView({
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? <tr><td colSpan={isSuperAdmin ? 5 : 4} className="visual-skeleton px-5 py-8 text-center text-muted">Loading users…</td></tr>
-              : users.length === 0 ? <tr><td colSpan={isSuperAdmin ? 5 : 4} className="px-5 py-8 text-center text-muted">No active profiles found.</td></tr>
-                : users.map((user) => (
+              : visibleUsers.length === 0 ? <tr><td colSpan={isSuperAdmin ? 5 : 4} className="px-5 py-8 text-center text-muted">No other user accounts found.</td></tr>
+                : visibleUsers.map((user) => (
                   <tr key={user.id} className="users-table-row">
                     <td className="px-5 py-4">
-                      <div className="font-bold text-text">{user.full_name} {user.id === currentUserId && <span className="ml-1 rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted">(You)</span>}</div>
+                      <div className="font-bold text-text">{user.full_name}</div>
                       <div className="mt-0.5 text-xs text-muted">{user.username} · {user.email}</div>
                     </td>
                     <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${roleClass(Object.values(UserRole).includes(user.role as UserRole) ? user.role as UserRole : UserRole.CASHIER)}`}>{user.role ? ROLE_LABELS[user.role] : ROLE_LABELS[UserRole.CASHIER]}</span></td>

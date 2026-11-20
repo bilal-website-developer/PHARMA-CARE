@@ -17,6 +17,7 @@ import {
 import { getRestockEligibilityReason, type ReturnDisposition } from '../../data/returnLogic';
 import { STOCK_CHANGED_EVENT } from '../../utils/stockAlertsEvents';
 import { parseReceiptScan } from '../../utils/receiptLinks';
+import { normalizeReturnInvoiceInput } from '../../utils/returnInvoiceInput';
 import { useBarcodeScanner } from '../../utils/useBarcodeScanner';
 
 interface SaleReturnsPanelProps {
@@ -51,7 +52,7 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({
   onOpenChange,
 }) => {
   const [open, setOpen] = useState(false);
-  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('INV-');
   const [sale, setSale] = useState<SaleForReturn | null>(null);
   const [returnReason, setReturnReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -133,6 +134,10 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({
 
   const findSale = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (invoiceNumber.trim().toUpperCase() === 'INV-') {
+      setError('Enter the invoice digits after INV-, or paste a full invoice number or receipt link.');
+      return;
+    }
     const scan = parseReceiptScan(invoiceNumber);
     if (!scan) {
       setError('Enter an invoice number or scan a valid receipt URL.');
@@ -197,9 +202,16 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({
     setNotice('');
     try {
       const result = await requestSaleReturn(sale.id, returnReason.trim(), requestedItems);
-      setNotice(`Return request ${result.id} was submitted for ${result.invoiceNumber}.`);
+      if (result.status === 'COMPLETED') {
+        setNotice(
+          `Return completed automatically for ${result.invoiceNumber}. Refund: ${formatMoney(result.refundTotalPaisa)} (${result.refundMethod.toLowerCase()}). Returned medicine is quarantined and not available for sale.`,
+        );
+        window.dispatchEvent(new CustomEvent(STOCK_CHANGED_EVENT));
+      } else {
+        setNotice(`Return request ${result.id} was submitted for ${result.invoiceNumber}.`);
+      }
       setSale(null);
-      setInvoiceNumber('');
+      setInvoiceNumber('INV-');
       setReturnReason('');
       setQuantities({});
       if (canReview) await refreshPending();
@@ -327,12 +339,15 @@ export const SaleReturnsPanel: React.FC<SaleReturnsPanelProps> = ({
               {notice && <p role="status" className="rounded-control border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-text">{notice}</p>}
 
               <form onSubmit={findSale} className="flex flex-col gap-2 sm:flex-row">
-                <label className="sr-only" htmlFor="return-invoice-number">Invoice number</label>
+                <label className="sr-only" htmlFor="return-invoice-number">
+                  Invoice number. Type digits after INV-, or paste a full older invoice number or receipt link.
+                </label>
                 <input
                   id="return-invoice-number"
                   value={invoiceNumber}
-                  onChange={(event) => setInvoiceNumber(event.target.value)}
-                  placeholder="Invoice number or scan receipt QR"
+                  onChange={(event) => setInvoiceNumber(normalizeReturnInvoiceInput(event.target.value))}
+                  inputMode={/^INV-\d*$/i.test(invoiceNumber) ? 'numeric' : 'text'}
+                  placeholder="Type digits after INV- or paste a full invoice/link"
                   className="min-w-0 flex-1 rounded-control border border-border bg-surface px-3 py-2 text-text"
                   required
                 />

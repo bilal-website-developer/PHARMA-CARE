@@ -401,12 +401,20 @@ test('payment memo uses its payment reference and does not invent an invoice num
   assert.equal(noReference.memoNo, '');
 });
 
-test('renders duplicate labels only when enabled and uses a local Urdu font with RTL direction', () => {
+test('omits customer names from Pharmacy Memos while preserving Urdu items and standard receipts', () => {
   const duplicate = memoHtml({ ...memoFixture, isDuplicate: true });
   assert.match(duplicate, /DUPLICATE/);
   assert.match(duplicate, /url\('\/fonts\/noto-nastaliq-urdu-arabic\.woff2'\)/);
-  const urdu = memoHtml({ ...memoFixture, customerName: 'احمد' });
-  assert.match(urdu, /dir="rtl" class="urdu-text">احمد/);
+  for (const format of formats) {
+    const withCustomerName = memoHtml({ ...memoFixture, customerName: 'احمد' }, memoSettings, format);
+    assert.doesNotMatch(withCustomerName, /احمد|Sample Customer|customer-name/);
+  }
+  const urduItem = memoHtml({
+    ...memoFixture,
+    lines: [{ qty: 1, name: 'دوا', ratePaisa: 100 }],
+  });
+  assert.match(urduItem, /description" dir="rtl" class="urdu-text">دوا/);
+  assert.match(renderReceipt('classic', 'thermal80', receiptDataFromSale(sale)), /Sample Customer/);
   assert.doesNotMatch(
     memoHtml({ ...memoFixture, isDuplicate: true }, { ...memoSettings, duplicateLabel: false }),
     /DUPLICATE/
@@ -420,7 +428,8 @@ test('escapes user-supplied memo text and safely wraps long product names', () =
     lines: [{ qty: 1, name: '<img src=x onerror=alert(1)> ' + 'Medicine '.repeat(40), ratePaisa: 100 }],
   });
   assert.doesNotMatch(hostile, /<script>|<img/);
-  assert.match(hostile, /&lt;script&gt;/);
+  assert.doesNotMatch(hostile, /&lt;script&gt;/);
+  assert.match(hostile, /&lt;img/);
   assert.match(hostile, /overflow-wrap:anywhere/);
 });
 

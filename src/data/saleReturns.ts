@@ -105,6 +105,10 @@ export interface CompletedSaleReturn {
   }>;
 }
 
+export type SaleReturnSubmission =
+  | { id: string; status: 'PENDING'; invoiceNumber: string }
+  | (CompletedSaleReturn & { autoProcessed: true });
+
 function isDate(value: unknown): value is string {
   return isString(value) && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -223,6 +227,15 @@ function isCompletedReturn(value: unknown): value is CompletedSaleReturn {
       && isNonNegativeInteger(item.refundPaisa));
 }
 
+export function isReturnSubmission(value: unknown): value is SaleReturnSubmission {
+  return isReturnRequestResponse(value)
+    || (isCompletedReturn(value)
+      && isRecord(value)
+      && value.autoProcessed === true
+      && Array.isArray(value.items)
+      && value.items.every((item: unknown) => isRecord(item) && item.disposition === 'QUARANTINE'));
+}
+
 export async function getReturnPolicySettings(): Promise<ReturnPolicySettings> {
   return callSupabaseRpc('get_return_policy_settings', undefined, 'Could not load return settings.', isPolicy);
 }
@@ -242,7 +255,7 @@ export async function requestSaleReturn(
   saleId: string,
   reason: string,
   items: readonly SaleReturnRequestItem[],
-): Promise<{ id: string; status: 'PENDING'; invoiceNumber: string }> {
+): Promise<SaleReturnSubmission> {
   return callSupabaseRpc('request_sale_return', {
     p_sale_id: saleId,
     p_reason: reason,
@@ -251,7 +264,7 @@ export async function requestSaleReturn(
       allocation_id: item.allocationId,
       quantity_base_units: item.quantityBaseUnits,
     })),
-  }, 'Could not submit the return request.', isReturnRequestResponse);
+  }, 'Could not submit the return request.', isReturnSubmission);
 }
 
 export async function loadPendingSaleReturns(): Promise<PendingSaleReturn[]> {

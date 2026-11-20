@@ -15,6 +15,7 @@ import {
   type PrintSnapshot,
 } from './printSnapshot';
 import { getOrCreateReceiptQrLink } from './receiptLinks';
+import { parsePrintRequestSubmission } from './printRequestTypes';
 
 export type { PrintRequestType, PrintSnapshot } from './printSnapshot';
 export { buildPrintSnapshot, canPrintReceipt } from './printSnapshot';
@@ -28,6 +29,7 @@ export interface PrintReceiptAccess {
 export interface PrintReceiptOptions {
   autoPrint?: boolean;
   approvedRequestId?: string;
+  autoApprovedRequestId?: string;
 }
 
 export type PrintReceiptHandler = (
@@ -94,50 +96,42 @@ function classicReceiptData(snapshot: PrintSnapshot): ReceiptData {
 async function requestReceiptPrint(
   type: PrintRequestType,
   snapshot: PrintSnapshot,
-): Promise<void> {
+): Promise<ReturnType<typeof parsePrintRequestSubmission>> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const receiptRef = snapshot.data.memoNo.trim()
     || `${type}:${crypto.randomUUID()}`;
-  const { data, error } = await supabase.rpc('request_print', {
+  const { data, error } = await supabase.rpc('request_print_v2', {
     p_type: type,
     p_receipt_ref: receiptRef,
     p_payload: snapshot,
+    p_request_key: crypto.randomUUID(),
   });
   if (error) throw new Error(`Could not send print request: ${error.message}`);
-  if (typeof data === 'object' && data !== null
-    && 'reused_by_other' in data && data.reused_by_other === true) {
-    throw new Error('A request for this receipt is already pending under another requester.');
-  }
+  return parsePrintRequestSubmission(data);
 }
 
-export async function printReceipt(
+async function claimAutoApprovedPrintRequest(requestId: string): Promise<boolean> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('claim_auto_approved_print_request', {
+    p_request_id: requestId,
+  });
+  if (error) throw new Error(`Could not claim the auto-approved print request: ${error.message}`);
+  if (typeof data !== 'boolean') throw new Error('The server returned an invalid print-claim response.');
+  return data;
+}
+
+type PrintTracking =
+  | { kind: 'manual'; requestId: string }
+  | { kind: 'automatic'; requestId: string }
+  | null;
+
+async function printApprovedReceipt(
   type: PrintRequestType,
-  payload: PrintSnapshot,
+  snapshot: PrintSnapshot,
   access: PrintReceiptAccess,
-  options: PrintReceiptOptions = {},
-): Promise<PrintReceiptResult> {
-  const snapshot = parsePrintSnapshot(payload);
-  if ((type === 'payment') !== (snapshot.data.kind === 'PAYMENT')) {
-    throw new Error('Receipt type does not match the receipt snapshot.');
-  }
-  if (!isPrintSnapshotSafe(snapshot)) {
-    throw new Error('Receipt snapshot includes fields that cannot be printed or requested.');
-  }
-
-  const hasPermission = canPrintReceipt(access.role, access.permissions, type);
-  if (!hasPermission) {
-    if (options.autoPrint) {
-      access.onNotice('Auto-print is disabled because this account needs admin approval.', true);
-      return 'auto-print-disabled';
-    }
-    await requestReceiptPrint(type, snapshot);
-    access.onNotice('Request sent to admin.');
-    return 'requested';
-  }
-
-  const printSnapshot = options.approvedRequestId
-    ? snapshotWithDuplicateLabel(snapshot)
-    : snapshot;
+  tracking: PrintTracking,
+): Promise<void> {
+  const printSnapshot = tracking ? snapshotWithDuplicateLabel(snapshot) : snapshot;
   let receiptQr: { svg: string; placement: 'footer' | 'after_totals' | 'below_header' } | undefined;
   if (type === 'sale' && printSnapshot.data.kind === 'SALE' && printSnapshot.saleId) {
     try {
@@ -176,12 +170,69 @@ export async function printReceipt(
   }
 
   await printHtmlDocument(html);
-  if (options.approvedRequestId) {
+  if (tracking) {
     if (!supabase) throw new Error('Receipt was sent to the print dialog, but print tracking is unavailable because Supabase is not configured.');
-    const { error } = await supabase.rpc('mark_printed_request', {
-      p_request_id: options.approvedRequestId,
-    });
+    const rpc = tracking.kind === 'automatic'
+      ? 'mark_auto_approved_print_request_opened'
+      : 'mark_printed_request';
+    const { error } = await supabase.rpc(rpc, { p_request_id: tracking.requestId });
     if (error) throw new Error(`Receipt was sent to the print dialog, but print tracking failed: ${error.message}`);
   }
+}
+
+export async function printReceipt(
+  type: PrintRequestType,
+  payload: PrintSnapshot,
+  access: PrintReceiptAccess,
+  options: PrintReceiptOptions = {},
+): Promise<PrintReceiptResult> {
+  const snapshot = parsePrintSnapshot(payload);
+  if ((type === 'payment') !== (snapshot.data.kind === 'PAYMENT')) {
+    throw new Error('Receipt type does not match the receipt snapshot.');
+  }
+  if (!isPrintSnapshotSafe(snapshot)) {
+    throw new Error('Receipt snapshot includes fields that cannot be printed or requested.');
+  }
+
+  const hasPermission = canPrintReceipt(access.role, access.permissions, type);
+  if (!hasPermission) {
+    if (options.autoPrint) {
+      access.onNotice('Auto-print is disabled because this account needs admin approval.', true);
+      return 'auto-print-disabled';
+    }
+    const request = await requestReceiptPrint(type, snapshot);
+    if (request.status === 'approved' && request.autoApproved && request.shouldPrint) {
+      const approvedSnapshot = parsePrintSnapshot(request.payload);
+      if ((type === 'payment') !== (approvedSnapshot.data.kind === 'PAYMENT')
+        || !isPrintSnapshotSafe(approvedSnapshot)) {
+        throw new Error('The auto-approved receipt snapshot is invalid.');
+      }
+      if (!await claimAutoApprovedPrintRequest(request.requestId)) {
+        access.onNotice('This auto-approved receipt has already been opened for printing.', true);
+        return 'requested';
+      }
+      await printApprovedReceipt(type, approvedSnapshot, access, {
+        kind: 'automatic',
+        requestId: request.requestId,
+      });
+      access.onNotice('Request approved automatically. Confirm printing in the browser print dialog.');
+      return 'printed';
+    }
+    if (request.status === 'approved' && request.autoApproved) {
+      access.onNotice(request.alreadyPrinted
+        ? 'This auto-approved receipt was already opened for printing.'
+        : 'This auto-approved receipt is already being handled.', true);
+      return 'requested';
+    }
+    access.onNotice('Request sent to admin.');
+    return 'requested';
+  }
+
+  const tracking: PrintTracking = options.approvedRequestId
+    ? { kind: 'manual', requestId: options.approvedRequestId }
+    : options.autoApprovedRequestId
+      ? { kind: 'automatic', requestId: options.autoApprovedRequestId }
+      : null;
+  await printApprovedReceipt(type, snapshot, access, tracking);
   return 'printed';
 }

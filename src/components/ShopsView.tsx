@@ -100,6 +100,7 @@ export function ShopsView() {
   const [shops, setShops] = useState<ShopRecord[]>([]);
   const [admins, setAdmins] = useState<ManagedAdmin[]>([]);
   const [form, setForm] = useState<ProvisionForm>(EMPTY_FORM);
+  const [createFormOpen, setCreateFormOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -160,6 +161,7 @@ export function ShopsView() {
       });
       provisionOperation.current = null;
       setForm(EMPTY_FORM);
+      setCreateFormOpen(false);
       const refreshed = await refresh();
       setNotice({
         text: refreshed ? result.message : 'Shop created, but the directory could not be refreshed. Use Refresh to check it.',
@@ -350,19 +352,34 @@ export function ShopsView() {
           <h2 className="text-xl font-black text-text">Shops</h2>
           <p className="mt-1 text-sm text-muted">Platform administration only. This screen shows shop and account configuration, never shop business data.</p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex items-center gap-2 rounded-control border border-border px-3 py-2 text-sm font-semibold text-text hover:bg-surface disabled:opacity-50">
-          <RefreshCw size={15} /> Refresh
+        <button
+          type="button"
+          aria-expanded={createFormOpen}
+          aria-controls="create-shop-form"
+          onClick={() => setCreateFormOpen((open) => !open)}
+          disabled={saving}
+          className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2.5 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50"
+        >
+          <Plus size={16} /> Add new shop and first Admin
         </button>
       </header>
 
       {notice && <p role={notice.error ? 'alert' : 'status'} className={`rounded-control border px-4 py-3 text-sm ${notice.error ? 'border-red-200 bg-red-50 text-red-800' : 'border-primary/30 bg-surface text-text'}`}>{notice.text}</p>}
 
-      <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2">
-          <Plus size={18} className="text-primary" />
+      {createFormOpen && <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-base font-bold text-text">Create shop and first Admin</h3>
+          <button
+            type="button"
+            aria-label="Close create shop form"
+            onClick={() => setCreateFormOpen(false)}
+            disabled={saving}
+            className="rounded-control p-2 text-muted hover:bg-surface hover:text-text disabled:opacity-50"
+          >
+            <X size={17} />
+          </button>
         </div>
-        <form onSubmit={(event) => void createShop(event)} className="space-y-4">
+        <form id="create-shop-form" onSubmit={(event) => void createShop(event)} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-semibold text-text">Shop name *
               <input required maxLength={120} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="w-full rounded-control border border-border px-3 py-2 font-normal" />
@@ -421,10 +438,22 @@ export function ShopsView() {
             <Building2 size={16} /> {saving ? 'Provisioning…' : 'Create Shop and Admin'}
           </button>
         </form>
-      </section>
+      </section>}
 
       <section className="space-y-3">
-        <h3 className="text-base font-bold text-text">Shop directory</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-bold text-text">Shop directory</h3>
+          <button
+            type="button"
+            aria-label="Refresh shops"
+            title="Refresh shops"
+            onClick={() => void refresh()}
+            disabled={loading}
+            className="rounded-control border border-border p-2 text-muted hover:bg-white hover:text-text disabled:opacity-50"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
         {loading && <p role="status" className="rounded-card border border-border bg-white p-5 text-sm text-muted">Loading shops…</p>}
         {!loading && shops.length === 0 && <p className="rounded-card border border-border bg-white p-5 text-sm text-muted">No shops found.</p>}
         {shops.map((shop) => (

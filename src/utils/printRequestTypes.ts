@@ -17,6 +17,17 @@ export interface PrintRequestRecord {
   printed_at: string | null;
 }
 
+export interface PrintRequestSubmission {
+  requestId: string;
+  type: PrintRequestType;
+  receiptRef: string;
+  status: PrintRequestStatus;
+  payload: unknown;
+  autoApproved: boolean;
+  shouldPrint: boolean;
+  alreadyPrinted: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -25,6 +36,33 @@ function nullableString(value: unknown, field: string): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string') throw new Error(`Print request ${field} has an invalid value.`);
   return value;
+}
+
+export function parsePrintRequestSubmission(value: unknown): PrintRequestSubmission {
+  if (!isRecord(value)
+    || typeof value.requestId !== 'string'
+    || (value.type !== 'sale' && value.type !== 'payment')
+    || typeof value.receiptRef !== 'string'
+    || (value.status !== 'pending' && value.status !== 'approved' && value.status !== 'rejected')
+    || typeof value.autoApproved !== 'boolean'
+    || typeof value.shouldPrint !== 'boolean'
+    || typeof value.alreadyPrinted !== 'boolean'
+    || (value.shouldPrint
+      && (value.status !== 'approved' || value.autoApproved !== true || value.alreadyPrinted))
+    || (value.alreadyPrinted
+      && (value.status !== 'approved' || value.autoApproved !== true))) {
+    throw new Error('Received an invalid print request response.');
+  }
+  return {
+    requestId: value.requestId,
+    type: value.type,
+    receiptRef: value.receiptRef,
+    status: value.status,
+    payload: value.payload,
+    autoApproved: value.autoApproved,
+    shouldPrint: value.shouldPrint,
+    alreadyPrinted: value.alreadyPrinted,
+  };
 }
 
 export function parsePrintRequestRecord(value: unknown): PrintRequestRecord {

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   DollarSign,
@@ -9,6 +9,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { CompletedSale, PaymentMethod, UserRole } from '../types/pharmacy';
+import type { SalesProfitSummary } from '../data/salesProfit';
 import {
   filterSalesBetween,
   formatLocalDateInput,
@@ -25,6 +26,7 @@ interface ReportsScreenProps {
   phone?: string;
   generatedBy?: string;
   loading?: boolean;
+  onLoadProfitSummary: (from: Date, toExclusive: Date) => Promise<SalesProfitSummary>;
   onLoadCustomSales: (from: Date, toExclusive: Date) => Promise<CompletedSale[]>;
 }
 
@@ -34,6 +36,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
   sales,
   currentRole,
   loading = false,
+  onLoadProfitSummary,
   onLoadCustomSales,
 }) => {
   const [period, setPeriod] = useState<AnalyticsPeriod>('all');
@@ -45,6 +48,10 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
   const [customRangeLoading, setCustomRangeLoading] = useState(false);
   const [customRangeLoadError, setCustomRangeLoadError] = useState('');
   const customRangeRequest = useRef(0);
+  const [profitSummary, setProfitSummary] = useState<SalesProfitSummary | null>(null);
+  const [profitSummaryLoading, setProfitSummaryLoading] = useState(false);
+  const [profitSummaryError, setProfitSummaryError] = useState('');
+  const profitSummaryRequest = useRef(0);
   const todayInput = formatLocalDateInput(new Date());
   const canSeeProfit =
     currentRole === UserRole.ADMIN ||
@@ -114,41 +121,74 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
   };
 
   const reportsLoading = loading || (period === 'custom' && customRangeLoading);
+  const profitRange = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (period === 'custom') {
+      return appliedCustomRange
+        ? { from: appliedCustomRange.start, toExclusive: localStartOfNextDay(appliedCustomRange.end) }
+        : null;
+    }
+    if (period === 'today') {
+      return { from: todayStart, toExclusive: localStartOfNextDay(todayStart) };
+    }
+    if (period === '7days' || period === '30days') {
+      const from = new Date(todayStart);
+      from.setDate(from.getDate() - (period === '7days' ? 7 : 30));
+      return { from, toExclusive: localStartOfNextDay(todayStart) };
+    }
+    return { from: new Date(0), toExclusive: now };
+  }, [appliedCustomRange, period]);
+
+  useEffect(() => {
+    const requestId = ++profitSummaryRequest.current;
+    if (!canSeeProfit || !profitRange) {
+      setProfitSummary(null);
+      setProfitSummaryError('');
+      setProfitSummaryLoading(false);
+      return;
+    }
+
+    setProfitSummary(null);
+    setProfitSummaryError('');
+    setProfitSummaryLoading(true);
+    void onLoadProfitSummary(profitRange.from, profitRange.toExclusive)
+      .then((summary) => {
+        if (requestId === profitSummaryRequest.current) setProfitSummary(summary);
+      })
+      .catch((error: unknown) => {
+        if (requestId === profitSummaryRequest.current) {
+          setProfitSummaryError(error instanceof Error
+            ? error.message
+            : 'Could not load the secure profit summary.');
+        }
+      })
+      .finally(() => {
+        if (requestId === profitSummaryRequest.current) setProfitSummaryLoading(false);
+      });
+
+    return () => {
+      if (requestId === profitSummaryRequest.current) profitSummaryRequest.current += 1;
+    };
+  }, [canSeeProfit, onLoadProfitSummary, profitRange]);
+
   const customRangeLabel = appliedCustomRange
     ? `${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(appliedCustomRange.start)} – ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(appliedCustomRange.end)}`
     : '';
 
   // Aggregate Metrics
-  const totalRevenuePaisa = useMemo(
-    () => filteredSales.reduce((sum, s) => sum + s.totalPaisa, 0),
-    [filteredSales]
-  );
+  const totalRevenuePaisa = profitSummary?.revenuePaisa
+    ?? filteredSales.reduce((sum, sale) => sum + sale.totalPaisa, 0);
 
   const averageOrderPaisa = useMemo(
-    () => (filteredSales.length > 0 ? Math.round(totalRevenuePaisa / filteredSales.length) : 0),
-    [filteredSales, totalRevenuePaisa]
+    () => {
+      const orderCount = profitSummary?.orderCount ?? filteredSales.length;
+      return orderCount > 0 ? Math.round(totalRevenuePaisa / orderCount) : 0;
+    },
+    [filteredSales.length, profitSummary, totalRevenuePaisa]
   );
 
-  const hasCompleteSaleCosts = useMemo(
-    () => filteredSales.every((sale) => sale.items.every((item) => item.costPaisaPerUnit !== null)),
-    [filteredSales]
-  );
-
-  const totalCostPaisa = useMemo(
-    () =>
-      canSeeProfit && hasCompleteSaleCosts
-        ? filteredSales.reduce(
-            (sum, sale) =>
-              sum +
-              sale.items.reduce(
-                (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
-                0
-              ),
-            0
-          )
-        : null,
-    [canSeeProfit, hasCompleteSaleCosts, filteredSales]
-  );
+  const totalCostPaisa = canSeeProfit ? profitSummary?.costPaisa ?? null : null;
 
   const grossProfitPaisa = totalCostPaisa === null ? null : totalRevenuePaisa - totalCostPaisa;
   const grossMarginPercent =
@@ -176,7 +216,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
     return Array.from(productMap.values())
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 5);
-  }, [filteredSales]);
+  }, [filteredSales, profitSummary]);
 
   const maxTopQuantity = useMemo(
     () => (topProducts.length > 0 ? Math.max(...topProducts.map((p) => p.quantity)) : 0),
@@ -211,6 +251,29 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
 
   // Trend Data (Group by date)
   const trendData = useMemo(() => {
+    if (profitSummary) {
+      const entries = profitSummary.daily.slice(-10).map((day) => {
+        const [year, month, dateNumber] = day.date.split('-').map(Number);
+        const dateValue = new Date(year, month - 1, dateNumber);
+        return {
+          date: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(dateValue),
+          fullDate: new Intl.DateTimeFormat('en-GB', {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }).format(dateValue),
+          paisa: day.revenuePaisa,
+          count: day.orderCount,
+        };
+      });
+      const maxValue = Math.max(1, ...entries.map((entry) => entry.paisa));
+      return entries.map((entry) => ({
+        ...entry,
+        heightPercent: Math.round((entry.paisa / maxValue) * 100),
+      }));
+    }
+
     const daysMap = new Map<string, { paisa: number; count: number; fullDate: string }>();
     for (const sale of filteredSales) {
       const d = parseSaleDate(sale.timestamp);
@@ -344,6 +407,12 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
         </div>
       </section>
 
+      {canSeeProfit && profitSummaryError && (
+        <div role="alert" className="rounded-lg border border-warning bg-warning/10 px-3 py-2 text-xs text-text">
+          <strong>Secure profit summary needs setup.</strong> {profitSummaryError}
+        </div>
+      )}
+
       {/* ── 2. One Row of 4 Compact KPI Tiles ── */}
       <section aria-label="Analytics KPI strip" className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
         {reportsLoading ? (
@@ -371,7 +440,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
               <strong className="font-mono font-black text-xs text-emerald-800 dark:text-emerald-300">
                 {canSeeProfit
                   ? grossProfitPaisa === null
-                    ? '—'
+                    ? profitSummaryLoading ? 'Loading…' : 'Setup required'
                     : `Rs. ${(grossProfitPaisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
                   : 'Restricted'}
               </strong>
@@ -380,7 +449,11 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
             <div className="rounded-lg border border-border bg-surface px-3 py-1.5 flex items-center justify-between shadow-2xs">
               <span className="text-muted font-medium text-[11px]">Gross Margin %</span>
               <strong className="font-mono font-black text-xs text-primary">
-                {canSeeProfit ? (grossMarginPercent !== null ? `${grossMarginPercent}%` : '—') : 'Restricted'}
+                {canSeeProfit
+                  ? (grossMarginPercent !== null
+                    ? `${grossMarginPercent}%`
+                    : profitSummaryLoading ? 'Loading…' : 'Setup required')
+                  : 'Restricted'}
               </strong>
             </div>
           </>
@@ -392,10 +465,10 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
         <div className="flex items-center justify-between pb-1.5 border-b border-border">
           <div className="flex items-center gap-1.5">
             <TrendingUp className="w-3.5 h-3.5 text-primary" />
-            <h3 className="font-bold text-xs text-text">Sales Trend (Daily Volume)</h3>
+            <h3 className="font-bold text-xs text-text">Daily Sales Values (Rs)</h3>
           </div>
           <span className="text-[10px] text-muted font-mono">
-            {filteredSales.length} total orders in period
+            {profitSummary?.orderCount ?? filteredSales.length} bills | labels show sales value and bill count
           </span>
         </div>
 
@@ -406,47 +479,39 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
             No sales trend data for this period.
           </div>
         ) : (
-          <div className="relative pt-2 pb-1">
+          <div className="relative overflow-x-auto pt-2 pb-1">
             {/* Light horizontal grid lines */}
-            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20 pb-5">
+            <div className="absolute inset-x-0 top-7 bottom-8 flex flex-col justify-between pointer-events-none opacity-30">
               <div className="border-b border-border border-dashed w-full" />
               <div className="border-b border-border border-dashed w-full" />
               <div className="border-b border-border border-dashed w-full" />
             </div>
 
-            {/* Interactive Bars with Tooltips */}
-            <div className="relative flex items-end justify-between gap-2 h-28 px-2 z-10">
+            <div
+              className="relative z-10 flex h-36 items-end justify-between gap-2 px-2"
+              style={{ minWidth: `${Math.max(600, trendData.length * 92)}px` }}
+              aria-label="Daily sales graph. Amount and bill count are displayed above and below each bar."
+            >
               {trendData.map((item, idx) => (
                 <div
                   key={idx}
-                  className="group relative flex-1 flex flex-col items-center justify-end h-full cursor-pointer"
+                  className="group relative flex h-full flex-1 flex-col items-center justify-end"
+                  aria-label={`${item.fullDate}: Rs. ${(item.paisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}, ${item.count} bills`}
                 >
-                  {/* Tooltip on hover */}
-                  <div className="absolute bottom-full mb-1.5 hidden group-hover:flex flex-col items-center z-30 pointer-events-none animate-fadeIn">
-                    <div className="bg-slate-900 text-white text-[10px] rounded-md px-2 py-1 shadow-lg whitespace-nowrap font-mono text-center">
-                      <div className="font-bold text-slate-200">{item.fullDate}</div>
-                      <div className="text-emerald-400 font-black">
-                        Rs. {(item.paisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}
-                      </div>
-                      <div className="text-slate-300 text-[9px]">{item.count} orders</div>
-                    </div>
-                    <div className="w-1.5 h-1.5 bg-slate-900 rotate-45 -mt-0.5" />
-                  </div>
-
-                  {/* Top amount preview */}
-                  <span className="text-[9px] font-mono font-bold text-text opacity-0 group-hover:opacity-100 transition mb-0.5 whitespace-nowrap">
-                    Rs.{(item.paisa / 100).toFixed(0)}
+                  <span className="mb-1 whitespace-nowrap rounded bg-surface px-1 text-[10px] font-mono font-bold text-text">
+                    Rs. {(item.paisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}
                   </span>
 
-                  {/* Bar */}
                   <div
-                    className="w-full max-w-[38px] rounded-t-md bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-500 transition-all duration-200 shadow-2xs"
+                    className="w-full max-w-[42px] rounded-t-md bg-emerald-600 shadow-2xs transition-colors hover:bg-emerald-500 dark:bg-emerald-500"
                     style={{ height: `${Math.max(6, item.heightPercent)}%` }}
                   />
 
-                  {/* Date label */}
-                  <span className="text-[9px] font-mono text-muted truncate max-w-[42px] mt-1">
+                  <span className="mt-1 whitespace-nowrap text-[10px] font-mono text-text">
                     {item.date}
+                  </span>
+                  <span className="text-[10px] text-muted">
+                    {item.count} {item.count === 1 ? 'bill' : 'bills'}
                   </span>
                 </div>
               ))}
@@ -598,7 +663,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
                 <span className="text-muted text-[11px]">Cost of Goods (COGS)</span>
                 <strong className="font-mono text-text">
                   {totalCostPaisa === null
-                    ? '—'
+                    ? profitSummaryLoading ? 'Loading…' : 'Setup required'
                     : `Rs. ${(totalCostPaisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`}
                 </strong>
               </div>
@@ -608,7 +673,7 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
                 </span>
                 <strong className="font-mono text-emerald-800 dark:text-emerald-300 font-black">
                   {grossProfitPaisa === null
-                    ? '—'
+                    ? profitSummaryLoading ? 'Loading…' : 'Setup required'
                     : `Rs. ${(grossProfitPaisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`}
                 </strong>
               </div>
@@ -617,7 +682,9 @@ export const ReportsScreen: React.FC<ReportsScreenProps> = ({
                   Gross Margin %
                 </span>
                 <strong className="font-mono text-emerald-800 dark:text-emerald-300 font-black">
-                  {grossMarginPercent === null ? '—' : `${grossMarginPercent}%`}
+                  {grossMarginPercent === null
+                    ? profitSummaryLoading ? 'Loading…' : 'Setup required'
+                    : `${grossMarginPercent}%`}
                 </strong>
               </div>
             </div>

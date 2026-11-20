@@ -42,6 +42,7 @@ import {
 import { clearRoleDemoSession, ROLE_DEMO_ROLE_KEY } from '../utils/roleDemoStorage';
 import { availableSmallestUnits } from '../utils/fefo';
 import { initialProductsToPosCatalog } from '../data/posCatalogLogic';
+import type { SalesProfitSummary } from '../data/salesProfit';
 import { DashboardView } from './DashboardView';
 import { CashBookScreen } from './CashBookScreen';
 import { CustomerLedgerScreen } from './CustomerLedgerScreen';
@@ -64,6 +65,12 @@ const DEMO_MEMO_SETTINGS = {
 };
 
 const simulatePrint: PrintReceiptHandler = async () => 'printed';
+const unavailableDemoProfitSummary = async (): Promise<SalesProfitSummary> => {
+  throw new Error('Secure profit reporting is not available in the local demo workspace.');
+};
+const unavailableDemoTodayProfit = async (): Promise<number> => {
+  throw new Error('Secure profit reporting is not available in the local demo workspace.');
+};
 
 function getSessionStorage(): Storage | null {
   try {
@@ -435,7 +442,10 @@ export function DemoWorkspace({ role, onSignOut }: DemoWorkspaceProps) {
         customers={sandbox.customers}
         currentRole={role}
         currentUserName={accountName}
+        canViewProfit={false}
         onNavigate={(tab: NavItemKey) => { if (isDemoPreviewPageKey(tab) && allowedPageKeys.has(tab)) setActivePage(tab); }}
+        onLoadTodayProfit={unavailableDemoTodayProfit}
+        onTodayProfitLoaded={() => undefined}
         onOpenCloseDay={() => setActionNotice('End-of-day close is a preview only; no live shop totals were changed.')}
       />;
     }
@@ -497,6 +507,7 @@ export function DemoWorkspace({ role, onSignOut }: DemoWorkspaceProps) {
         currentRole={role}
         storeName="Demo Pharmacy"
         generatedBy={accountName}
+        onLoadProfitSummary={unavailableDemoProfitSummary}
         onLoadCustomSales={async (from, toExclusive) => sandbox.sales.filter((sale) => {
           const timestamp = new Date(sale.timestamp);
           return timestamp >= from && timestamp < toExclusive;

@@ -11,6 +11,8 @@ import {
 import { getSupabaseErrorMessage } from '../utils/supabaseError';
 import { supabase } from '../utils/supabase';
 import { isPaymentProviderId } from './paymentProviders';
+import { findSavedSaleForResponse } from './saleResponse';
+import { isSalesProfitSummary, type SalesProfitSummary } from './salesProfit';
 
 export interface SalePaymentInput {
   paymentMethod: Exclude<PaymentMethod, PaymentMethod.SPLIT>;
@@ -322,7 +324,11 @@ export async function recordCustomerPayment(
 }
 
 export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
-  const raw = await callSupabaseRpc('post_sale_with_payment_details', {
+  const fallback = 'Could not complete the sale.';
+  if (!supabase) {
+    throw new Error(getSupabaseErrorMessage(new Error('Supabase is not configured.'), fallback));
+  }
+  const { data, error } = await supabase.rpc('post_sale_with_payment_details', {
     p_customer_id: input.customerId,
     p_customer_name: input.customerName,
     p_customer_type: input.customerType,
@@ -344,8 +350,27 @@ export async function postSale(input: PostSaleInput): Promise<CompletedSale> {
       provider_id: payment.providerId ?? null,
       reference: payment.reference ?? null,
     })),
-  }, 'Could not complete the sale.', isCompletedSale);
-  return raw;
+  });
+  if (error) throw new Error(getSupabaseErrorMessage(error, fallback));
+  if (isCompletedSale(data)) return data;
+
+  if (isRecord(data) && isString(data.id)) {
+    let recentSales: CompletedSale[];
+    try {
+      recentSales = await loadSalesHistory(100);
+    } catch (historyError) {
+      const reason = historyError instanceof Error ? ` ${historyError.message}` : '';
+      throw new Error(
+        `The server accepted the sale, but its response could not be verified.${reason} Check Sales History before retrying.`,
+      );
+    }
+    const savedSale = findSavedSaleForResponse(data, recentSales);
+    if (savedSale) return savedSale;
+  }
+
+  throw new Error(
+    'The server accepted the sale, but returned an unexpected response. Check Sales History before retrying.',
+  );
 }
 
 function parseSalesHistoryRows(raw: unknown[], fallbackMessage = 'Could not load sales history.'): CompletedSale[] {
@@ -391,4 +416,26 @@ export async function loadSalesHistoryRange(
     (value): value is unknown[] => Array.isArray(value),
   );
   return parseSalesHistoryRows(raw, 'Could not load sales for the selected date range.');
+}
+
+export async function loadSalesProfitSummary(
+  from: Date,
+  toExclusive: Date,
+): Promise<SalesProfitSummary> {
+  if (
+    Number.isNaN(from.getTime())
+    || Number.isNaN(toExclusive.getTime())
+    || from >= toExclusive
+  ) {
+    throw new RangeError('Choose a valid profit-summary date range.');
+  }
+  return callSupabaseRpc(
+    'reports_sales_profit_summary',
+    {
+      p_from: from.toISOString(),
+      p_to_exclusive: toExclusive.toISOString(),
+    },
+    'Could not load the secure profit summary. Apply the owner-reviewed Reports SQL package, then retry.',
+    isSalesProfitSummary,
+  );
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
   ShoppingBag,
@@ -23,7 +23,10 @@ interface DashboardViewProps {
   customers: Customer[];
   currentRole: UserRole;
   currentUserName: string;
+  canViewProfit: boolean;
   onNavigate: (tab: NavItemKey) => void;
+  onLoadTodayProfit: (from: Date, toExclusive: Date) => Promise<number>;
+  onTodayProfitLoaded: (profitPaisa: number | null) => void;
   onOpenCloseDay: () => void;
 }
 
@@ -33,29 +36,56 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   customers,
   currentRole,
   currentUserName,
+  canViewProfit,
   onNavigate,
+  onLoadTodayProfit,
+  onTodayProfitLoaded,
   onOpenCloseDay,
 }) => {
   const canCloseDay = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.MANAGER;
-  const canViewProfit = currentRole === UserRole.ADMIN || currentRole === UserRole.SUPER_ADMIN || currentRole === UserRole.ACCOUNTANT;
   const todaySales = salesForPeriod(sales, 'today');
   const monthlySales = salesForPeriod(sales, 'month');
 
   const todaySalesPKR = todaySales.reduce((sum, s) => sum + s.totalPaisa, 0) / 100;
-  const todayProfitPKR = canViewProfit && todaySales.every((sale) =>
-    sale.items.every((item) => item.costPaisaPerUnit !== null)
-  )
-    ? todaySales.reduce(
-        (sum, sale) =>
-          sum +
-          sale.totalPaisa -
-          sale.items.reduce(
-            (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
-            0
-          ),
-        0
-      ) / 100
-    : null;
+  const [todayProfitPaisa, setTodayProfitPaisa] = useState<number | null>(null);
+  const [profitLoading, setProfitLoading] = useState(false);
+  const [profitError, setProfitError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!canViewProfit) {
+      setTodayProfitPaisa(null);
+      setProfitError('');
+      setProfitLoading(false);
+      onTodayProfitLoaded(null);
+      return () => { active = false; };
+    }
+
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    setProfitLoading(true);
+    setProfitError('');
+    void onLoadTodayProfit(start, end)
+      .then((profitPaisa) => {
+        if (active) {
+          setTodayProfitPaisa(profitPaisa);
+          onTodayProfitLoaded(profitPaisa);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setTodayProfitPaisa(null);
+        onTodayProfitLoaded(null);
+        setProfitError(error instanceof Error ? error.message : 'Could not load today’s secure profit summary.');
+      })
+      .finally(() => {
+        if (active) setProfitLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [canViewProfit, onLoadTodayProfit, onTodayProfitLoaded]);
 
   const totalReceivablesPKR =
     customers.reduce((sum, c) => sum + c.currentBalancePaisa, 0) / 100;
@@ -151,9 +181,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {canViewProfit ? "Today's Profit (Rs)" : "Today's Invoices"}
             </span>
             {canViewProfit ? (
-              <span className="text-xl font-black text-text font-mono tracking-tight">
-                {todayProfitPKR === null ? 'Unavailable' : `Rs. ${todayProfitPKR.toFixed(0)}`}
-              </span>
+              <div>
+                <span className="text-xl font-black text-text font-mono tracking-tight">
+                  {profitLoading
+                    ? 'Loading…'
+                    : todayProfitPaisa === null
+                      ? <button type="button" onClick={() => onNavigate('reports')} className="text-sm font-bold text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Open Analytics</button>
+                      : `Rs. ${(todayProfitPaisa / 100).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`}
+                </span>
+                {profitError && (
+                  <p title={profitError} className="mt-1 text-[10px] leading-snug text-danger">
+                    Secure profit summary needs setup. Open Analytics for details.
+                  </p>
+                )}
+              </div>
             ) : (
               <span className="text-sm font-bold text-text flex items-center gap-1">
                 <Activity className="w-3.5 h-3.5" /> {todaySales.length} invoices

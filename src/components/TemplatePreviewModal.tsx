@@ -176,7 +176,7 @@ export const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
       setPreviewWarning('');
       setReceiptHtml(withReceiptTheme(template === 'pharmacy-memo'
         ? renderPharmacyMemo(
-          { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
+          PHARMACY_MEMO_TEST_FIXTURE,
           { ...memoSettings, storeName: memoSettings.storeName || companyName },
           format,
           previewQr

@@ -22,6 +22,7 @@ import {
   loadPosCustomers,
   loadSalesHistory,
   loadSalesHistoryRange,
+  loadSalesProfitSummary,
   recordCustomerPayment,
   saveCustomer,
 } from './data/sales';
@@ -87,9 +88,9 @@ import {
   ROLE_DEMO_ROLE_KEY,
   writeDemoAccountMarker,
 } from './utils/roleDemoStorage';
-import { PublicReceiptPage } from './components/PublicReceiptPage';
 import { DemoReceiptsPage } from './components/DemoReceiptsPage';
 
+const PublicReceiptPage = lazy(() => import('./components/PublicReceiptPage').then(({ PublicReceiptPage: View }) => ({ default: View })));
 const POSBillingView = lazy(() => import('./components/POSBillingView').then(({ POSBillingView: View }) => ({ default: View })));
 const CustomerDisplayView = lazy(() => import('./components/CustomerDisplayView').then(({ CustomerDisplayView: View }) => ({ default: View })));
 const InventoryScreen = lazy(() => import('./components/InventoryScreen').then(({ InventoryScreen: View }) => ({ default: View })));
@@ -366,7 +367,11 @@ export default function App() {
 
   const receiptRoute = window.location.pathname.match(/^\/r\/([A-Za-z0-9_-]{22,128})\/?$/);
   if (window.location.pathname === '/r' || window.location.pathname.startsWith('/r/')) {
-    return <PublicReceiptPage token={receiptRoute?.[1] ?? null} />;
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-surface" />}>
+        <PublicReceiptPage token={receiptRoute?.[1] ?? null} />
+      </Suspense>
+    );
   }
   if (window.location.pathname.replace(/\/+$/, '') === '/demo/receipts') {
     return <DemoReceiptsPage />;
@@ -972,6 +977,7 @@ function PharmacyWorkspace({
   const [ledgerEntries, setLedgerEntries] = useState<Record<string, LedgerEntry[]>>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoLedgerEntries() : {}));
   const [transactions, setTransactions] = useState<CashTransaction[]>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoTransactions() : []));
   const [completedSales, setCompletedSales] = useState<CompletedSale[]>(() => (!supabase && isDemoDataLoadedLocally() ? getDemoSales() : []));
+  const [todayProfitPaisa, setTodayProfitPaisa] = useState<number | null>(null);
   const [dataLoadError, setDataLoadError] = useState('');
 
   useEffect(() => {
@@ -979,6 +985,7 @@ function PharmacyWorkspace({
       setCustomers([]);
       setLedgerEntries({});
       setCompletedSales([]);
+      setTodayProfitPaisa(null);
       setTransactions([]);
       setDataLoadError('');
       return;
@@ -1065,6 +1072,14 @@ function PharmacyWorkspace({
       active = false;
     };
   }, [session?.userId, session?.permissions, isDemoActive]);
+
+  useEffect(() => {
+    if (!session
+      || !canPage('reports')
+      || (currentRole !== UserRole.ADMIN && currentRole !== UserRole.ACCOUNTANT)) {
+      setTodayProfitPaisa(null);
+    }
+  }, [canPage, currentRole, session]);
 
   // Global Modals
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
@@ -1277,21 +1292,19 @@ function PharmacyWorkspace({
       .filter((t) => t.isOutflow)
       .reduce((sum, t) => sum + t.amountPaisa, 0) / 100;
 
-  const hasCompleteSaleCosts = completedSales.every((sale) =>
-    sale.items.every((item) => item.costPaisaPerUnit !== null)
-  );
-  const totalCostPKR = hasCompleteSaleCosts
-    ? completedSales.reduce((sum, sale) =>
-        sum + sale.items.reduce(
-          (itemSum, item) => itemSum + (item.costPaisaPerUnit ?? 0) * item.quantityInUnit,
-          0,
-        ), 0) / 100
-    : null;
-
-  const grossProfitPKR = totalCostPKR === null
-    ? null
-    : Math.max(0, totalSalesPKR - totalCostPKR);
+  const grossProfitPKR = todayProfitPaisa === null ? null : todayProfitPaisa / 100;
   const netCashInHandPKR = Math.max(0, cashSalesPKR - expensesPKR);
+  const loadProfitSummary = React.useCallback((from: Date, toExclusive: Date) => {
+    if (!supabase) {
+      return Promise.reject(new Error('Secure profit reporting requires a connected shop database.'));
+    }
+    return loadSalesProfitSummary(from, toExclusive);
+  }, []);
+  const loadTodayProfit = React.useCallback(
+    async (from: Date, toExclusive: Date) =>
+      (await loadProfitSummary(from, toExclusive)).grossProfitPaisa,
+    [loadProfitSummary],
+  );
 
   const getPageTitle = (key: NavItemKey): string => {
     switch (key) {
@@ -1418,7 +1431,11 @@ function PharmacyWorkspace({
               customers={customers}
               currentRole={currentRole}
               currentUserName={currentUserName}
+              canViewProfit={canPage('reports')
+                && (currentRole === UserRole.ADMIN || currentRole === UserRole.ACCOUNTANT)}
               onNavigate={navigateTo}
+              onLoadTodayProfit={loadTodayProfit}
+              onTodayProfitLoaded={setTodayProfitPaisa}
               onOpenCloseDay={() => setShowCloseDayModal(true)}
             />
           )}
@@ -1526,6 +1543,7 @@ function PharmacyWorkspace({
               address={shopIdentity?.address ?? ''}
               phone={shopIdentity?.phone ?? ''}
               generatedBy={currentUserName}
+              onLoadProfitSummary={loadProfitSummary}
               onLoadCustomSales={(from, toExclusive) => {
                 if (!supabase && isDemoDataLoadedLocally()) {
                   return Promise.resolve(filterSalesBetween(
@@ -1563,6 +1581,9 @@ function PharmacyWorkspace({
                   canEditOperationalLimits={Boolean(supabase)
                     && shopSettingsLoaded
                     && shopSettings !== null
+                    && canEditSettingsSection(currentRole, session.permissions, 'settings_operations')}
+                  canEditApprovalAutomation={Boolean(supabase)
+                    && currentRole === UserRole.ADMIN
                     && canEditSettingsSection(currentRole, session.permissions, 'settings_operations')}
                   operationalLimits={shopSettings ? {
                     maxDiscountPaisa: shopSettings.maxDiscountPaisa,

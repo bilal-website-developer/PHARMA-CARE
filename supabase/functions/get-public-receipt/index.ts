@@ -3,6 +3,8 @@ import {
   buildPublicReceipt,
   isPublicReceiptLinkAvailable,
   isValidReceiptToken,
+  publicReceiptShowsExpiry,
+  publicShopLogoUrl,
   publicReceiptNotFound,
   receiptSecurityHeaders,
   type PublicReceiptItemSource,
@@ -11,6 +13,10 @@ import {
 const configuredOrigin = (Deno.env.get('APP_PUBLIC_URL') ?? '').replace(/\/+$/, '');
 const minNotFoundDelayMs = 300;
 const allowedHeaders = (origin: string | null) => receiptSecurityHeaders(origin, configuredOrigin || null);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function jsonResponse(status: number, body: Record<string, unknown>, origin: string | null) {
   return new Response(JSON.stringify(body), {
@@ -82,11 +88,13 @@ Deno.serve(async (request) => {
   });
 
   let token: unknown;
+  let revealItemNames = false;
   try {
     const body: unknown = await request.json();
-    token = typeof body === 'object' && body !== null && 'token' in body
-      ? (body as { token?: unknown }).token
-      : null;
+    if (isRecord(body)) {
+      token = body.token;
+      revealItemNames = body.revealItemNames === true;
+    }
   } catch {
     return notFound();
   }
@@ -126,7 +134,7 @@ Deno.serve(async (request) => {
 
     const { data: sale, error: saleError } = await service
       .from('sales')
-      .select('invoice_number,timestamp,subtotal_paisa,discount_paisa,total_paisa,amount_tendered_paisa,change_paisa,status')
+      .select('invoice_number,timestamp,discount_paisa,total_paisa,change_paisa')
       .eq('id', link.sale_id)
       .eq('shop_id', link.shop_id)
       .neq('status', 'VOIDED')
@@ -139,9 +147,10 @@ Deno.serve(async (request) => {
       { data: rawItems, error: itemsError },
       { data: payments, error: paymentsError },
       { data: creditEntries, error: creditError },
-      { data: completedReturns, error: returnsError },
+      { data: shopSettings, error: shopSettingsError },
+      { data: receiptReturns, error: returnsError },
     ] = await Promise.all([
-      service.from('shops').select('name,address,phone').eq('id', link.shop_id).maybeSingle(),
+      service.from('shops').select('name,address,phone,logo_path').eq('id', link.shop_id).maybeSingle(),
       service.from('sale_items')
         .select('id,product_name,unit_name,quantity_in_unit,quantity_base_units,price_paisa_per_unit,line_total_paisa')
         .eq('sale_id', link.sale_id).eq('shop_id', link.shop_id).order('created_at'),
@@ -150,49 +159,60 @@ Deno.serve(async (request) => {
       service.from('khata_entries').select('entry_type,debit_paisa,credit_paisa')
         .eq('sale_id', link.sale_id).eq('shop_id', link.shop_id)
         .in('entry_type', ['INVOICE', 'RETURN']),
-      service.from('sale_returns').select('id')
-        .eq('sale_id', link.sale_id).eq('shop_id', link.shop_id).eq('status', 'COMPLETED'),
+      service.from('shop_settings').select('settings').eq('shop_id', link.shop_id).maybeSingle(),
+      service.from('sale_returns').select('id,status')
+        .eq('sale_id', link.sale_id).eq('shop_id', link.shop_id).in('status', ['PENDING', 'COMPLETED']),
     ]);
-    if (shopError || itemsError || paymentsError || creditError || returnsError) {
-      throw shopError ?? itemsError ?? paymentsError ?? creditError ?? returnsError;
+    if (shopError || itemsError || paymentsError || creditError || shopSettingsError || returnsError) {
+      throw shopError ?? itemsError ?? paymentsError ?? creditError ?? shopSettingsError ?? returnsError;
     }
     if (!shop) return notFound();
 
-    const returnIds = (completedReturns ?? []).map((row) => row.id);
-    let returnedRows: Array<{ sale_item_id: string; quantity_base_units: number }> = [];
+    const pendingReturnIds = (receiptReturns ?? [])
+      .filter((row) => row.status === 'PENDING')
+      .map((row) => row.id);
+    const completedReturnIds = (receiptReturns ?? [])
+      .filter((row) => row.status === 'COMPLETED')
+      .map((row) => row.id);
+    const returnIds = [...pendingReturnIds, ...completedReturnIds];
+    let returnRows: Array<{ return_id: string; sale_item_id: string; quantity_base_units: number }> = [];
     if (returnIds.length) {
       const { data, error } = await service.from('sale_return_items')
-        .select('sale_item_id,quantity_base_units')
+        .select('return_id,sale_item_id,quantity_base_units')
         .in('return_id', returnIds).eq('shop_id', link.shop_id);
       if (error) throw error;
-      returnedRows = data ?? [];
+      returnRows = data ?? [];
     }
     if (payments === null || creditEntries === null || rawItems === null) {
       throw new Error('Receipt data query returned an incomplete result.');
     }
 
-    const allocationsByItem = new Map<string, Array<{ batch_number: string; expiry_date: string }>>();
+    const expiryMonthsByItem = new Map<string, string[]>();
     if (rawItems.length > 0) {
       const { data: allocations, error: allocationsError } = await service
         .from('sale_item_batch_allocations')
-        .select('sale_item_id,batch_number,expiry_date')
+        .select('sale_item_id,expiry_date')
         .eq('shop_id', link.shop_id)
         .in('sale_item_id', rawItems.map((item) => item.id));
       if (allocationsError) throw allocationsError;
       if (allocations === null) throw new Error('Receipt batch query returned an incomplete result.');
       for (const allocation of allocations) {
-        const itemAllocations = allocationsByItem.get(allocation.sale_item_id) ?? [];
-        itemAllocations.push({
-          batch_number: allocation.batch_number,
-          expiry_date: allocation.expiry_date,
-        });
-        allocationsByItem.set(allocation.sale_item_id, itemAllocations);
+        const expiryMonths = expiryMonthsByItem.get(allocation.sale_item_id) ?? [];
+        expiryMonths.push(allocation.expiry_date.slice(0, 7));
+        expiryMonthsByItem.set(allocation.sale_item_id, expiryMonths);
       }
     }
 
     const returnedByItem = new Map<string, number>();
-    for (const row of returnedRows) {
-      returnedByItem.set(row.sale_item_id, (returnedByItem.get(row.sale_item_id) ?? 0) + row.quantity_base_units);
+    const pendingByItem = new Map<string, number>();
+    for (const row of returnRows) {
+      const quantities = row.return_id && pendingReturnIds.includes(row.return_id)
+        ? pendingByItem
+        : returnedByItem;
+      quantities.set(
+        row.sale_item_id,
+        (quantities.get(row.sale_item_id) ?? 0) + row.quantity_base_units,
+      );
     }
     const items: PublicReceiptItemSource[] = rawItems.map((item) => ({
       product_name: item.product_name,
@@ -202,7 +222,8 @@ Deno.serve(async (request) => {
       price_paisa_per_unit: item.price_paisa_per_unit,
       line_total_paisa: item.line_total_paisa,
       returned_base_units: returnedByItem.get(item.id) ?? 0,
-      allocations: allocationsByItem.get(item.id) ?? [],
+      pending_base_units: pendingByItem.get(item.id) ?? 0,
+      expiry_months: expiryMonthsByItem.get(item.id) ?? [],
     }));
     const creditDue = creditEntries.reduce(
       (total, entry) => total + entry.debit_paisa - entry.credit_paisa,
@@ -210,12 +231,18 @@ Deno.serve(async (request) => {
     );
     const hasCredit = payments.some((payment) => payment.payment_method === 'CREDIT');
     const payload = buildPublicReceipt({
-      shop,
+      shop: {
+        name: shop.name,
+        address: shop.address,
+        phone: shop.phone,
+        logo_url: publicShopLogoUrl(shop.logo_path, supabaseUrl, link.shop_id),
+      },
       sale,
+      payments,
       items,
       credit_due_paisa: creditDue,
       has_credit: hasCredit,
-    }, settings.show_medicine_names);
+    }, settings.show_medicine_names === true || revealItemNames, publicReceiptShowsExpiry(shopSettings?.settings));
 
     const { error: viewError } = await service.rpc('record_public_receipt_view', {
       p_link_id: link.id,

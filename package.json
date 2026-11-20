@@ -13,7 +13,7 @@
     "lint": "tsc --noEmit",
     "test:fefo": "tsx --test src/utils/fefo.test.ts",
     "test:receipt": "tsx --test src/utils/receipt.test.ts",
-    "test:receipt-qr": "tsx --test src/utils/receiptLinks.test.ts src/utils/receipt.test.ts supabase/functions/get-public-receipt/logic.test.ts",
+    "test:receipt-qr": "tsx --test src/utils/receiptLinks.test.ts src/utils/receipt.test.ts src/utils/publicReceipt.test.ts supabase/functions/get-public-receipt/logic.test.ts",
     "test:demo-receipt": "tsx --test src/utils/demoReceipt.test.ts",
     "test:inventory-ui": "tsx --test src/components/inventory/inventoryUiLogic.test.ts",
     "test:stock-inventory": "tsx --test src/components/inventory/stockInventoryLogic.test.ts",
@@ -42,7 +42,10 @@
     "test:sidebar": "tsx --test src/components/sidebarPinLogic.test.ts",
     "test:manage-users-policy": "tsx --test supabase/functions/manage-users/policy.test.ts",
     "test:customer-display": "tsx --test src/utils/customerDisplay.test.ts",
-    "test": "npm run test:fefo && npm run test:receipt && npm run test:receipt-qr && npm run test:demo-receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-data && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
+    "test:sales-profit": "tsx --test src/data/salesProfit.test.ts src/data/saleResponse.test.ts",
+    "test:approval-automation": "tsx --test src/data/approvalAutomation.test.ts src/data/saleReturns.test.ts src/utils/printRequestTypes.test.ts",
+    "test:invoice-input": "tsx --test src/utils/returnInvoiceInput.test.ts",
+    "test": "npm run test:fefo && npm run test:receipt && npm run test:receipt-qr && npm run test:demo-receipt && npm run test:inventory-ui && npm run test:stock-inventory && npm run test:inventory-products && npm run test:stock-alerts && npm run test:pos-catalog && npm run test:product-filters && npm run test:master-data && npm run test:print-snapshot && npm run test:print-request-editor && npm run test:trash-bin && npm run test:store-settings && npm run test:shop-settings && npm run test:shop-logo && npm run test:demo-data && npm run test:demo-preview && npm run test:install-prompt && npm run test:pos-customer && npm run test:held-bills && npm run test:payment-details && npm run test:sales-profit && npm run test:approval-automation && npm run test:invoice-input && npm run test:report && npm run test:discount && npm run test:barcode-scanner && npm run test:labels && npm run test:permissions && npm run test:sidebar && npm run test:manage-users-policy && npm run test:customer-display"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

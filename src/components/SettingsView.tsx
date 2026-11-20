@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   MessageSquare,
   QrCode,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   BillingTemplate,
@@ -46,6 +47,11 @@ import {
   type ReceiptQrSettings,
 } from '../utils/receiptLinks';
 import type { ShopOperationalSettings } from '../utils/shopSettings';
+import {
+  loadApprovalAutomationSettings,
+  updateApprovalAutomationSettings,
+  type ApprovalAutomationSettings,
+} from '../data/approvalAutomation';
 
 const SETTINGS_STORAGE_KEY = 'pharma-care.shopProfile';
 type OperationalLimits = Pick<
@@ -91,6 +97,7 @@ interface SettingsViewProps {
   canLoadDemoData: boolean;
   canEditOperationalSettings: boolean;
   canEditOperationalLimits: boolean;
+  canEditApprovalAutomation: boolean;
   operationalLimits: OperationalLimits | null;
   onOperationalLimitsChange: (limits: OperationalLimits) => Promise<boolean>;
   canEditReceiptQrSettings: boolean;
@@ -117,6 +124,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   canLoadDemoData,
   canEditOperationalSettings,
   canEditOperationalLimits,
+  canEditApprovalAutomation,
   operationalLimits,
   onOperationalLimitsChange,
   canEditReceiptQrSettings,
@@ -145,6 +153,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [memoSettings, setMemoSettings] = useState<PharmacyMemoSettings>(savedMemoSettings);
   const [memoPreviewOpen, setMemoPreviewOpen] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [approvalAutomationSettings, setApprovalAutomationSettings] = useState<ApprovalAutomationSettings | null>(null);
+  const [approvalAutomationDraft, setApprovalAutomationDraft] = useState<ApprovalAutomationSettings | null>(null);
+  const [approvalAutomationLoading, setApprovalAutomationLoading] = useState(false);
+  const [approvalAutomationSaving, setApprovalAutomationSaving] = useState(false);
+  const [approvalAutomationError, setApprovalAutomationError] = useState('');
+  const [approvalAutomationNotice, setApprovalAutomationNotice] = useState('');
   const [operationalLimitsDraft, setOperationalLimitsDraft] = useState<OperationalLimits>(
     operationalLimits ?? {
       maxDiscountPaisa: 20000,
@@ -175,6 +189,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     if (operationalLimits) setOperationalLimitsDraft(operationalLimits);
   }, [operationalLimits]);
+
+  useEffect(() => {
+    if (!isShopAdmin || !canEditApprovalAutomation) {
+      setApprovalAutomationSettings(null);
+      setApprovalAutomationDraft(null);
+      return;
+    }
+
+    let active = true;
+    setApprovalAutomationLoading(true);
+    setApprovalAutomationError('');
+    void loadApprovalAutomationSettings()
+      .then((settings) => {
+        if (!active) return;
+        setApprovalAutomationSettings(settings);
+        setApprovalAutomationDraft(settings);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setApprovalAutomationError(error instanceof Error
+            ? error.message
+            : 'Could not load approval automation settings.');
+        }
+      })
+      .finally(() => {
+        if (active) setApprovalAutomationLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canEditApprovalAutomation, isShopAdmin]);
 
   useEffect(() => {
     if (!canEditReceiptQrSettings) return;
@@ -344,7 +390,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       return {
         html: withReceiptTheme(renderPharmacyMemo(
-          { ...PHARMACY_MEMO_TEST_FIXTURE, customerName: 'احمد' },
+          PHARMACY_MEMO_TEST_FIXTURE,
           {
             ...memoSettings,
             storeName: memoSettings.storeName || shopName,
@@ -555,6 +601,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleSaveApprovalAutomation = async () => {
+    if (!approvalAutomationDraft || !canEditApprovalAutomation) return;
+    setApprovalAutomationSaving(true);
+    setApprovalAutomationError('');
+    setApprovalAutomationNotice('');
+    try {
+      const saved = await updateApprovalAutomationSettings(approvalAutomationDraft);
+      setApprovalAutomationSettings(saved);
+      setApprovalAutomationDraft(saved);
+      setApprovalAutomationNotice('Approval automation settings saved.');
+    } catch (error) {
+      setApprovalAutomationError(error instanceof Error
+        ? error.message
+        : 'Could not save approval automation settings.');
+    } finally {
+      setApprovalAutomationSaving(false);
+    }
+  };
+
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-4xl mx-auto pb-8">
       {operationalSettingsError && (
@@ -573,13 +638,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="space-y-3 text-xs">
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="mb-1">
               <label className="font-semibold text-text">Store / Shop Name</label>
-              {!canEditShopProfile && (
-                <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                  Shop Admin Only
-                </span>
-              )}
             </div>
             <input
               type="text"
@@ -591,20 +651,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               }}
               className="w-full rounded-control border border-border bg-surface px-3 py-2 font-medium text-text disabled:opacity-60 disabled:cursor-not-allowed"
             />
-            {!canEditShopProfile && (
-              <p className="mt-1 text-[11px] text-muted">Only the Shop Admin can edit the shop name.</p>
-            )}
           </div>
 
           {/* Shop Logo upload */}
           <div className="pt-1">
-            <div className="flex items-center justify-between mb-1">
+            <div className="mb-1">
               <label className="font-semibold text-text">Shop Logo</label>
-              {!canEditShopProfile && (
-                <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                  Shop Admin Only
-                </span>
-              )}
             </div>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex h-16 w-32 items-center justify-center rounded-lg border border-dashed border-border bg-surface p-1">
@@ -614,7 +666,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span className="text-[10px] text-muted">No custom logo</span>
                 )}
               </div>
-              {canEditShopProfile ? (
+              {canEditShopProfile && (
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-control border border-border bg-white px-3 py-1.5 text-xs font-semibold text-text hover:bg-surface">
@@ -640,10 +692,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Supports PNG, JPG, and WebP (max 2MB). Appears in the top header and on printed slips.
                   </p>
                 </div>
-              ) : (
-                <p className="text-xs text-muted">
-                  Only the Shop Admin can edit the shop profile and logo.
-                </p>
               )}
             </div>
           </div>
@@ -894,6 +942,87 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <iframe title="Live Pharmacy Memo preview" srcDoc={memoPreview.html} className="h-[520px] w-full rounded-control border border-border bg-white" />
         </>}
       </section>
+
+      {isShopAdmin && (
+        <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
+          <div className="flex items-start gap-3 border-b border-border pb-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
+            <div>
+              <h3 className="text-sm font-black text-text">Approval automation</h3>
+              <p className="mt-1 text-xs text-muted">
+                These shop-wide controls affect new requests only. Both are off by default.
+              </p>
+            </div>
+          </div>
+          {!canEditApprovalAutomation && (
+            <p role="status" className="rounded-control bg-surface px-3 py-2 text-xs text-muted">
+              Shop Admin access to the Settings and Operational Limits sections is required to change these controls.
+            </p>
+          )}
+          {approvalAutomationLoading && (
+            <p role="status" className="text-xs text-muted">Loading approval automation settings…</p>
+          )}
+          {approvalAutomationError && (
+            <p role="alert" className="rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-text">
+              {approvalAutomationError}
+            </p>
+          )}
+          {approvalAutomationNotice && (
+            <p role="status" className="rounded-control border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-text">
+              {approvalAutomationNotice}
+            </p>
+          )}
+          {canEditApprovalAutomation && approvalAutomationSettings && approvalAutomationDraft && (
+            <>
+              <fieldset disabled={approvalAutomationSaving} className="space-y-4 disabled:opacity-70">
+                <label className="flex items-start gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    checked={approvalAutomationDraft.autoApprovePrintRequests}
+                    onChange={(event) => setApprovalAutomationDraft({
+                      ...approvalAutomationDraft,
+                      autoApprovePrintRequests: event.target.checked,
+                    })}
+                    className="mt-0.5 accent-[var(--primary)]"
+                  />
+                  <span>
+                    <span className="block font-semibold">Auto-approve staff print requests</span>
+                    <span className="block text-xs text-muted">
+                      The requesting staff device opens the normal browser print dialog. Staff still select a printer and confirm printing.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    checked={approvalAutomationDraft.autoProcessReturns}
+                    onChange={(event) => setApprovalAutomationDraft({
+                      ...approvalAutomationDraft,
+                      autoProcessReturns: event.target.checked,
+                    })}
+                    className="mt-0.5 accent-[var(--primary)]"
+                  />
+                  <span>
+                    <span className="block font-semibold">Auto-process new sale returns</span>
+                    <span className="block text-xs text-muted">
+                      Existing refund/credit rules apply. Returned medicine is quarantined and cannot be sold until staff review it; existing pending requests stay manual.
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
+              <button
+                type="button"
+                disabled={approvalAutomationSaving || approvalAutomationLoading}
+                onClick={() => void handleSaveApprovalAutomation()}
+                className="rounded-control bg-primary px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Save className="mr-1 inline h-3.5 w-3.5" />
+                {approvalAutomationSaving ? 'Saving…' : 'Save approval settings'}
+              </button>
+            </>
+          )}
+        </section>
+      )}
 
       <section className="space-y-4 rounded-card border border-border bg-white p-5 shadow-xs sm:p-6">
         <div className="border-b border-border pb-3">
