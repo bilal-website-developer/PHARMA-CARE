@@ -182,6 +182,7 @@ Owner Q6 ACL evidence: direct authenticated writes exist on customers, khata_ent
 
 ## Changelog
 
+- 2026-11-20 — Prevented the platform-only Super Admin top nav from polling the shop-scoped stock alerts RPC, which correctly rejects profiles without a shop assignment. The browser's `beforeinstallprompt` console message is informational and unrelated.
 - 2026-11-19 — Fixed the Settings-controls SQL package to extend `profiles_permissions_valid` before backfilling the six Admin section grants; dry-run/test now verify that constraint, rollback restores the old allowlist, and a guarded atomic repair handles partial apply. Owner reports the corrected dry run returned READY and the apply/smoke test succeeded.
 - 2026-11-19 — Fixed receipt and Demo QR route CSP allowances for Google Fonts and the same-origin manifest, and documented the exact-origin `APP_PUBLIC_URL` CORS recovery for the reported Vercel hostname. Receipt/QR tests (49), lint, fresh-output production build, and diff checks pass. The standard build could not clear the existing `dist` because Windows returned `EPERM`; the built bundle was validated in a temporary output directory. Owner reports the hosted secret and Edge Function deployment succeeded; Vercel frontend redeployment and end-to-end retest remain unverified.
 - 2026-11-19 — Implemented Super Admin per-shop Settings editing and Admin section grants, with server-side guards and owner-run SQL preflight/test/rollback files. Completed the receipt changes: hide generic Walk-in Customer, split Batch No./Expiry print controls, move QR above the footer, and expose allocated Batch/Expiry on public receipts. Added Admin Operational Limits controls and persisted settings; POS runtime enforcement of configurable values remains a known limitation. `npm run lint`, full `npm test`, fresh-output build, and diff checks pass. Owner reports SQL apply and smoke test success; matching Edge Function and frontend deployment remain pending.
@@ -223,15 +224,15 @@ The future per-shop barcode cutover must backfill one registry across both `medi
 - Keep factual claims grounded in current code/docs; write **unknown** where verification is missing.
 
 <!-- AUTO:START -->
-Generated at (UTC): 2026-11-19T19:00:24.368Z
+Generated at (UTC): 2026-11-20T12:19:48.367Z
 Git branch: feature/team-view-manage-users
 
 Last 5 commit subjects:
+- feat: add super admin settings and receipt controls
 - feat: add receipt QR and role demo workflows
 - fix: wait for receipt content before printing
 - fix: default POS discounts to rupees and unblock demo loading
 - fix: seed demo product master data
-- fix: complete POS catalog and tenant admin workflows
 
 npm scripts:
 - - `dev`: `vite --port=3000 --host=0.0.0.0`

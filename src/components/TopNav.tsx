@@ -121,12 +121,14 @@ export const TopNav: React.FC<TopNavProps> = ({
       </div>
 
       <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-        <StockAlertBell
-          userId={userId}
-          animationsEnabled={document.documentElement.dataset.animations !== 'off'}
-          onOpenStockInventory={onOpenStockInventory}
-          onOpenProducts={onOpenProducts}
-        />
+        {currentRole !== UserRole.SUPER_ADMIN && (
+          <StockAlertBell
+            userId={userId}
+            animationsEnabled={document.documentElement.dataset.animations !== 'off'}
+            onOpenStockInventory={onOpenStockInventory}
+            onOpenProducts={onOpenProducts}
+          />
+        )}
         <div ref={profileRef} className="relative border-l border-border pl-2">
           <button
             ref={profileButtonRef}
